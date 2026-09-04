@@ -1,0 +1,17 @@
+name = "amaryllis"
+version = "0.1.0"
+defaultTargets = ["Amaryllis"]
+
+[[require]] 
+name = "mathlib"
+scope = "leanprover-community"
+rev = "v4.32.2"
+
+[[require]]
+name = "iris-lean"
+git.url = "https://github.com/leanprover-community/iris-lean.git"
+git.subDir = "Iris"
+rev = "v4.32.2"
+
+[[lean_lib]]
+name = "Amaryllis"
