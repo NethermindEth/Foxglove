@@ -70,7 +70,7 @@ def _𝒫_R_ : _𝒫_ := {
 }
 
 noncomputable def _𝒫_trivial_ : _𝒫_ := {
-  Ω := {x : Nat | x ≥ n}
+  Ω := {x : Nat | x ≥ n} → Bool
   -- ℱ = {Ω, ∅}
   ℱ := λ f ↦ (f = (λ _outcome ↦ True) ∨ f = (λ _outcome ↦ False))
   hℱ₁ := (by simp)
