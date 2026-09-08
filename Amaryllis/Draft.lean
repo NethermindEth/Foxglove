@@ -71,3 +71,16 @@ def _𝒫_R_ : _𝒫_ := {
   hμ₂ := hμ₂
 }
 
+noncomputable def _𝒫_trivial_ : _𝒫_ := {
+  Ω := {x : Nat | x ≥ n}
+  -- ℱ = {Ω, ∅}
+  ℱ := λ f ↦ (f = (λ _outcome ↦ True) ∨ f = (λ _outcome ↦ False))
+  hℱ₁ := (by simp)
+  hℱ₂ := (by sorry)
+  hℱ₃ := (by sorry)
+  hℱ₄ := (by sorry)
+  μ f hf := if f = ∅ then ⟨0, (by simp)⟩ else ⟨1, (by simp)⟩ 
+  hμ₁ := (by sorry)
+  hμ₂ := (by sorry)
+}
+
