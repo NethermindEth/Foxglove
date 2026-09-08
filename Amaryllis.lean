@@ -1,3 +1,1 @@
-module
-
-public import Amaryllis.Draft
+import Amaryllis.Draft
