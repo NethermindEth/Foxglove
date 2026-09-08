@@ -1,5 +1,3 @@
-module
-
 import Mathlib.Data.Real.Basic
 import Mathlib.Data.Set.Countable
 import Mathlib.MeasureTheory.MeasurableSpace.Defs
@@ -34,7 +32,7 @@ structure _𝒫_ where
           f₁ ∩ f₂ = ∅ → (μ (f₁ ∪ f₂) (hℱ₂ hC₁ hC₂ hf₁ hf₂)).1 = (μ f₁ hf₁).1 + (μ f₂ hf₂).1
 
 -- The full Ω, we will call `Omega`
-def Omega := Nat
+def Omega := Nat → Bool
 
 -- First we will define 𝒫_R
 
@@ -84,3 +82,16 @@ noncomputable def _𝒫_trivial_ : _𝒫_ := {
   hμ₂ := (by sorry)
 }
 
+-- TODO: define `independentProduct`
+def independentProduct (p₁ p₂ : _𝒫_) : Option _𝒫_ := sorry
+
+infix:20 "⊗" => independentProduct -- TODO: figure out what the precedence level should be
+
+noncomputable def _𝒫_Amaryllis_ := (@_𝒫_R_ n ℱ hℱ₁ hℱ₂ hℱ₃ hℱ₄ μ hμ₁ hμ₂) ⊗ (@_𝒫_trivial_ n)
+
+lemma OmegaLemma₁ :
+  match ((@_𝒫_R_ n ℱ hℱ₁ hℱ₂ hℱ₃ hℱ₄ μ hμ₁ hμ₂) ⊗ (@_𝒫_trivial_ n)) with
+  | .some PSp => PSp.Ω = Omega
+  | .none => True
+  := by
+    sorry
