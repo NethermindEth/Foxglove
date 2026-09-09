@@ -46,15 +46,15 @@ def Ω := Fin n → Bool
 -- ℱ for 𝒫_R
 variable (ℱ : Set (Set Ω))
 variable (hℱ₁ : ℱ (λ _outcome ↦ True))
-variable (hℱ₂ : ∀ {f₁ f₂}, Set.Countable f₁ → Set.Countable f₂ → ℱ f₁ → ℱ f₂ → ℱ (f₁ ∪ f₂))
+variable (hℱ₂ : ∀ {f₁ f₂}, ℱ f₁ → ℱ f₂ → ℱ (f₁ ∪ f₂))
 variable (hℱ₃ : ∀ {f₁ f₂}, ℱ f₁ → ℱ f₂ → ℱ (f₁ ∩ f₂))
-variable (hℱ₄ : ∀ {f}, (hf : ℱ f) → ℱ fᶜ)
+variable (hℱ₄ : ∀ {f}, ℱ f → ℱ fᶜ)
 
 -- μ for 𝒫_R
 variable (μ : (f : Set Ω) → ℱ f → (Set.Icc (0 : ℝ) 1))
 variable (hμ₁ : μ (λ _outcome ↦ True) hℱ₁ = ⟨(1 : ℝ), (by simp)⟩)
-variable (hμ₂ : ∀ f₁ f₂ (hC₁ : f₁.Countable) (hC₂ : f₂.Countable) (hf₁ : ℱ f₁) (hf₂ : ℱ f₂),
-          f₁ ∩ f₂ = ∅ → (μ (f₁ ∪ f₂) (hℱ₂ hC₁ hC₂ hf₁ hf₂)).1 = (μ f₁ hf₁).1 + (μ f₂ hf₂).1)
+variable (hμ₂ : ∀ f₁ f₂ (hf₁ : ℱ f₁) (hf₂ : ℱ f₂),
+          f₁ ∩ f₂ = ∅ → (μ (f₁ ∪ f₂) (hℱ₂ hf₁ hf₂)).1 = (μ f₁ hf₁).1 + (μ f₂ hf₂).1)
 
 def _𝒫_R_ : _𝒫_ := {
   Ω := @Ω n
