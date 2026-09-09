@@ -81,16 +81,28 @@ noncomputable def _𝒫_trivial_ : _𝒫_ := {
   hμ₂ := (by sorry)
 }
 
--- TODO: define `independentProduct`
-def independentProduct (p₁ p₂ : _𝒫_) : Option _𝒫_ := sorry
+def product (p₁ p₂ : _𝒫_) : _𝒫_ := {
+  Ω := p₁.Ω × p₂.Ω
+  -- ℱ : (Ω → Prop /- This `Prop` means "is in this subset of Ω" -/)
+  --           → Prop /- This `Prop` means "is measurable" -/
+  ℱ := λ x ↦ p₁.ℱ {x₁ : p₁.Ω | ∃ x₂, (x₁, x₂) ∈ x} ∧ (p₂.ℱ {x₂ : p₂.Ω | ∃ x₁, (x₁, x₂) ∈ x})
+  hℱ₁ := sorry
+  hℱ₂ := sorry
+  hℱ₃ := sorry
+  hℱ₄ := sorry
+  μ := λ x hx ↦ ⟨(p₁.μ ({x₁ : p₁.Ω | ∃ x₂, (x₁, x₂) ∈ x}) (by aesop)).1 * (p₂.μ ({x₂ : p₂.Ω | ∃ x₁, (x₁, x₂) ∈ x}) (by aesop)).1, sorry⟩
+  hμ₁ := sorry
+  hμ₂ := sorry
+}
 
-infix:20 "⊗" => independentProduct -- TODO: figure out what the precedence level should be
+infix:20 "⊗" => product -- TODO: figure out what the precedence level should be
 
 noncomputable def _𝒫_Amaryllis_ := (@_𝒫_R_ n ℱ hℱ₁ hℱ₂ hℱ₃ hℱ₄ μ hμ₁ hμ₂) ⊗ (@_𝒫_trivial_ n)
 
+-- This `lemma` is not provable, but I thought it was meant to be.
 lemma OmegaLemma₁ :
-  match ((@_𝒫_R_ n ℱ hℱ₁ hℱ₂ hℱ₃ hℱ₄ μ hμ₁ hμ₂) ⊗ (@_𝒫_trivial_ n)) with
-  | .some PSp => PSp.Ω = Omega
-  | .none => True
+  ((@_𝒫_R_ n ℱ hℱ₁ hℱ₂ hℱ₃ hℱ₄ μ hμ₁ hμ₂) ⊗ (@_𝒫_trivial_ n)).Ω = Omega
   := by
+    unfold product _𝒫_R_ _𝒫_trivial_ Omega
+    simp
     sorry
