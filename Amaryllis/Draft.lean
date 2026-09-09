@@ -18,18 +18,18 @@ structure _𝒫_ where
   -- The σ-algebra contains Ω
   hℱ₁ : ℱ (λ _outcome ↦ True)
   -- ℱ is closed under countable unions
-  hℱ₂ : ∀ {f₁ f₂}, f₁.Countable → f₂.Countable → ℱ f₁ → ℱ f₂ → ℱ (f₁ ∪ f₂)
-   -- ℱ is closed under intersections
+  hℱ₂ : ∀ {f₁ f₂}, ℱ f₁ → ℱ f₂ → ℱ (f₁ ∪ f₂)
+   -- ℱ is closed under countable intersections
   hℱ₃ : ∀ {f₁ f₂}, ℱ f₁ → ℱ f₂ → ℱ (f₁ ∩ f₂)
   -- ℱ is closed under complements
-  hℱ₄ : ∀ {f}, (hf : ℱ f) → ℱ fᶜ
+  hℱ₄ : ∀ {f}, ℱ f → ℱ fᶜ
   -- μ assigns a probability to each measurable subset of Ω
   μ : (f : Set Ω) → ℱ f → (Set.Icc (0 : ℝ) 1)
   -- μ(Ω) = 1
   hμ₁ : μ (λ _outcome ↦ True) hℱ₁ = ⟨(1 : ℝ), (by simp)⟩
   -- μ is countably additive (i.e. the probability of a countable union of pairwise dijoint events is the sum of the events' probabilities)
-  hμ₂ : ∀ f₁ f₂ (hC₁ : f₁.Countable) (hC₂ : f₂.Countable) (hf₁ : ℱ f₁) (hf₂ : ℱ f₂),
-          f₁ ∩ f₂ = ∅ → (μ (f₁ ∪ f₂) (hℱ₂ hC₁ hC₂ hf₁ hf₂)).1 = (μ f₁ hf₁).1 + (μ f₂ hf₂).1
+  hμ₂ : ∀ f₁ f₂ (hf₁ : ℱ f₁) (hf₂ : ℱ f₂),
+          f₁ ∩ f₂ = ∅ → (μ (f₁ ∪ f₂) (hℱ₂ hf₁ hf₂)).1 = (μ f₁ hf₁).1 + (μ f₂ hf₂).1
 
 -- The full Ω, we will call `Omega`
 def Omega := Nat → Bool
