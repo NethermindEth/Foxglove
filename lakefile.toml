@@ -5,13 +5,13 @@ defaultTargets = ["Amaryllis"]
 [[require]] 
 name = "mathlib"
 scope = "leanprover-community"
-rev = "v4.32.2"
+rev = "v4.31.0"
 
 [[require]]
 name = "iris-lean"
 git.url = "https://github.com/leanprover-community/iris-lean.git"
 git.subDir = "Iris"
-rev = "v4.32.2"
+rev = "v4.31.0"
 
 [[lean_lib]]
 name = "Amaryllis"
