@@ -1,79 +1,114 @@
-import Mathlib.Data.Real.Basic
-import Mathlib.MeasureTheory.MeasurableSpace.Defs
-
+import Amaryllis.MeasureOnSpace
 import Iris
-
 namespace Model
 
--- _𝒫_ = Probability Space
--- Ω = outcome space
--- ℱ = set of all events (aka subsets of Ω whose probabilities can be measured)
--- μ, the distribution μ gives a probability to every event in ℱ
-structure _𝒫_ (Ω : Type*) where
-  -- ℱ : (Ω → Prop /- This `Prop` means "is in this subset of Ω" -/)
-  --           → Prop /- This `Prop` means "is measurable" -/
-  ℱ : Set (Set Ω)
-  -- The σ-algebra contains Ω
-  hℱ₁ : ℱ (λ _outcome ↦ True)
-  -- ℱ is closed under countable unions
-  hℱ₂ : ∀ {f₁ f₂}, ℱ f₁ → ℱ f₂ → ℱ (f₁ ∪ f₂)
-   -- ℱ is closed under countable intersections
-  hℱ₃ : ∀ {f₁ f₂}, ℱ f₁ → ℱ f₂ → ℱ (f₁ ∩ f₂)
-  -- ℱ is closed under complements
-  hℱ₄ : ∀ {f}, ℱ f → ℱ fᶜ
-  -- μ assigns a probability to each measurable subset of Ω
-  μ : (f : Set Ω) → ℱ f → (Set.Icc (0 : ℝ) 1)
-  -- μ(Ω) = 1
-  hμ₁ : μ (λ _outcome ↦ True) hℱ₁ = ⟨(1 : ℝ), (by simp)⟩
-  -- μ is countably additive (i.e. the probability of a countable union of pairwise dijoint events is the sum of the events' probabilities)
-  hμ₂ : ∀ f₁ f₂ (hf₁ : ℱ f₁) (hf₂ : ℱ f₂),
-          f₁ ∩ f₂ = ∅ → (μ (f₁ ∪ f₂) (hℱ₂ hf₁ hf₂)).1 = (μ f₁ hf₁).1 + (μ f₂ hf₂).1
+@[reducible]
+def ms₁ : MeasurableSpace (ℕ → Bool) := (MeasurableSpace.mk (λ s ↦ (s = ∅ ∨ s = Set.univ)) (by aesop)
+            (by intros f hf
+                cases hf
+                case inl h₁ => rw [h₁]
+                               right
+                               exact Set.compl_empty                     
+                case inr h₂ => rw [h₂]
+                               left                     
+                               exact Set.compl_univ
+              )
+            (by sorry))
 
--- The full Ω, we will call `Omega`
-def Omega := Nat → Bool
-
--- First we will define 𝒫_R
-
-section 𝒫_R
-
--- Ω for 𝒫_R. Note that this is only the finite part of `Omega`.
-def _𝒫_R_ (n : Nat) := _𝒫_ (Set (Set (Fin n → Bool)))
-
-noncomputable def _𝒫_trivial_ (n : Nat) : _𝒫_ ({x : Nat | x ≥ n} → Bool) := {
-  -- ℱ = {Ω, ∅}
-  ℱ := λ f ↦ (f = (λ _outcome ↦ True) ∨ f = (λ _outcome ↦ False))
-  hℱ₁ := (by simp)
-  hℱ₂ := (by sorry)
-  hℱ₃ := (by sorry)
-  hℱ₄ := (by sorry)
-  μ f hf := if f (λ _ ↦ False) = True then ⟨1, (by simp)⟩ else ⟨0, (by simp)⟩
-  hμ₁ := (by sorry)
-  hμ₂ := (by sorry)
+noncomputable def One : PSp (ℕ → Bool) := .some {
+  val := {
+    ms := ms₁
+    μ := (
+      @MeasureTheory.Measure.mk 
+      (ℕ → Bool) ms₁
+      (
+        MeasureTheory.OuterMeasure.mk
+          (λ f ↦ if f = Set.univ then 1 else 0)
+          ((by simp_all only [ite_eq_right_iff, one_ne_zero, imp_false]
+               apply Aesop.BuiltinRules.not_intro
+               intro a
+               
+               have elem : (ℕ → Bool) := (λ _ ↦ false)
+               have helem : {elem} ⊆ Set.univ := by simp
+               rw [←a] at helem
+               apply Set.subset_empty_iff.1 at helem
+               simp only [Set.singleton_ne_empty] at helem                   
+               ))
+          (by intros s₁ s₂ hs
+              split
+              next h =>
+                subst h
+                split
+                next h =>
+                  subst h
+                  simp_all only [Std.le_refl]
+                next h =>
+                  simp_all only [nonpos_iff_eq_zero, one_ne_zero]
+                  apply Set.univ_subset_iff.1 at hs
+                  contradiction
+              next h => simp_all only [zero_le]
+          ) (by sorry)
+      )
+      (by sorry)
+      (by sorry)
+    )
+  }
+  property := MeasureTheory.IsProbabilityMeasure.mk 
+                (by unfold DFunLike.coe
+                    unfold MeasureTheory.Measure.instFunLike
+                    unfold MeasureTheory.Measure.toOuterMeasure
+                    aesop
+                    )
 }
 
-def product.{u} {Ω₁ Ω₂ : Type u} (p₁ : _𝒫_ Ω₁) (p₂ : _𝒫_ Ω₂) : _𝒫_ (Ω₁ × Ω₂) := {
-  -- ℱ : (Ω → Prop /- This `Prop` means "is in this subset of Ω" -/)
-  --           → Prop /- This `Prop` means "is measurable" -/
-  -- ℱ := λ x ↦    p₁.ℱ {x₁ : p₁.Ω | ∃ x₂, (x₁, x₂) ∈ x} 
-  --            ∧ (p₂.ℱ {x₂ : p₂.Ω | ∃ x₁, (x₁, x₂) ∈ x})
-  ℱ := λ x ↦ p₁.ℱ (Prod.fst <$> x) ∧ p₂.ℱ (Prod.snd <$> x)
-  hℱ₁ := sorry
-  hℱ₂ := sorry
-  hℱ₃ := sorry
-  hℱ₄ := sorry
-  μ := λ x hx ↦ ⟨(p₁.μ (Prod.fst <$> x) (by aesop)).1 * (p₂.μ (Prod.snd <$> x) (by aesop)).1, sorry⟩
-  hμ₁ := sorry
-  hμ₂ := sorry
+instance : Inhabited (ℕ → Bool) := {
+  default := (λ _ ↦ true)
 }
 
-infix:20 "⊗" => product -- TODO: figure out what the precedence level should be
+open PSp
+open ProbabilityTheory MeasureTheory
+open PSpace
 
-noncomputable def _𝒫_Amaryllis_ {n : Nat} (pR : _𝒫_R_ n) := pR ⊗ _𝒫_trivial_ n
-  
--- -- This `lemma` is not provable, but I thought it was meant to be.
--- lemma OmegaLemma₁ {n : Nat} :
---   ((_𝒫_R_ n) ⊗ (@_𝒫_trivial_ n)).Ω = Omega
---   := by
---     unfold product _𝒫_R_ _𝒫_trivial_ Omega
---     simp
---     sorry
+
+noncomputable instance : OrderedUnitalResourceAlgebra (PSp (ℕ → Bool)) := {
+  mul := PSp.mul
+  mul_assoc := (by unfold HMul.hMul instHMul Mul.mul; apply PSp.mul_assoc)
+  one := One
+  one_mul := (by sorry)
+  mul_one := (by sorry)
+  mul_comm := (by unfold HMul.hMul instHMul Mul.mul; apply PSp.mul_comm)
+  valid P := P.isSome
+  le p₁ p₂ := match p₁, p₂ with
+              | .some p₁', .some p₂' => p₁' ≤ p₂'
+              | .some _, .none => True
+              | .none, .some _ => False
+              | .none, .none => True
+  le_refl := (by aesop)
+  le_trans := (by grind)
+  elim := (by sorry)
+  valid_one := (by aesop)
+  valid_mono := (by aesop)
+  valid_mul := (by intros a b
+                   unfold HMul.hMul instHMul Mul.mul
+                   aesop)
+  lt_iff_le_not_ge := (by unfold WithTop.instPreorder WithTop.instLE LT.lt
+                          simp
+                          unfold WithTop.instLT
+                          simp
+                          intros a b
+                          apply Iff.intro
+                          · intro h
+                            cases h with
+                            | bot_lt h => simp
+                            | coe_lt_coe h => aesop
+                          · intro h
+                            cases a
+                            · cases b
+                              · aesop
+                              · aesop
+                            · cases b
+                              · apply WithBot.bot_lt_coe
+                              · simp at h
+                                rename_i p₁ p₂
+                                sorry)
+}
