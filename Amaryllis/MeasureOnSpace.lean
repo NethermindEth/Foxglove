@@ -1429,6 +1429,122 @@ instance [Inhabited Ω] : OrderedUnitalResourceAlgebra (PSp Ω) := {
   valid_mul := by apply PSp.mul_defined_imp_defined
 }
 
+instance [Inhabited Ω] [φ : OrderedUnitalResourceAlgebra (PSp Ω)] :
+  OrderedUnitalResourceAlgebra (Option (PSp Ω)) where
+    mul x y := (·*·) <$> x <*> y
+    mul_assoc {a b c} := by
+      rcases a <;> rcases b <;> rcases c <;> try rfl
+      simp [(·*·)]
+      apply mul_assoc
+    one := .some PSp.unit
+    one_mul {a} := by
+      simp [(·*·), OfNat.ofNat, Seq.seq]
+      rcases a with _ | ⟨a⟩ <;> [rfl; simp]
+      exact one_mul _
+    mul_one {a} := by
+      simp [(·*·), OfNat.ofNat, Seq.seq]
+      rcases a with _ | ⟨a⟩ <;> [rfl; simp]
+      exact mul_one _
+    -- npow_zero := _
+    -- npow_succ := _
+    mul_comm {a b} := by
+      rcases a with _ | ⟨a⟩ <;> rcases b with _ | ⟨b⟩ <;> try rfl
+      simp [(·*·)]
+      change a * b = b * a
+      exact CommMonoid.mul_comm a b
+    valid x := x.elim True Valid.valid
+    -- le := _
+    le_refl {a} := by grind [cases Option]
+    le_trans {a b c} := by grind [cases Option]
+    lt_iff_le_not_ge {a b} := by
+      rcases a with _ | ⟨a⟩ <;> rcases b with _ | ⟨b⟩ <;> simp
+      exact Std.LawfulOrderLT.lt_iff a b
+    elim := by
+      rintro (_ | x) (_ | y) (_ | z) h <;> simp [Function.swap]
+      · exact le_of_eq_of_le rfl h
+      · exact le_of_eq_of_le rfl h
+      · cases h
+      · exact le_of_eq_of_le rfl trivial
+      · exact le_of_eq_of_le rfl h
+      · exact le_of_eq_of_le rfl h
+      · cases h
+      · sorry
+        --simp [(·*·)]
+        -- change y * x ≤ z * x
+        -- unfold LE.le instLEOption at h
+        -- dsimp [Option.le] at h
+        -- revert x y z h
+        -- change
+        --   Covariant (PSp Ω) (PSp Ω) (Function.swap fun x1 x2 ↦ x1 * x2)
+        --     fun x1 x2 ↦ x1 ≤ x2
+        -- intro a x y ha
+        -- unfold Function.swap
+        -- cases a; simp;
+        -- have h : PSp.mul x none = PSp.mul y none := by aesop
+        -- simp [HMul.hMul, Mul.mul]
+        -- aesop
+        -- simp [HMul.hMul, Mul.mul]
+        -- cases x; simp
+        -- cases y; simp
+        -- · rename_i x
+        --   have : some x = none := by
+        --     have := @PSp.ge_top_imp_top Ω (some x) ha
+        --     aesop
+        --   contradiction
+        -- cases y
+        -- simp
+        -- rename_i y x
+        -- by_cases h : ∃ s : PSpace Ω, s =ᵢ x ⊕ᵢ y
+        -- · simp [h]
+        --   apply le_top
+        -- · simp [h]
+        -- rename_i a x y
+        -- simp_all
+        -- have hxy : x ≤ y := by
+        --   apply WithTop.coe_le_coe.1
+        --   exact ha
+        -- by_cases h₁ : ∃ t : PSpace Ω, t =ᵢ y ⊕ᵢ a
+        -- by_cases h₂ : ∃ s : PSpace Ω, s =ᵢ x ⊕ᵢ a
+        -- · simp [h₁, h₂]
+        --   have h := @PSpace.functoriality Ω _ x y a h₂.choose h₁.choose h₂.choose_spec h₁.choose_spec hxy
+        --   apply WithTop.coe_le_coe.2
+        --   exact h
+        -- · simp [h₁, h₂]
+        --   have : ∃ xa : PSpace Ω, xa =ᵢ x ⊕ᵢ a := by
+        --     obtain ⟨ya, h₁⟩ := h₁
+        --     let xams := x.1.ms.sum a.1.ms
+        --     have hxams : xams ≤ ya.1.ms := by
+        --       have : ya.1.ms = y.1.ms.sum a.1.ms := h₁.1
+        --       have := @MeasurableSpace.sum_functorial Ω a.1.ms x.1.ms y.1.ms hxy.1
+        --       aesop
+        --     let xa := @ya.trim Ω xams (by assumption)
+        --     use xa
+        --     constructor
+        --     · rfl
+        --     · intro u hu v hv
+        --       have hu' : MeasurableSet[y.1.ms] u := hxy.1 u hu
+        --       have huv : MeasurableSet[xams] (u ∩ v) := by
+        --         apply MeasurableSet.inter; aesop; aesop
+        --       have : xa.1.μ (u ∩ v) = ya.1.μ (u ∩ v) := by
+        --         have := @ya.1.trim_eq Ω xams (by aesop) (u ∩ v) (by aesop)
+        --         aesop
+        --       calc
+        --             xa.1.μ (u ∩ v)
+        --         _ = ya.1.μ (u ∩ v) := by aesop
+        --         _ = y.1.μ u * a.1.μ v := h₁.2 u hu' v hv
+        --         _ = x.1.μ u * a.1.μ v := by
+        --           have := @MeasureOnSpace.le_preserves_measure Ω x.1 y.1 hxy u hu
+        --           aesop
+        --   contradiction
+        -- · simp [h₁]
+        --   by_cases h₂ : ∃ s : PSpace Ω, s =ᵢ x ⊕ᵢ a
+        --   · simp [h₂]
+        --     apply PSp.le_top'
+        --   · simp [h₂]
+    valid_one := by rintro ⟨⟩
+    valid_mono := _
+    valid_mul := _
+
 end PSp
 
 /-
