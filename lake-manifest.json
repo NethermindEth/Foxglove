@@ -29,7 +29,7 @@
    "name": "mathlib",
    "manifestFile": "lake-manifest.json",
    "inputRev": "v4.34.0",
-   "inherited": false,
+   "inherited": true,
    "configFile": "lakefile.lean"},
   {"url": "https://github.com/Verified-zkEVM/PolyFun",
    "type": "git",
