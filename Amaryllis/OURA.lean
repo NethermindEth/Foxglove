@@ -67,17 +67,14 @@ instance DiscreteCMRA.instCMRA {α : Type*} [DiscreteCMRA α] : CMRA α := {
   validN_succ := by simp
   assoc := by simp [mul_assoc]
   comm := by simp [mul_comm]
-  pcore_op_left := sorry -- fun {x} {cx} h _ ↦ pcore_left h
+  pcore_op_left := pcore_left
   pcore_idem := by
     intro x cx h
     have h₁ := @pcore_idem α _ x cx h
     aesop
-  pcore_op_mono := fun {x cx} h y ↦ by sorry
-    -- rcases @pcore_mono' α _ x y cx h with ⟨cy, h⟩
-    -- use cy
-    -- rw [h]
+  pcore_op_mono := fun {x cx} h y ↦ pcore_mono' h
   validN_op_left := valid_mul
-  extend {_ _ y₁ y₂ _ _} := by use y₁, y₂; simp; sorry -- intros _; assumption
+  extend {_ _ y₁ y₂ _ h} := by use y₁, y₂; simp; exact h
 }
 
 /-- An ordered unital resource algebra is a type with a multiplication, a one, a preorder `≤`,
@@ -191,7 +188,7 @@ def indexedProduct
   valid_mono x y i := by have := fun i ↦ (f i).valid_mono (x i) (y i); aesop
   valid_mul x := by have := fun i ↦ (f i).valid_mul (x i); aesop
   npow_zero := by simp
-  npow_succ := sorry
+  npow_succ n x := by funext i; exact @pow_succ (α i) (f i).toMonoid (x i) n
 }
 
 /-- Technically binary product is just an instnace of indexed product, but
