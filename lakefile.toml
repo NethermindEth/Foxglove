@@ -2,16 +2,21 @@ name = "amaryllis"
 version = "0.1.0"
 defaultTargets = ["Amaryllis"]
 
-[[require]] 
+[[require]]
 name = "mathlib"
 scope = "leanprover-community"
-rev = "v4.31.0"
+rev = "v4.34.0"
 
 [[require]]
 name = "iris-lean"
 git.url = "https://github.com/leanprover-community/iris-lean.git"
 git.subDir = "Iris"
-rev = "v4.31.0"
+rev = "v4.34.0"
+
+[[require]]
+name = "VCVio"
+git = "https://github.com/Verified-zkEVM/VCV-io"
+rev = "v4.34.0"
 
 [[lean_lib]]
 name = "Amaryllis"

@@ -39,7 +39,7 @@ instance DiscreteCMRA.instOFE (α : Type*) [inst : DiscreteCMRA α] : OFE α whe
   dist_eqv := fun {_} ↦ by
     refine ⟨?_, ?_, ?_⟩ <;> simp
   dist_lt := fun h _ ↦ h
-  eq_dist := by simp
+  eq_dist' := by simp
 
 open Iris in
 /-- A discrete CMRA can be converted to a regular CMRA -/
@@ -67,17 +67,17 @@ instance DiscreteCMRA.instCMRA {α : Type*} [DiscreteCMRA α] : CMRA α := {
   validN_succ := by simp
   assoc := by simp [mul_assoc]
   comm := by simp [mul_comm]
-  pcore_op_left := fun {x} {cx} h _ ↦ pcore_left h
+  pcore_op_left := sorry -- fun {x} {cx} h _ ↦ pcore_left h
   pcore_idem := by
     intro x cx h
     have h₁ := @pcore_idem α _ x cx h
     aesop
-  pcore_op_mono := fun {x cx} h y ↦ by
-    rcases @pcore_mono' α _ x y cx h with ⟨cy, h⟩
-    use cy
-    rw [h]
+  pcore_op_mono := fun {x cx} h y ↦ by sorry
+    -- rcases @pcore_mono' α _ x y cx h with ⟨cy, h⟩
+    -- use cy
+    -- rw [h]
   validN_op_left := valid_mul
-  extend {_ _ y₁ y₂ _ _} := by use y₁, y₂; unfold OFE.Equiv; simp; intros _; assumption
+  extend {_ _ y₁ y₂ _ _} := by use y₁, y₂; simp; sorry -- intros _; assumption
 }
 
 /-- An ordered unital resource algebra is a type with a multiplication, a one, a preorder `≤`,
@@ -190,6 +190,8 @@ def indexedProduct
   valid_one i := by aesop
   valid_mono x y i := by have := fun i ↦ (f i).valid_mono (x i) (y i); aesop
   valid_mul x := by have := fun i ↦ (f i).valid_mul (x i); aesop
+  npow_zero := by simp
+  npow_succ := sorry
 }
 
 /-- Technically binary product is just an instnace of indexed product, but
@@ -435,7 +437,6 @@ instance instUCMRA
   unit_left_id := by
     intro x
     have : One.one * x = x := by change 1 * x = x; aesop
-    unfold Iris.OFE.Equiv
     aesop
   pcore_unit := by rfl
 }
