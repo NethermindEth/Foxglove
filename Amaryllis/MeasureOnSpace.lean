@@ -1542,8 +1542,26 @@ instance [Inhabited Ω] [φ : OrderedUnitalResourceAlgebra (PSp Ω)] :
         --     apply PSp.le_top'
         --   · simp [h₂]
     valid_one := by rintro ⟨⟩
-    valid_mono := _
-    valid_mul := _
+    valid_mono {a b h₁ h₂} := by
+      rcases a with _ | a <;> rcases b with _ | b
+      · simp
+      · simp
+      · cases h₁
+      · simp at *
+        cases a with
+        | none =>
+          have : b = (⊤ : PSp Ω) := @PSp.ge_top_imp_top Ω b h₁
+          aesop
+        | some p₁ => cases b with
+          | none => contradiction
+          | some p₂ => intro h; contradiction
+    valid_mul {a b h} := by
+      rcases a with _ | a <;> rcases b with _ | b
+      simp
+      simp
+      simp
+      simp [HMul.hMul, Seq.seq] at h
+      
 
 end PSp
 
