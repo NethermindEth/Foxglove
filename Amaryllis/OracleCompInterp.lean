@@ -7,7 +7,10 @@ import Batteries.Control.OptionT
 import Init.Data.Rat.Basic
 
 import Amaryllis.MeasureOnSpace
+import Amaryllis.Model
 import Amaryllis.OURA
+
+namespace Amaryllis
 
 namespace BernoulliInterpretable
 
@@ -54,13 +57,7 @@ def interp {α β} {oSpec : OracleSpec β} [BernoulliInterpretable oSpec] (p : O
    | PFunctor.FreeM.pure a => pure a
    | PFunctor.FreeM.liftBind op f => bind (interp_op op) (fun x => interp (f x))
 
-def Ω : Type := ℕ → Bool
-def RV (α : Type) := Ω → α
-
-instance : Inhabited Ω where
-  default := fun _ ↦ True
-
-def interp_psp' {α : Type} (m : PFunctor.FreeM (BernoulliPFunctor) α) (n : ℕ) (p : PSp Ω) : PSp Ω × RV α :=
+def interp_psp' {α : Type} (m : PFunctor.FreeM BernoulliPFunctor α) (n : ℕ) (p : PSp Ω) : PSp Ω × RV α :=
   match m with
   | PFunctor.FreeM.pure a => (p, fun _ ↦ a)
   | PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f =>
@@ -76,3 +73,5 @@ noncomputable def interp_psp {α : Type} (m : PFunctor.FreeM (BernoulliPFunctor)
 
 
 end BernoulliInterpretable
+
+end Amaryllis
