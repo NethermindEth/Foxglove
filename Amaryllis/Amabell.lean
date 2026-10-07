@@ -24,6 +24,9 @@ instance : Iris.UCMRA PSpΩ := inferInstance
 
 instance a : Iris.BI ABprop := inferInstance
 
+set_option pp.all true in
+#print a
+
 open Iris
 
 end
