@@ -652,9 +652,17 @@
 --       ⌜let μᵢ := P.μ i
 --        have Eμᵢ := @μᵢ.map (Var → Val) A (P.ms i) ⊤ E
 --        almostMeasurable E (P.PSp i)
---        ∧ Eμᵢ = @μ.toMeasure A ⊤⌝)
+--        ∧ Eμᵢ = @μ.toMeasure _ ⊤⌝)
 
 -- notation:100 E:100 "⟨" i:100 "⟩" " ~ " p:100 => hasDistribution E i p
+
+
+
+
+
+
+
+
 
 -- def almostSurely (E : (Var → Val) → Bool) (i : I) : bProp I Var Val :=
 --   E⟨i⟩ ~ δ True
