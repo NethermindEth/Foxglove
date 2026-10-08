@@ -204,30 +204,50 @@ def lift₂ (f : UpperSet M → UpperSet M → UpperSet M)
     UpToBientail M → UpToBientail M → UpToBientail M :=
   Quotient.map₂ f fun _ _ h₁ _ _ h₂ ↦ hf h₁ h₂
 
-def entail : UpToBientail M → UpToBientail M → Prop :=
-  Quotient.lift₂ Amaryllis.entail fun a b c d h₁ h₂ ↦
-    show Amaryllis.entail a b = Amaryllis.entail c d from sorry
+instance : Iris.OFE (UpToBientail M) :=
+  {
+    Dist _ := (·=·)
+    dist_eqv := fun {_} ↦ eq_equivalence
+    eq_dist' := by simp
+    dist_lt := by grind
+  }
 
-instance : Iris.COFE (UpToBientail M) := sorry
+instance : Iris.COFE (UpToBientail M) :=
+  {
+    compl := fun h => h 0
+    conv_compl := fun {n c} => by
+      
+      unfold Iris.OFE.Dist instOFE
+      dsimp at *
+      rcases c with ⟨chain, cauchy⟩
+      simp
+      unfold Iris.OFE.Dist instOFE at cauchy
+      simp at cauchy
+      specialize @cauchy 0 n (by simp)
+      exact cauchy.symm
+  }    
 
 instance : Iris.BI.BIBase (UpToBientail M) where
-  Entails := entail
+  Entails := Quotient.lift₂ Amaryllis.entail sorry
   emp := Quotient.mk _ BTrue
-  pure φ := Quotient.mk _ (Amaryllis.lift φ)
+  pure P := Quotient.mk _ (Amaryllis.lift P)
   and := lift₂ Amaryllis.and sorry
   or := lift₂ Amaryllis.or sorry
   imp := lift₂ bimp sorry
-  sForall Ψ := Quotient.mk _ (sForallA fun p ↦ Ψ (Quotient.mk _ p))
-  sExists Ψ := Quotient.mk _ (sExistsA fun p ↦ Ψ (Quotient.mk _ p))
+  sForall P := Quotient.mk _ (sForallA fun p ↦ P (Quotient.mk _ p))
+  sExists P := Quotient.mk _ (sExistsA fun p ↦ P (Quotient.mk _ p))
   sep := lift₂ Amaryllis.sep sorry
   wand := lift₂ wand sorry
   persistently := lift bpersistently sorry
   later := id
 
 instance : Iris.BI (UpToBientail M) where
-  entails_refl := entails_refl
-  entails_trans := entails_trans
-  equiv_iff := sorry
+  entails_refl := by
+    sorry
+  entails_trans := by
+    sorry
+  equiv_iff := by
+    sorry
   and_ne := by
     sorry
   or_ne := by
