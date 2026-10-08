@@ -1362,6 +1362,33 @@ lemma PSp.ge_top_imp_top {p : PSp Ω} (h : (⊤ : PSp Ω) ≤ p) : p = (⊤ : PS
 lemma PSp.le_top' {p : PSp Ω} : p ≤ (⊤ : PSp Ω) := by
   apply le_top
 
+lemma PSp.one_le [Inhabited Ω] {a : PSp Ω} : (1 : PSp Ω)  ≤ a := by
+  rw [WithTop.le_def]
+  rcases a with _ | b
+  · exact Or.inl rfl
+  · right
+    use 1
+    use b
+    refine ⟨?_, rfl, rfl⟩
+    refine ⟨?_, ?_⟩
+    · unfold_projs
+      intros s h
+      have : s = ∅ ∨ s = Set.univ := MeasurableSpace.measurableSet_bot_iff.mp h
+      rcases this with h' | h' <;> simp [h']
+    · convert MeasureTheory.Measure.ext_iff.mpr _
+      intros s h
+      have : s = ∅ ∨ s = Set.univ := MeasurableSpace.measurableSet_bot_iff.mp h
+      rcases this with h' | h' <;> simp [h']
+      · have := @MeasureTheory.Measure.map_apply Ω Ω b.1.ms (1 : PSpace Ω).1.ms
+        rw [this]
+        · simp
+        · unfold Measurable
+          simp
+          intros t h
+          have : t = ∅ ∨ t = Set.univ := MeasurableSpace.measurableSet_bot_iff.mp h
+          rcases this with h' | h' <;> simp [h']
+        · simp
+
 instance [Inhabited Ω] : OrderedUnitalResourceAlgebra (PSp Ω) := {
   valid_one := by
     unfold valid instValidPSpOfInhabited
