@@ -59,6 +59,7 @@ section
 
 open ProbabilityTheory
 
+-- TODO(check) - I put ⊤ to silence the measurability for Lean's Kernel thing :sweat_smile:
 abbrev _root_.ProbabilityTheory.TrivialMarkovKernel (A : Type) (p : PSpace Ω) : Type :=
   {κ : @Kernel A Ω ⊤ p.ms // IsMarkovKernel κ}
 
@@ -73,6 +74,9 @@ instance {A : Type} {p : PSpace Ω} : FunLike (TrivialMarkovKernel A p) A (PSpac
        erw [funext_iff] at f
        aesop
   ⟩
+
+def _root_.PMF.toMeasureWithMs {A : Type} (μ : PMF A) (ms : MeasurableSpace A) : @MeasureTheory.Measure A ms :=
+  @μ.toMeasure A ms
 
 -- open MeasureTheory in
 -- structure CompatibleKernel (A : Type*) (m : ValidIndexedPSpPm I Var Val) where
@@ -104,7 +108,9 @@ def jointConditioning {A : Type} (μ : PMF A) (K : A → OURAProp PSpΩ) : OURAP
   iprop(
     ∃ m : PSpace Ω,
     ∃ κ : TrivialMarkovKernel A m,
-      own m
+      own m ∗
+      ⌜m.μ = (μ.toMeasureWithMs ⊤).bind κ⌝ ∗
+      ∀ v : μ.support, sorry
   )
 
 notation "𝒞" "⟨" μ "⟩" v ";" K => jointConditioning μ (fun v => iprop(K))
