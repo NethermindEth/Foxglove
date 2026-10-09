@@ -1,5 +1,7 @@
 import Mathlib.Probability.Independence.Conditional
 import Mathlib.Data.Set.Basic
+import Mathlib.MeasureTheory.Measure.Sum
+import Mathlib.Probability.ProbabilityMassFunction.Constructions
 import Amaryllis.OURA
 
 /-! ## Independent product of probability measures -/
@@ -1446,6 +1448,159 @@ instance [Inhabited Ω] : OrderedUnitalResourceAlgebra (PSp Ω) := {
 
 end PSp
 
+section WeightedSum
+
+open scoped ENNReal
+
+/-! ## Weighted sums of probability spaces
+
+This is `wsum` from the Amaryllis paper (arXiv 2605.13765, §3.3).  Given a distribution
+`μ : PMF A` over branches and a family `ν : A → PSpace Ω` of probability spaces, one for
+each branch, the weighted sum is the space
+
+```
+  ( ⋂_{v ∈ supp μ} π_ℱ(ν v),  λE. ∑_{v ∈ supp μ} μ(v) · π_μ(ν v)(E) )
+```
+
+i.e. the events every branch in the support can measure, equipped with the mixture of the
+branch measures.
+
+The paper additionally guards the construction by `has_rv(μ, ν)` — pairwise disjointness
+of the branch supports — and returns `↯` when it fails.  That side condition is what makes
+the *resource* component of the model well behaved; it is not needed for the probability
+space itself, which is total: the mixture is always a probability measure on the
+intersected σ-algebra.  Since this development does not do resource reasoning, we implement
+only the `has_rv` branch, and `PSpace.wsum` is correspondingly total. -/
+
+variable {A : Type*}
+
+@[instance_reducible]
+def PSpace.wsumSpace (μ : PMF A) (ν : A → PSpace Ω) : MeasurableSpace Ω :=
+  ⨅ v ∈ μ.support, (ν v).ms
+
+lemma PSpace.wsumSpace_le {μ : PMF A} {ν : A → PSpace Ω} {v : A} (hv : v ∈ μ.support) :
+    PSpace.wsumSpace μ ν ≤ (ν v).ms :=
+  iInf₂_le v hv
+
+/-- The mixture measure `λE. ∑ᵥ μ(v) · π_μ(ν v)(E)`, on the common σ-algebra.
+
+Off-support branches are harmless: `μ v = 0` annihilates their contribution, so the junk
+value of `Measure.cast` there is never observed. -/
+noncomputable def PSpace.wsumMeasure (μ : PMF A) (ν : A → PSpace Ω) :
+    Measure[PSpace.wsumSpace μ ν] Ω :=
+  letI : MeasurableSpace Ω := PSpace.wsumSpace μ ν
+  Measure.sum (fun v => μ v • ((ν v).μ.cast (PSpace.wsumSpace μ ν)))
+
+/-- The defining property of the weighted sum. -/
+lemma PSpace.wsumMeasure_apply (μ : PMF A) (ν : A → PSpace Ω) {E : Set Ω}
+    (hE : MeasurableSet[PSpace.wsumSpace μ ν] E) :
+    PSpace.wsumMeasure μ ν E = ∑' v, μ v * (ν v).μ E := by
+  rw [PSpace.wsumMeasure, Measure.sum_apply _ hE]
+  refine tsum_congr (fun v => ?_)
+  rw [Measure.smul_apply, smul_eq_mul]
+  by_cases hv : v ∈ μ.support
+  · rw [@Measure.le_preserves_measure Ω (PSpace.wsumSpace μ ν) (ν v).ms
+      (PSpace.wsumSpace_le hv) (ν v).μ E hE]
+  · simp only [PMF.mem_support_iff, not_not] at hv
+    simp [hv]
+
+lemma PSpace.wsumMeasure_isProbabilityMeasure (μ : PMF A) (ν : A → PSpace Ω) :
+    IsProbabilityMeasure (PSpace.wsumMeasure μ ν) := by
+  constructor
+  rw [PSpace.wsumMeasure_apply μ ν (@MeasurableSet.univ Ω (PSpace.wsumSpace μ ν))]
+  have h : ∀ v, μ v * (ν v).μ Set.univ = μ v := fun v => by
+    rw [@measure_univ Ω (ν v).ms (ν v).μ (ν v).isProbability, mul_one]
+  simp only [h]
+  exact μ.tsum_coe
+
+noncomputable def PSpace.wsum (μ : PMF A) (κ : A → PSpace Ω) : PSpace Ω :=
+  ⟨⟨PSpace.wsumSpace μ κ, PSpace.wsumMeasure μ κ⟩,
+    PSpace.wsumMeasure_isProbabilityMeasure μ κ⟩
+
+@[simp]
+lemma PSpace.wsum_ms (μ : PMF A) (κ : A → PSpace Ω) :
+    (PSpace.wsum μ κ).ms = PSpace.wsumSpace μ κ := rfl
+
+@[simp]
+lemma PSpace.wsum_mu (μ : PMF A) (κ : A → PSpace Ω) :
+    (PSpace.wsum μ κ).μ = PSpace.wsumMeasure μ κ := rfl
+
+noncomputable def PSpace.wsum₂ (r : NNReal) (hr : r ≤ 1) (p₀ p₁ : PSpace Ω) : PSpace Ω :=
+  PSpace.wsum (PMF.bernoulli r hr) (fun b => if b then p₁ else p₀)
+
+lemma PMF.mem_support_bernoulli_false {r : NNReal} {hr : r ≤ 1} (h : r ≠ 1) :
+    false ∈ (PMF.bernoulli r hr).support :=
+  (PMF.mem_support_bernoulli_iff hr false).mpr h
+
+lemma PMF.mem_support_bernoulli_true {r : NNReal} {hr : r ≤ 1} (h : r ≠ 0) :
+    true ∈ (PMF.bernoulli r hr).support :=
+  (PMF.mem_support_bernoulli_iff hr true).mpr h
+
+lemma PSpace.wsum₂_apply (r : NNReal) (hr : r ≤ 1) (p₀ p₁ : PSpace Ω) {E : Set Ω}
+    (hE : MeasurableSet[(PSpace.wsum₂ r hr p₀ p₁).ms] E) :
+    (PSpace.wsum₂ r hr p₀ p₁).μ E
+      = (1 - (r : ℝ≥0∞)) * p₀.μ E + (r : ℝ≥0∞) * p₁.μ E :=
+  calc (PSpace.wsum₂ r hr p₀ p₁).μ E
+      = ∑' b, (PMF.bernoulli r hr) b * (if b then p₁ else p₀ : PSpace Ω).μ E :=
+        PSpace.wsumMeasure_apply _ _ hE
+    _ = (1 - (r : ℝ≥0∞)) * p₀.μ E + (r : ℝ≥0∞) * p₁.μ E := by
+        rw [tsum_bool]
+        simp [PMF.bernoulli_apply, ENNReal.coe_sub]
+
+noncomputable def PSp.wsum₂ (r : NNReal) (hr : r ≤ 1) : PSp Ω → PSp Ω → PSp Ω
+  | .some p₀, .some p₁ => .some (PSpace.wsum₂ r hr p₀ p₁)
+  | _, _ => ⊤
+
+@[simp]
+noncomputable def MeasureOnSpace.map (h : Ω → Ω') (ms : MeasureOnSpace Ω) :
+    MeasureOnSpace Ω' :=
+  letI F := ms.ms.map h
+  ⟨F, @Measure.map _ _ ms.ms _ h ms.μ⟩
+
+@[simp]
+noncomputable def PSpace.map (f : Ω → Ω') (ps : PSpace Ω) : PSpace Ω' := ⟨ps.1.map f, by
+  refine isProbabilityMeasure_iff.mpr ?_
+  have := @Measure.map_apply Ω Ω' ps.1.ms (ps.1.ms.map f) ps.1.μ f (fun ⦃_⦄ a => a)
+    Set.univ (by simp)
+  have : ps.1.μ (f ⁻¹' Set.univ) = 1 := by
+    have : f ⁻¹' Set.univ = Set.univ := by simp
+    have := ps.2.measure_univ
+    aesop
+  aesop⟩
+
+/-- The defining property of the pushforward. -/
+lemma PSpace.map_apply (f : Ω → Ω') (p : PSpace Ω) {S : Set Ω'}
+    (hS : MeasurableSet[(PSpace.map f p).ms] S) :
+    (PSpace.map f p).μ S = p.μ (f ⁻¹' S) :=
+  @Measure.map_apply Ω Ω' p.1.ms (p.1.ms.map f) p.1.μ f (fun ⦃_⦄ a => a) S hS
+
+noncomputable def PSp.map (f : Ω → Ω') : PSp Ω → PSp Ω'
+  | .some p => .some (PSpace.map f p)
+  | _ => ⊤
+
+/-- The defining property of a weighted sum of *reindexed* spaces.
+
+This is the shape that arises when interpreting a probabilistic computation: each branch
+supplies its own randomness, relocated by `f₀`/`f₁` onto the random-choice identifiers that
+branch owns, and the result mixes the two with weights `1 - r` and `r`. -/
+lemma PSpace.wsum₂_map_apply (r : NNReal) (hr : r ≤ 1) (f₀ f₁ : Ω → Ω') (p₀ p₁ : PSpace Ω)
+    {S : Set Ω'}
+    (hS : MeasurableSet[(PSpace.wsum₂ r hr (PSpace.map f₀ p₀) (PSpace.map f₁ p₁)).ms] S) :
+    (PSpace.wsum₂ r hr (PSpace.map f₀ p₀) (PSpace.map f₁ p₁)).μ S
+      = (1 - (r : ℝ≥0∞)) * p₀.μ (f₀ ⁻¹' S) + (r : ℝ≥0∞) * p₁.μ (f₁ ⁻¹' S) := by
+  rw [PSpace.wsum₂_apply r hr _ _ hS]
+  congr 1
+  · rcases eq_or_ne r 1 with rfl | h0
+    · simp
+    · rw [PSpace.map_apply f₀ p₀
+        (PSpace.wsumSpace_le (PMF.mem_support_bernoulli_false (hr := hr) h0) S hS)]
+  · rcases eq_or_ne r 0 with rfl | h1
+    · simp
+    · rw [PSpace.map_apply f₁ p₁
+        (PSpace.wsumSpace_le (PMF.mem_support_bernoulli_true (hr := hr) h1) S hS)]
+
+end WeightedSum
+
 /-
 
 We do not need permissions for Amaryllis.
@@ -1510,6 +1665,7 @@ def PSpace.map (f : Ω → Ω') (ps : PSpace Ω) : PSpace Ω' := ⟨ps.1.map f, 
     aesop
   aesop
 ⟩
+
 
 @[simp]
 def MeasureOnSpace.tensor (m : MeasureOnSpace Ω) (n : MeasureOnSpace Ω') : MeasureOnSpace (Ω × Ω') := {

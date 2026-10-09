@@ -1,6 +1,7 @@
 
 -- import VCVio.Prelude.Core
 import Mathlib.Topology.UnitInterval
+import Mathlib.MeasureTheory.Measure.GiryMonad
 
 import VCVio.OracleComp.Support
 import VCVio.EvalDist.Defs.Support.Failure
@@ -189,31 +190,39 @@ lemma fixOut_eq (n : ℕ) (p : I) :
 
 end BernoulliSpace
 
-noncomputable def interp_psp' {α : Type} (m : PFunctor.FreeM BernoulliPFunctor α) (n : ℕ) (p : PSp Ω) : PSp Ω × RV α :=
+def consFlip (b : Bool) (ω : Ω) : Ω := fun n => if n = 0 then b else ω (n - 1)
+
+@[simp]
+lemma consFlip_zero (b : Bool) (ω : Ω) : consFlip b ω 0 = b := rfl
+
+@[simp]
+lemma consFlip_succ (b : Bool) (ω : Ω) (n : ℕ) : consFlip b ω (n + 1) = ω n := rfl
+
+@[simp]
+lemma shift_consCoin (b : Bool) (ω : Ω) : (fun n => consFlip b ω (n + 1)) = ω := rfl
+
+noncomputable def interp_psp {α : Type} (m : PFunctor.FreeM BernoulliPFunctor α) : PSp Ω × RV α :=
   match m with
-  | PFunctor.FreeM.pure a => (p, fun _ ↦ a)
+  | PFunctor.FreeM.pure a => (1, fun _ ↦ a)
   | PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f =>
-    let p' : PSp Ω := PSp.mul p (fixOut n r) -- defined in terms of p and n
-    let p'' : PSp Ω := sorry -- Bind.bind p' sorry  -- weighted sum, i.e. the Giri Monad bind (?)
-    (
-      p'',
-      fun ω ↦ (interp_psp' (f (ω n)) (n + 1) p').2 ω
-    )
+    let (p₀, rv₀) := interp_psp (f false)
+    let (p₁, rv₁) := interp_psp (f true)
+    let rv' (ω : Ω) : α :=
+      if ω 0
+      then rv₁ (fun n ↦ ω (n + 1))
+      else rv₀ (fun n ↦ ω (n + 1))
+    ( PSp.wsum₂ (unitInterval.toNNReal r)
+        (NNReal.coe_le_coe.mp
+          (show ((unitInterval.toNNReal r : NNReal) : ℝ) ≤ ((1 : NNReal) : ℝ) by
+            simpa using r.2.2))
+        (PSp.map (consFlip false) p₀) (PSp.map (consFlip true) p₁)
+    , rv' )
 
--- ({∅, Ω}, μ) ->(Flip p) ({∅, Ω, E₀, E₁}, μ')
--- E₀ = {ω : Ω | ω 0 = False}
--- E₁ = {ω : Ω | ω 0 = True}
--- μ' E₀ = p, μ' E₁ = 1 - p
 
--- n : ℕ
--- [p₀, p₁, ..., pₙ]
--- Eᵢ = {ω : Ω | ∑ i : Fin n, (ω i.1) * 2 ^ i.1 = i}
--- ∀ ω ω' : Ω, (∀ i : Fin n, ω i.1 = ω' i.1) → ∀ i : Fin (2 ^ n), ω ∈ Eᵢ ↔ ω' ∈ Eᵢ
---
-
-noncomputable def interp_psp {α : Type} (m : PFunctor.FreeM (BernoulliPFunctor) α) : PSp Ω × RV α :=
-  interp_psp' m 0 (.some 1)
-
+-- Example:
+-- combine (xor) Bernoulli samples
+-- flips commute
+-- prove spec for flip
 
 end BernoulliInterpretable
 
