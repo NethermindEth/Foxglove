@@ -1,83 +1,41 @@
-import Iris
-import Iris.Algebra.CMRA
-import Iris.BI.BIBase
-import Mathlib.Algebra.Group.Basic
-import Mathlib.Tactic
+/-
+Copyright (c) 2026 Nethermind. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENCE.
+Authors: Shing Hin Ho, Frantisek Silvasi, Julian Sutherland
+-/
+module
+
+public import Iris.Algebra.CMRA
+public import Iris.BI.BI
+public import Mathlib.Algebra.Group.Pi.Basic
+public import Mathlib.Algebra.Group.Prod
+public import Mathlib.Algebra.Order.Monoid.Unbundled.Basic
+public import Mathlib.Data.Setoid.Basic
+public import Mathlib.Order.UpperLower.CompleteLattice
+
+/-!
+# Ordered unital resource algebras
+
+An *ordered unital resource algebra* (OURA) is a commutative monoid with a preorder and a
+validity predicate `✓`, in which `1` is valid, validity is downward closed, and validity of a
+product cancels on the right.  Such an algebra carries no step-indexing, so it is a discrete
+CMRA (`instCMRA`, via `CMRA.ofDiscreteTotal`) and in fact a `UCMRA` (`instUCMRA`).
+
+The upper sets of an OURA model a separation logic: `UpperSet M` is closed under the usual
+connectives (`and`, `or`, `imp`, `sep`, `wand`, `persistently`, `pure`, `emp`, `sForall`,
+`sExists`), and `entail` orders them.  Quotienting by mutual entailment (`bientail`) yields
+`OURAProp M`, which is a `BI` -- the main result of this file.
+
+## Main definitions
+
+* `OrderedUnitalResourceAlgebra` : the algebra
+* `UpperSetBI.entail` / `UpperSetBI.bientail` : entailment and its symmetrization
+* `UpperSetBI.OURAProp` : upper sets up to mutual entailment, a `BI`
+-/
+
+@[expose] public section
 
 namespace Iris
-
-class Valid (M : Type*) where
-  valid : M → Prop
-
-export Valid (valid)
-
-prefix:50(priority := high) "✓" => Valid.valid
-
-instance {α : Type*} [Valid α] (p : α → Prop) : Valid (Subtype p) where
-  valid := fun x => Valid.valid x.1
-
-instance {α β : Type*} [Valid α] [Valid β] : Valid (α × β) where
-  valid := fun x => Valid.valid x.1 ∧ Valid.valid x.2
-
-/-- The class of **discrete** cameras, which do not care about step-indexing -/
-class DiscreteCMRA (α : Type*) extends CommSemigroup α, Valid α where
-  pcore : α → Option α
-
-  -- is_equiv : Equivalence equiv
-
-  -- mul_equiv {x y z} : equiv y z → equiv (x * y) (x * z)
-  -- pcore_equiv {x y cx} : x = y → pcore x = some cx → ∃ cy, pcore y = some cy ∧ cx = cy
-
-  pcore_left {x cx} : pcore x = some cx → cx * x = x
-  pcore_idem {x cx} : pcore x = some cx → pcore cx = some cx
-  pcore_mono' {x y cx} : pcore x = some cx → ∃ cy, pcore (x * y) = some (cx * cy)
-
-  -- valid_equiv {x y} : equiv x y → valid x → valid y
-  valid_mul {x y} : valid (x * y) → valid x
-
-open Iris in
-instance DiscreteCMRA.instOFE (α : Type*) [inst : DiscreteCMRA α] : OFE α where
-  Dist := fun _ a b ↦ a = b
-  dist_eqv := fun {_} ↦ by
-    refine ⟨?_, ?_, ?_⟩ <;> simp
-  dist_lt := fun h _ ↦ h
-  eq_dist' := by simp
-
-open Iris in
-/-- A discrete CMRA can be converted to a regular CMRA -/
-instance DiscreteCMRA.instCMRA {α : Type*} [DiscreteCMRA α] : CMRA α := {
-  pcore := pcore
-  op := (·*·)
-  ValidN := fun _ x ↦ valid x
-  Valid := valid
-  op_ne := by
-    intros x
-    refine ⟨?_⟩
-    intros n x₁ x₂ h
-    unfold_projs at h ⊢
-    rw [h]
-  pcore_ne := by
-    intros n x y cx h h'
-    use cx
-    rw [h] at h'
-    exact And.intro h' rfl
-  validN_ne := by
-    intros x n y h
-    rw [h]
-    exact id
-  valid_iff_validN := by aesop
-  validN_succ := by simp
-  assoc := by simp [mul_assoc]
-  comm := by simp [mul_comm]
-  pcore_op_left := pcore_left
-  pcore_idem := by
-    intro x cx h
-    have h₁ := @pcore_idem α _ x cx h
-    aesop
-  pcore_op_mono := fun {x cx} h y ↦ pcore_mono' h
-  validN_op_left := valid_mul
-  extend {_ _ y₁ y₂ _ h} := by use y₁, y₂; simp; exact h
-}
 
 /-- An ordered unital resource algebra is a type with a multiplication, a one, a preorder `≤`,
   and a validity predicate `✓`, such that:
@@ -87,57 +45,57 @@ instance DiscreteCMRA.instCMRA {α : Type*} [DiscreteCMRA α] : CMRA α := {
   - validity of multiplication cancels on the right: `✓ (a * b) → ✓ a`
   - multiplication on the right is monotone: `a ≤ b → a * c ≤ b * c` -/
 class OrderedUnitalResourceAlgebra (M : Type*) extends
-    CommMonoid M, Valid M, Preorder M, MulRightMono M where
-  valid_one : ✓ (1 : M)
-  valid_mono {a b : M} : a ≤ b → ✓ b → ✓ a
-  valid_mul {a b : M} : ✓ (a * b) → ✓ a
+    CommMonoid M, Preorder M, MulRightMono M where
+  /-- The validity predicate, written `✓`. -/
+  valid : M → Prop
+  valid_one : valid (1 : M)
+  valid_mono {a b : M} : a ≤ b → valid b → valid a
+  valid_mul {a b : M} : valid (a * b) → valid a
 
-export OrderedUnitalResourceAlgebra (valid_one valid_mono valid_mul)
+export OrderedUnitalResourceAlgebra (valid valid_one valid_mono valid_mul)
 
 attribute [simp] valid_one
 
 namespace OrderedUnitalResourceAlgebra
 
+section
+
 variable {I M : Type*} [OrderedUnitalResourceAlgebra M]
 
 instance : MulRightMono M := ⟨fun _ _ _ h ↦ mul_left_mono h⟩
 
-/-- Lifting the validity predicate to indexed tuples by requiring all elements to be valid -/
-@[simp]
-instance : Valid (I → M) where
-  valid := fun x => ∀ i, ✓ x i
-
-/-- A resource algebra on `M` is lifted pointwise to a resource algebra on `I → M` -/
+/-- A resource algebra on `M` is lifted pointwise to a resource algebra on `I → M`,
+validity being required of every component. -/
 instance {I : Type*} : OrderedUnitalResourceAlgebra (I → M) where
+  valid x := ∀ i, valid (x i)
   valid_one := by intro i; exact valid_one
   valid_mono := by intro _ _ hab hb i; exact valid_mono (hab i) (hb i)
   valid_mul := by intro _ _ hab i; exact valid_mul (hab i)
   elim := by intro _ _ _ h; exact fun i => mul_left_mono (h i)
 
-/-- Define a `DiscreteCMRA` instance given an `OrderedUnitalResourceAlgebra` instance -/
-instance instCMRM : DiscreteCMRA M := {
-  pcore x := some 1
-  pcore_left := by intro x cx h; grind
-  pcore_idem := by simp_all
-  pcore_mono' := by intro x y cx h; use 1; grind
-  valid_mul := by
-    intro x y
-    have := @OrderedUnitalResourceAlgebra.valid_mul M _ x y
-    aesop
-}
+/-- An ordered unital resource algebra does not care about step-indexing, so it carries the
+discrete OFE. -/
+instance instOFE : OFE M := OFE.ofDiscrete M
+
+instance instOFEDiscrete : OFE.Discrete M := ⟨id⟩
+
+/-- An ordered unital resource algebra is a discrete CMRA whose core is the unit. -/
+instance instCMRA : CMRA M :=
+  CMRA.ofDiscreteTotal (fun _ ↦ 1) (· * ·) valid
+    (fun x y z ↦ (mul_assoc x y z).symm) mul_comm one_mul (fun _ ↦ rfl)
+    (fun _ _ _ ↦ ⟨1, (one_mul 1).symm⟩) (fun _ _ ↦ valid_mul)
 
 @[simp]
 abbrev carrier := M
 
-end OrderedUnitalResourceAlgebra
-
-namespace OrderedUnitalResourceAlgebra
+end
 
 @[reducible]
 def subalgebra
   {α : Type*} {p : α → Prop} (i : OrderedUnitalResourceAlgebra α)
   (hu : p i.one) (hc : ∀ x y : α, p x → p y → p (i.mul x y))
   : OrderedUnitalResourceAlgebra {x : α // p x} := {
+  valid x := i.valid x.val
   mul x y := ⟨i.mul x.val y.val, hc x.val y.val x.property y.property⟩
   mul_assoc x y z := by
     have : (x.val * y.val) * z.val = x.val * (y.val * z.val) := by grind
@@ -181,7 +139,7 @@ def indexedProduct
   one_mul x := by simp
   mul_one x := by simp
   mul_comm x y := by funext; simp; grind
-  valid x := ∀ i : I, valid (x i)
+  valid x := ∀ i : I, (f i).valid (x i)
   le x y := ∀ i : I, (f i).le (x i) (y i)
   le_refl x i := by grind
   le_trans x y z h₁ h₂ := by grind
@@ -200,6 +158,7 @@ def product
   {α β : Type*}
   (r₁ : OrderedUnitalResourceAlgebra α) (r₂ : OrderedUnitalResourceAlgebra β)
   : OrderedUnitalResourceAlgebra (α × β) := {
+  valid x := r₁.valid x.1 ∧ r₂.valid x.2
   elim := by
     intro a b c h
     unfold Function.swap
@@ -218,16 +177,16 @@ def product
     intro a b h₁ h₂
     obtain ⟨a₁, a₂⟩ := a
     obtain ⟨b₁, b₂⟩ := b
-    have : ✓ a₁ := @r₁.valid_mono a₁ b₁ h₁.1 h₂.1
-    have : ✓ a₂ := @r₂.valid_mono a₂ b₂ h₁.2 h₂.2
+    have : r₁.valid a₁ := @r₁.valid_mono a₁ b₁ h₁.1 h₂.1
+    have : r₂.valid a₂ := @r₂.valid_mono a₂ b₂ h₁.2 h₂.2
     constructor; aesop; aesop
   valid_mul := by
     intro a b h
     obtain ⟨a₁, a₂⟩ := a
     obtain ⟨b₁, b₂⟩ := b
     simp_all
-    have : ✓ a₁ := @r₁.valid_mul a₁ b₁ h.1
-    have : ✓ a₂ := @r₂.valid_mul a₂ b₂ h.2
+    have : r₁.valid a₁ := @r₁.valid_mul a₁ b₁ h.1
+    have : r₂.valid a₂ := @r₂.valid_mul a₂ b₂ h.2
     constructor; aesop; aesop
 }
 
@@ -441,5 +400,509 @@ instance instUCMRA
 }
 
 end OrderedUnitalResourceAlgebra
+
+namespace UpperSetBI
+
+variable {M : Type} [OrderedUnitalResourceAlgebra M]
+
+def pure (φ : Prop) : UpperSet M := {
+  carrier := {x | φ}
+  upper' := by aesop
+}
+
+def own (b : M) : UpperSet M := {
+  carrier := {a | b ≤ a}
+  upper' := by
+    intro x y h₁ h₂
+    have : b ≤ x := by aesop
+    have : b ≤ y := by grind
+    aesop
+}
+
+def and (P Q : UpperSet M) : UpperSet M := {
+  carrier := {a | a ∈ P ∧ a ∈ Q}
+  upper' := by
+    intro x y h₁ h₂
+    have := P.upper'
+    have := Q.upper'
+    aesop
+}
+
+def or (P Q : UpperSet M) : UpperSet M := {
+  carrier := {a | a ∈ P ∨ a ∈ Q}
+  upper' := by
+    intro x y h₁ h₂
+    have := P.upper'
+    have := Q.upper'
+    aesop
+}
+
+def sep (P Q : UpperSet M) : UpperSet M := {
+  carrier := {a | ∃ (b₁ b₂ : M), (b₁ * b₂) ≤ a ∧ b₁ ∈ P ∧ b₂ ∈ Q}
+  upper' := by
+    intro a b h₁ h₂
+    grind
+}
+
+def entail (P Q : UpperSet M) : Prop :=
+  ∀ m, ✓m → m ∈ P → m ∈ Q
+
+def bientail (P Q : UpperSet M) : Prop :=
+  entail P Q ∧ entail Q P
+
+@[simp, grind .]
+lemma entail_refl {x : UpperSet M} : entail x x := by simp [entail]
+
+@[simp, grind .]
+lemma entail_trans {x y z : UpperSet M} :
+  entail x y → entail y z → entail x z := by grind [entail]
+
+@[simp, grind .]
+lemma bientail_refl {x : UpperSet M} : bientail x x := by simp [bientail]
+
+@[simp, grind .]
+lemma bientail_symm {x y : UpperSet M} :
+  bientail x y → bientail y x := by grind [bientail]
+
+@[simp, grind .]
+lemma bientail_trans {x y z : UpperSet M} :
+  bientail x y → bientail y z → bientail x z := by grind [bientail]
+
+
+def sForall (Ψ : UpperSet M → Prop) : UpperSet M := {
+  carrier := {a | ∀ p, Ψ p → a ∈ p}
+  upper' := by
+    intro a b hle ha p hΨ
+    exact p.upper' hle (ha p hΨ)
+}
+
+def sExists (Ψ : UpperSet M → Prop) : UpperSet M := {
+  carrier := {a | ∃ p, Ψ p ∧ a ∈ p}
+  upper' := by
+    intro a b hle ⟨p, hΨ, hpa⟩
+    exact ⟨p, hΨ, p.upper' hle hpa⟩
+}
+
+def persistently (P : UpperSet M) : UpperSet M := {
+  carrier := {_a | 1 ∈ P}
+  upper' := by intro _ _ _ h; exact h
+}
+
+@[simp]
+def wand (P Q : UpperSet M) : UpperSet M := {
+  carrier := {a | ∀ b, ✓ (a * b) → b ∈ P → (a * b) ∈ Q}
+  upper' := by
+    intro a c hac ha b hvcb hPb
+    have hab : a * b ≤ c * b := mul_left_mono hac
+    have hvab : ✓ (a * b) := valid_mono hab hvcb
+    exact Q.upper' hab (ha b hvab hPb)
+}
+
+@[simp]
+def imp (P Q : UpperSet M) : UpperSet M := {
+  carrier := {a | ∀ b, a ≤ b → ✓ b → b ∈ P → b ∈ Q}
+  upper' := by
+    intro a c hac ha b hcb hvb hPb
+    exact ha b (le_trans hac hcb) hvb hPb
+}
+
+@[simp]
+def emp : UpperSet M := {
+  carrier := {a | 1 ≤ a}
+  upper' := by
+    intro a b hle ha
+    simp at *
+    apply le_trans <;> aesop
+}
+
+/-! ### Basic algebraic helpers -/
+
+lemma valid_mul_l {a b : M} (h : ✓ (a * b)) : ✓ a := valid_mul h
+
+lemma valid_mul_r {a b : M} (h : ✓ (a * b)) : ✓ b := by
+  rw [mul_comm] at h
+  exact valid_mul h
+
+lemma mul_le_mul_right_le {a b : M} (h : a ≤ b) (c : M) : a * c ≤ b * c :=
+  mul_left_mono (a := c) h
+
+lemma mul_le_mul_left_le {a b : M} (h : a ≤ b) (c : M) : c * a ≤ c * b := by
+  rw [mul_comm c a, mul_comm c b]
+  exact mul_left_mono (a := c) h
+
+/-! ### The BI laws, stated on representatives -/
+
+lemma entail_pure_intro {φ : Prop} {P : UpperSet M} (h : φ) : entail P (pure φ) :=
+  fun _ _ _ ↦ h
+
+lemma entail_pure_elim' {φ : Prop} {P : UpperSet M}
+    (h : φ → entail (pure True) P) : entail (pure φ) P :=
+  fun m hm hφ ↦ h hφ m hm trivial
+
+lemma entail_and_elim_l {P Q : UpperSet M} : entail (and P Q) P :=
+  fun _ _ h ↦ h.1
+
+lemma entail_and_elim_r {P Q : UpperSet M} : entail (and P Q) Q :=
+  fun _ _ h ↦ h.2
+
+lemma entail_and_intro {P Q R : UpperSet M} (h₁ : entail P Q) (h₂ : entail P R) :
+    entail P (and Q R) :=
+  fun m hm h ↦ ⟨h₁ m hm h, h₂ m hm h⟩
+
+lemma entail_or_intro_l {P Q : UpperSet M} : entail P (or P Q) :=
+  fun _ _ h ↦ Or.inl h
+
+lemma entail_or_intro_r {P Q : UpperSet M} : entail Q (or P Q) :=
+  fun _ _ h ↦ Or.inr h
+
+lemma entail_or_elim {P Q R : UpperSet M} (h₁ : entail P R) (h₂ : entail Q R) :
+    entail (or P Q) R :=
+  fun m hm h ↦ h.elim (h₁ m hm) (h₂ m hm)
+
+lemma entail_imp_intro {P Q R : UpperSet M} (h : entail (and P Q) R) :
+    entail P (imp Q R) :=
+  fun _ _ hP b hle hv hQ ↦ h b hv ⟨P.upper' hle hP, hQ⟩
+
+lemma entail_imp_elim {P Q R : UpperSet M} (h : entail P (imp Q R)) :
+    entail (and P Q) R :=
+  fun m hm hPQ ↦ h m hm hPQ.1 m (le_refl m) hm hPQ.2
+
+lemma entail_sep_mono {P P' Q Q' : UpperSet M} (h : entail P Q) (h' : entail P' Q') :
+    entail (sep P P') (sep Q Q') := by
+  rintro m hm ⟨b₁, b₂, hle, hb₁, hb₂⟩
+  have hv : ✓ (b₁ * b₂) := valid_mono hle hm
+  exact ⟨b₁, b₂, hle, h b₁ (valid_mul_l hv) hb₁, h' b₂ (valid_mul_r hv) hb₂⟩
+
+lemma entail_emp_sep_l {P : UpperSet M} : entail (sep emp P) P := by
+  rintro m hm ⟨b₁, b₂, hle, hb₁, hb₂⟩
+  have h₁ : b₂ ≤ b₁ * b₂ := by simpa using mul_le_mul_right_le hb₁ b₂
+  exact P.upper' (le_trans h₁ hle) hb₂
+
+lemma entail_emp_sep_r {P : UpperSet M} : entail P (sep emp P) :=
+  fun m _ hP ↦ ⟨1, m, le_of_eq (one_mul m), le_refl 1, hP⟩
+
+lemma entail_sep_symm {P Q : UpperSet M} :
+    entail (sep P Q) (sep Q P) := by
+  rintro m _ ⟨b₁, b₂, hle, hb₁, hb₂⟩
+  exact ⟨b₂, b₁, by rwa [mul_comm], hb₂, hb₁⟩
+
+lemma entail_sep_assoc_l {P Q R : UpperSet M} :
+    entail (sep (sep P Q) R) (sep P (sep Q R)) := by
+  rintro m _ ⟨c₁, c₂, hle, ⟨b₁, b₂, hle', hb₁, hb₂⟩, hc₂⟩
+  refine ⟨b₁, b₂ * c₂, ?_, hb₁, ⟨b₂, c₂, le_refl _, hb₂, hc₂⟩⟩
+  calc b₁ * (b₂ * c₂) = b₁ * b₂ * c₂ := by rw [mul_assoc]
+    _ ≤ c₁ * c₂ := mul_le_mul_right_le hle' c₂
+    _ ≤ m := hle
+
+lemma entail_wand_intro {P Q R : UpperSet M} (h : entail (sep P Q) R) :
+    entail P (wand Q R) :=
+  fun m _ hP b hv hQ ↦ h (m * b) hv ⟨m, b, le_refl _, hP, hQ⟩
+
+lemma entail_wand_elim {P Q R : UpperSet M} (h : entail P (wand Q R)) :
+    entail (sep P Q) R := by
+  rintro m hm ⟨b₁, b₂, hle, hb₁, hb₂⟩
+  have hv : ✓ (b₁ * b₂) := valid_mono hle hm
+  exact R.upper' hle (h b₁ (valid_mul_l hv) hb₁ b₂ hv hb₂)
+
+lemma entail_persistently_mono {P Q : UpperSet M} (h : entail P Q) :
+    entail (persistently P) (persistently Q) :=
+  fun _ _ hP ↦ h 1 valid_one hP
+
+lemma entail_persistently_idem_2 {P : UpperSet M} :
+    entail (persistently P) (persistently (persistently P)) :=
+  fun _ _ hP ↦ hP
+
+lemma entail_persistently_emp_2 : entail (emp : UpperSet M) (persistently emp) :=
+  fun _ _ _ ↦ le_refl 1
+
+lemma entail_persistently_and_2 {P Q : UpperSet M} :
+    entail (and (persistently P) (persistently Q))
+      (persistently (and P Q)) :=
+  fun _ _ h ↦ h
+
+lemma entail_persistently_absorb_l {P Q : UpperSet M} :
+    entail (sep (persistently P) Q) (persistently P) := by
+  rintro m _ ⟨_, _, _, hb₁, _⟩
+  exact hb₁
+
+lemma entail_persistently_and_l {P Q : UpperSet M} :
+    entail (and (persistently P) Q) (sep P Q) :=
+  fun m _ h ↦ ⟨1, m, le_of_eq (one_mul m), h.1, h.2⟩
+
+/-! ### Congruence of the connectives with respect to bi-entailment -/
+
+lemma entail_eq_of_bientail {P P₁ Q Q₁ : UpperSet M}
+    (hP : bientail P P₁) (hQ : bientail Q Q₁) : entail P Q = entail P₁ Q₁ := by
+  refine propext ⟨fun h m hm hm' ↦ ?_, fun h m hm hm' ↦ ?_⟩
+  · exact hQ.1 m hm (h m hm (hP.2 m hm hm'))
+  · exact hQ.2 m hm (h m hm (hP.1 m hm hm'))
+
+lemma bientail_and {P P₁ Q Q₁ : UpperSet M}
+    (hP : bientail P P₁) (hQ : bientail Q Q₁) :
+    bientail (and P Q) (and P₁ Q₁) :=
+  ⟨fun m hm h ↦ ⟨hP.1 m hm h.1, hQ.1 m hm h.2⟩,
+   fun m hm h ↦ ⟨hP.2 m hm h.1, hQ.2 m hm h.2⟩⟩
+
+lemma bientail_or {P P₁ Q Q₁ : UpperSet M}
+    (hP : bientail P P₁) (hQ : bientail Q Q₁) :
+    bientail (or P Q) (or P₁ Q₁) :=
+  ⟨fun m hm h ↦ h.elim (fun h ↦ Or.inl (hP.1 m hm h)) (fun h ↦ Or.inr (hQ.1 m hm h)),
+   fun m hm h ↦ h.elim (fun h ↦ Or.inl (hP.2 m hm h)) (fun h ↦ Or.inr (hQ.2 m hm h))⟩
+
+lemma bientail_imp {P P₁ Q Q₁ : UpperSet M}
+    (hP : bientail P P₁) (hQ : bientail Q Q₁) : bientail (imp P Q) (imp P₁ Q₁) :=
+  ⟨fun _ _ h b hle hv hb ↦ hQ.1 b hv (h b hle hv (hP.2 b hv hb)),
+   fun _ _ h b hle hv hb ↦ hQ.2 b hv (h b hle hv (hP.1 b hv hb))⟩
+
+lemma bientail_sep {P P₁ Q Q₁ : UpperSet M}
+    (hP : bientail P P₁) (hQ : bientail Q Q₁) :
+    bientail (sep P Q) (sep P₁ Q₁) :=
+  ⟨entail_sep_mono hP.1 hQ.1, entail_sep_mono hP.2 hQ.2⟩
+
+lemma bientail_wand {P P₁ Q Q₁ : UpperSet M}
+    (hP : bientail P P₁) (hQ : bientail Q Q₁) : bientail (wand P Q) (wand P₁ Q₁) :=
+  ⟨fun _ _ h b hv hb ↦ hQ.1 _ hv (h b hv (hP.2 b (valid_mul_r hv) hb)),
+   fun _ _ h b hv hb ↦ hQ.2 _ hv (h b hv (hP.1 b (valid_mul_r hv) hb))⟩
+
+lemma bientail_persistently {P Q : UpperSet M} (h : bientail P Q) :
+    bientail (persistently P) (persistently Q) :=
+  ⟨entail_persistently_mono h.1, entail_persistently_mono h.2⟩
+
+instance BientailSetoid : Setoid (UpperSet M) where
+  r := bientail
+  iseqv :=
+  {
+    refl {_} := bientail_refl
+    symm := bientail_symm
+    trans := bientail_trans
+  }
+
+def OURAProp (M : Type) [OrderedUnitalResourceAlgebra M] := Quotient (BientailSetoid (M := M))
+
+namespace OURAProp
+
+def map (f : UpperSet M → UpperSet M)
+         (hf : ∀ {P Q}, bientail P Q → bientail (f P) (f Q)) : OURAProp M → OURAProp M :=
+  Quotient.map f fun _ _ h ↦ hf h
+
+def map₂ (f : UpperSet M → UpperSet M → UpperSet M)
+          (hf : ∀ {P P₁ Q Q₁}, bientail P P₁ → bientail Q Q₁ → bientail (f P Q) (f P₁ Q₁)) :
+    OURAProp M → OURAProp M → OURAProp M :=
+  Quotient.map₂ f fun _ _ h₁ _ _ h₂ ↦ hf h₁ h₂
+
+/-- `n`-equivalence on the quotient is plain equality, so it is a discrete (C)OFE.
+The `OFE` instance comes from `COFE.toOFE`. -/
+instance : Iris.COFE (OURAProp M) := Iris.COFE.ofDiscrete _
+
+instance : Iris.BI.BIBase (OURAProp M) where
+  Entails := Quotient.lift₂ entail fun _ _ _ _ h₁ h₂ ↦ entail_eq_of_bientail h₁ h₂
+  emp := Quotient.mk _ emp
+  pure P := Quotient.mk _ (pure P)
+  and := map₂ and fun h₁ h₂ ↦ bientail_and h₁ h₂
+  or := map₂ or fun h₁ h₂ ↦ bientail_or h₁ h₂
+  imp := map₂ imp fun h₁ h₂ ↦ bientail_imp h₁ h₂
+  sForall P := Quotient.mk _ (sForall fun p ↦ P (Quotient.mk _ p))
+  sExists P := Quotient.mk _ (sExists fun p ↦ P (Quotient.mk _ p))
+  sep := map₂ sep fun h₁ h₂ ↦ bientail_sep h₁ h₂
+  wand := map₂ wand fun h₁ h₂ ↦ bientail_wand h₁ h₂
+  persistently := map persistently fun h ↦ bientail_persistently h
+  later := id
+
+/-- On the quotient, `n`-equivalence is plain equality. -/
+theorem dist_iff_eq {n : ℕ} {x y : OURAProp M} : Iris.OFE.Dist n x y ↔ x = y := Iff.rfl
+
+theorem nonExpansive_of_dist_eq {f : OURAProp M → OURAProp M} :
+    Iris.OFE.NonExpansive f :=
+  ⟨fun _ _ _ h ↦ dist_iff_eq.2 (by rw [dist_iff_eq.1 h])⟩
+
+theorem nonExpansive₂_of_dist_eq {f : OURAProp M → OURAProp M → OURAProp M} :
+    Iris.OFE.NonExpansive₂ f :=
+  ⟨fun _ _ _ h₁ _ _ h₂ ↦ dist_iff_eq.2 (by rw [dist_iff_eq.1 h₁, dist_iff_eq.1 h₂])⟩
+
+/-- Entailment on the quotient is reflexive. -/
+theorem entails_rfl {P : OURAProp M} : Iris.BI.BIBase.Entails P P := by
+  induction P using Quotient.ind
+  exact entail_refl
+
+instance : Iris.BI (OURAProp M) where
+  entails_refl := entails_rfl
+  entails_trans := by
+    intro P Q R
+    induction P using Quotient.ind
+    induction Q using Quotient.ind
+    induction R using Quotient.ind
+    exact entail_trans
+  equiv_iff := by
+    intro P Q
+    induction P using Quotient.ind
+    induction Q using Quotient.ind
+    refine ⟨fun h ↦ ⟨(Quotient.exact h).1, (Quotient.exact h).2⟩, fun h ↦ ?_⟩
+    exact Quotient.sound ⟨h.1, h.2⟩
+  and_ne := nonExpansive₂_of_dist_eq
+  or_ne := nonExpansive₂_of_dist_eq
+  imp_ne := nonExpansive₂_of_dist_eq
+  sForall_ne := by
+    intro n P₁ P₂ h
+    have h' : P₁ = P₂ := Iris.liftRel_eq.mp h
+    rw [h']
+    exact dist_iff_eq.2 rfl
+  sExists_ne := by
+    intro n P₁ P₂ h
+    have h' : P₁ = P₂ := Iris.liftRel_eq.mp h
+    rw [h']
+    exact dist_iff_eq.2 rfl
+  sep_ne := nonExpansive₂_of_dist_eq
+  wand_ne := nonExpansive₂_of_dist_eq
+  persistently_ne := nonExpansive_of_dist_eq
+  later_ne := nonExpansive_of_dist_eq
+  pure_intro := by
+    intro φ P h
+    induction P using Quotient.ind
+    exact entail_pure_intro h
+  pure_elim' := by
+    intro φ P
+    induction P using Quotient.ind
+    exact fun h ↦ entail_pure_elim' h
+  and_elim_l := by
+    intro P Q
+    induction P using Quotient.ind
+    induction Q using Quotient.ind
+    exact entail_and_elim_l
+  and_elim_r := by
+    intro P Q
+    induction P using Quotient.ind
+    induction Q using Quotient.ind
+    exact entail_and_elim_r
+  and_intro := by
+    intro P Q R
+    induction P using Quotient.ind
+    induction Q using Quotient.ind
+    induction R using Quotient.ind
+    exact fun h₁ h₂ ↦ entail_and_intro h₁ h₂
+  or_intro_l := by
+    intro P Q
+    induction P using Quotient.ind
+    induction Q using Quotient.ind
+    exact entail_or_intro_l
+  or_intro_r := by
+    intro P Q
+    induction P using Quotient.ind
+    induction Q using Quotient.ind
+    exact entail_or_intro_r
+  or_elim := by
+    intro P Q R
+    induction P using Quotient.ind
+    induction Q using Quotient.ind
+    induction R using Quotient.ind
+    exact fun h₁ h₂ ↦ entail_or_elim h₁ h₂
+  imp_intro := by
+    intro P Q R
+    induction P using Quotient.ind
+    induction Q using Quotient.ind
+    induction R using Quotient.ind
+    exact fun h ↦ entail_imp_intro h
+  imp_elim := by
+    intro P Q R
+    induction P using Quotient.ind
+    induction Q using Quotient.ind
+    induction R using Quotient.ind
+    exact fun h ↦ entail_imp_elim h
+  sForall_intro := by
+    intro P Ψ
+    induction P using Quotient.ind with
+    | _ P => exact fun h m hm hP p hΨ ↦ h (Quotient.mk _ p) hΨ m hm hP
+  sForall_elim := by
+    intro Ψ p
+    induction p using Quotient.ind with
+    | _ p => exact fun hΨ _ _ hm ↦ hm p hΨ
+  sExists_intro := by
+    intro Ψ p
+    induction p using Quotient.ind with
+    | _ p => exact fun hΨ m _ hp ↦ ⟨p, hΨ, hp⟩
+  sExists_elim := by
+    intro Φ Q
+    induction Q using Quotient.ind with
+    | _ Q =>
+      rintro h m hm ⟨q, hΦ, hq⟩
+      exact h (Quotient.mk _ q) hΦ m hm hq
+  sep_mono := by
+    intro P P' Q Q'
+    induction P using Quotient.ind
+    induction P' using Quotient.ind
+    induction Q using Quotient.ind
+    induction Q' using Quotient.ind
+    exact fun h h' ↦ entail_sep_mono h h'
+  emp_sep := by
+    intro P
+    induction P using Quotient.ind
+    exact ⟨entail_emp_sep_l, entail_emp_sep_r⟩
+  sep_symm := by
+    intro P Q
+    induction P using Quotient.ind
+    induction Q using Quotient.ind
+    exact entail_sep_symm
+  sep_assoc_l := by
+    intro P Q R
+    induction P using Quotient.ind
+    induction Q using Quotient.ind
+    induction R using Quotient.ind
+    exact entail_sep_assoc_l
+  wand_intro := by
+    intro P Q R
+    induction P using Quotient.ind
+    induction Q using Quotient.ind
+    induction R using Quotient.ind
+    exact fun h ↦ entail_wand_intro h
+  wand_elim := by
+    intro P Q R
+    induction P using Quotient.ind
+    induction Q using Quotient.ind
+    induction R using Quotient.ind
+    exact fun h ↦ entail_wand_elim h
+  persistently_mono := by
+    intro P Q
+    induction P using Quotient.ind
+    induction Q using Quotient.ind
+    exact fun h ↦ entail_persistently_mono h
+  persistently_idem_2 := by
+    intro P
+    induction P using Quotient.ind
+    exact entail_persistently_idem_2
+  persistently_emp_2 := entail_persistently_emp_2
+  persistently_and_2 := by
+    intro P Q
+    induction P using Quotient.ind
+    induction Q using Quotient.ind
+    exact entail_persistently_and_2
+  persistently_and_l := by
+    intro P Q
+    induction P using Quotient.ind
+    induction Q using Quotient.ind
+    exact entail_persistently_and_l
+  persistently_absorb_l := by
+    intro P Q
+    induction P using Quotient.ind
+    induction Q using Quotient.ind
+    exact entail_persistently_absorb_l
+  later_mono := id
+  later_intro := entails_rfl
+  later_sForall_2 := by
+    intro Φ m hm h r hΦ
+    exact h (imp (pure (Φ (Quotient.mk _ r))) r)
+      ⟨Quotient.mk _ r, rfl⟩ m (le_refl m) hm hΦ
+  later_sExists_false := by
+    rintro Φ m _ ⟨r, hΦ, hr⟩
+    exact Or.inr ⟨and (pure (Φ (Quotient.mk _ r))) r,
+      ⟨Quotient.mk _ r, rfl⟩, hΦ, hr⟩
+  later_sep := fun {_ _} ↦ ⟨entails_rfl, entails_rfl⟩
+  later_persistently := fun {_} ↦ ⟨entails_rfl, entails_rfl⟩
+  later_false_em := by
+    intro P
+    induction P using Quotient.ind
+    exact fun _ _ hP ↦ Or.inr fun _ _ _ hb ↦ hb.elim
+
+end OURAProp
+
+end UpperSetBI
 
 end Iris
