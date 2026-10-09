@@ -110,7 +110,8 @@ def jointConditioning {A : Type} (μ : PMF A) (K : A → OURAProp PSpΩ) : OURAP
     ∃ κ : TrivialMarkovKernel A m,
       own m ∗
       ⌜m.μ = (μ.toMeasureWithMs ⊤).bind κ⌝ ∗
-      ∀ v : μ.support, sorry
+      ∀ v : μ.support,
+        own (some ⟨⟨m.ms, _⟩, _⟩) -∗ (K v)
   )
 
 notation "𝒞" "⟨" μ "⟩" v ";" K => jointConditioning μ (fun v => iprop(K))
