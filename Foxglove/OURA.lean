@@ -4,6 +4,8 @@ import Iris.BI.BIBase
 import Mathlib.Algebra.Group.Basic
 import Mathlib.Tactic
 
+namespace Iris
+
 class Valid (M : Type*) where
   valid : M → Prop
 
@@ -439,3 +441,5 @@ instance instUCMRA
 }
 
 end OrderedUnitalResourceAlgebra
+
+end Iris

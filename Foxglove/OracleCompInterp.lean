@@ -10,11 +10,11 @@ import ToMathlib.Control.OptionT
 import Batteries.Control.OptionT
 import Init.Data.Rat.Basic
 
-import Amaryllis.MeasureOnSpace
-import Amaryllis.Model
-import Amaryllis.OURA
+import Foxglove.MeasureOnSpace
+import Foxglove.Model
+import Foxglove.OURA
 
-namespace Amaryllis
+namespace Foxglove
 
 namespace BernoulliInterpretable
 
@@ -525,4 +525,4 @@ end Example
 
 end BernoulliInterpretable
 
-end Amaryllis
+end Foxglove

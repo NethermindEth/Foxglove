@@ -1,6 +1,6 @@
-name = "amaryllis"
+name = "foxglove"
 version = "0.1.0"
-defaultTargets = ["Amaryllis"]
+defaultTargets = ["Foxglove"]
 
 [[require]]
 name = "mathlib"
@@ -19,4 +19,4 @@ git = "https://github.com/Verified-zkEVM/VCV-io"
 rev = "v4.34.0"
 
 [[lean_lib]]
-name = "Amaryllis"
+name = "Foxglove"

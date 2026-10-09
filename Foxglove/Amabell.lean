@@ -1,10 +1,12 @@
 import Mathlib.Data.Nat.Basic
 import Mathlib.Data.Finmap
 
-import Amaryllis.MeasureOnSpace
-import Amaryllis.Model
+import Foxglove.MeasureOnSpace
+import Foxglove.Model
 
-namespace Amaryllis
+namespace Foxglove
+
+open Iris
 
 -- instance : FunLike ABprop PSpΩ Prop where
 --   coe := fun P ↦ P.holds
@@ -26,4 +28,4 @@ open Iris
 
 end
 
-end Amaryllis
+end Foxglove

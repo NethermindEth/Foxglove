@@ -3,7 +3,7 @@ import Mathlib.Data.Set.Basic
 import Mathlib.MeasureTheory.Measure.Sum
 import Mathlib.Probability.Distributions.Uniform
 import Mathlib.Probability.ProbabilityMassFunction.Constructions
-import Amaryllis.OURA
+import Foxglove.OURA
 
 /-! ## Independent product of probability measures -/
 
@@ -1160,7 +1160,7 @@ def PSp.mul [Inhabited Ω] (p q : PSp Ω) : PSp Ω :=
 def PSp.unit [Inhabited Ω] : PSp Ω :=
   some PSpace.unit
 
-instance [Inhabited Ω] : Valid (PSp Ω) where
+instance [Inhabited Ω] : Iris.Valid (PSp Ω) where
   valid x := x ≠ (⊤ : PSp Ω)
 
 instance [Inhabited Ω] : One (PSp Ω) where
@@ -1430,9 +1430,9 @@ lemma PSp.one_le [Inhabited Ω] {a : PSp Ω} : (1 : PSp Ω)  ≤ a := by
           rcases this with h' | h' <;> simp [h']
         · simp
 
-instance [Inhabited Ω] : OrderedUnitalResourceAlgebra (PSp Ω) := {
+instance [Inhabited Ω] : Iris.OrderedUnitalResourceAlgebra (PSp Ω) := {
   valid_one := by
-    unfold valid instValidPSpOfInhabited
+    unfold Iris.valid instValidPSpOfInhabited
     simp
     have : (1 : PSp Ω) ≠ (⊤ : PSp Ω) := by
       exact Ne.symm WithTop.top_ne_one

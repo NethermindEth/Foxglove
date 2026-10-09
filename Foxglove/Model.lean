@@ -6,9 +6,11 @@ import Mathlib.Probability.ProbabilityMassFunction.Basic
 import Iris.Algebra.UPred
 import Iris.Instances.UPred
 
-import Amaryllis.MeasureOnSpace
+import Foxglove.MeasureOnSpace
 
-namespace Amaryllis
+namespace Foxglove
+
+open Iris
 
 abbrev RId : Type := ℕ
 
@@ -197,74 +199,74 @@ lemma mul_le_mul_left_le {a b : M} (h : a ≤ b) (c : M) : c * a ≤ c * b := by
 
 /-! ### The BI laws, stated on representatives -/
 
-lemma entail_pure_intro {φ : Prop} {P : UpperSet M} (h : φ) : entail P (Amaryllis.lift φ) :=
+lemma entail_pure_intro {φ : Prop} {P : UpperSet M} (h : φ) : entail P (Foxglove.lift φ) :=
   fun _ _ _ ↦ h
 
 lemma entail_pure_elim' {φ : Prop} {P : UpperSet M}
-    (h : φ → entail (Amaryllis.lift True) P) : entail (Amaryllis.lift φ) P :=
+    (h : φ → entail (Foxglove.lift True) P) : entail (Foxglove.lift φ) P :=
   fun m hm hφ ↦ h hφ m hm trivial
 
-lemma entail_and_elim_l {P Q : UpperSet M} : entail (Amaryllis.and P Q) P :=
+lemma entail_and_elim_l {P Q : UpperSet M} : entail (Foxglove.and P Q) P :=
   fun _ _ h ↦ h.1
 
-lemma entail_and_elim_r {P Q : UpperSet M} : entail (Amaryllis.and P Q) Q :=
+lemma entail_and_elim_r {P Q : UpperSet M} : entail (Foxglove.and P Q) Q :=
   fun _ _ h ↦ h.2
 
 lemma entail_and_intro {P Q R : UpperSet M} (h₁ : entail P Q) (h₂ : entail P R) :
-    entail P (Amaryllis.and Q R) :=
+    entail P (Foxglove.and Q R) :=
   fun m hm h ↦ ⟨h₁ m hm h, h₂ m hm h⟩
 
-lemma entail_or_intro_l {P Q : UpperSet M} : entail P (Amaryllis.or P Q) :=
+lemma entail_or_intro_l {P Q : UpperSet M} : entail P (Foxglove.or P Q) :=
   fun _ _ h ↦ Or.inl h
 
-lemma entail_or_intro_r {P Q : UpperSet M} : entail Q (Amaryllis.or P Q) :=
+lemma entail_or_intro_r {P Q : UpperSet M} : entail Q (Foxglove.or P Q) :=
   fun _ _ h ↦ Or.inr h
 
 lemma entail_or_elim {P Q R : UpperSet M} (h₁ : entail P R) (h₂ : entail Q R) :
-    entail (Amaryllis.or P Q) R :=
+    entail (Foxglove.or P Q) R :=
   fun m hm h ↦ h.elim (h₁ m hm) (h₂ m hm)
 
-lemma entail_imp_intro {P Q R : UpperSet M} (h : entail (Amaryllis.and P Q) R) :
+lemma entail_imp_intro {P Q R : UpperSet M} (h : entail (Foxglove.and P Q) R) :
     entail P (bimp Q R) :=
   fun _ _ hP b hle hv hQ ↦ h b hv ⟨P.upper' hle hP, hQ⟩
 
 lemma entail_imp_elim {P Q R : UpperSet M} (h : entail P (bimp Q R)) :
-    entail (Amaryllis.and P Q) R :=
+    entail (Foxglove.and P Q) R :=
   fun m hm hPQ ↦ h m hm hPQ.1 m (le_refl m) hm hPQ.2
 
 lemma entail_sep_mono {P P' Q Q' : UpperSet M} (h : entail P Q) (h' : entail P' Q') :
-    entail (Amaryllis.sep P P') (Amaryllis.sep Q Q') := by
+    entail (Foxglove.sep P P') (Foxglove.sep Q Q') := by
   rintro m hm ⟨b₁, b₂, hle, hb₁, hb₂⟩
   have hv : ✓ (b₁ * b₂) := valid_mono hle hm
   exact ⟨b₁, b₂, hle, h b₁ (valid_mul_l hv) hb₁, h' b₂ (valid_mul_r hv) hb₂⟩
 
-lemma entail_emp_sep_l {P : UpperSet M} : entail (Amaryllis.sep bident P) P := by
+lemma entail_emp_sep_l {P : UpperSet M} : entail (Foxglove.sep bident P) P := by
   rintro m hm ⟨b₁, b₂, hle, hb₁, hb₂⟩
   have h₁ : b₂ ≤ b₁ * b₂ := by simpa using mul_le_mul_right_le hb₁ b₂
   exact P.upper' (le_trans h₁ hle) hb₂
 
-lemma entail_emp_sep_r {P : UpperSet M} : entail P (Amaryllis.sep bident P) :=
+lemma entail_emp_sep_r {P : UpperSet M} : entail P (Foxglove.sep bident P) :=
   fun m _ hP ↦ ⟨1, m, le_of_eq (one_mul m), le_refl 1, hP⟩
 
 lemma entail_sep_symm {P Q : UpperSet M} :
-    entail (Amaryllis.sep P Q) (Amaryllis.sep Q P) := by
+    entail (Foxglove.sep P Q) (Foxglove.sep Q P) := by
   rintro m _ ⟨b₁, b₂, hle, hb₁, hb₂⟩
   exact ⟨b₂, b₁, by rwa [mul_comm], hb₂, hb₁⟩
 
 lemma entail_sep_assoc_l {P Q R : UpperSet M} :
-    entail (Amaryllis.sep (Amaryllis.sep P Q) R) (Amaryllis.sep P (Amaryllis.sep Q R)) := by
+    entail (Foxglove.sep (Foxglove.sep P Q) R) (Foxglove.sep P (Foxglove.sep Q R)) := by
   rintro m _ ⟨c₁, c₂, hle, ⟨b₁, b₂, hle', hb₁, hb₂⟩, hc₂⟩
   refine ⟨b₁, b₂ * c₂, ?_, hb₁, ⟨b₂, c₂, le_refl _, hb₂, hc₂⟩⟩
   calc b₁ * (b₂ * c₂) = b₁ * b₂ * c₂ := by rw [mul_assoc]
     _ ≤ c₁ * c₂ := mul_le_mul_right_le hle' c₂
     _ ≤ m := hle
 
-lemma entail_wand_intro {P Q R : UpperSet M} (h : entail (Amaryllis.sep P Q) R) :
+lemma entail_wand_intro {P Q R : UpperSet M} (h : entail (Foxglove.sep P Q) R) :
     entail P (wand Q R) :=
   fun m _ hP b hv hQ ↦ h (m * b) hv ⟨m, b, le_refl _, hP, hQ⟩
 
 lemma entail_wand_elim {P Q R : UpperSet M} (h : entail P (wand Q R)) :
-    entail (Amaryllis.sep P Q) R := by
+    entail (Foxglove.sep P Q) R := by
   rintro m hm ⟨b₁, b₂, hle, hb₁, hb₂⟩
   have hv : ✓ (b₁ * b₂) := valid_mono hle hm
   exact R.upper' hle (h b₁ (valid_mul_l hv) hb₁ b₂ hv hb₂)
@@ -281,17 +283,17 @@ lemma entail_persistently_emp_2 : entail (bident : UpperSet M) (bpersistently bi
   fun _ _ _ ↦ le_refl 1
 
 lemma entail_persistently_and_2 {P Q : UpperSet M} :
-    entail (Amaryllis.and (bpersistently P) (bpersistently Q))
-      (bpersistently (Amaryllis.and P Q)) :=
+    entail (Foxglove.and (bpersistently P) (bpersistently Q))
+      (bpersistently (Foxglove.and P Q)) :=
   fun _ _ h ↦ h
 
 lemma entail_persistently_absorb_l {P Q : UpperSet M} :
-    entail (Amaryllis.sep (bpersistently P) Q) (bpersistently P) := by
+    entail (Foxglove.sep (bpersistently P) Q) (bpersistently P) := by
   rintro m _ ⟨_, _, _, hb₁, _⟩
   exact hb₁
 
 lemma entail_persistently_and_l {P Q : UpperSet M} :
-    entail (Amaryllis.and (bpersistently P) Q) (Amaryllis.sep P Q) :=
+    entail (Foxglove.and (bpersistently P) Q) (Foxglove.sep P Q) :=
   fun m _ h ↦ ⟨1, m, le_of_eq (one_mul m), h.1, h.2⟩
 
 /-! ### Congruence of the connectives with respect to bi-entailment -/
@@ -304,13 +306,13 @@ lemma entail_eq_of_bientail {P P₁ Q Q₁ : UpperSet M}
 
 lemma bientail_and {P P₁ Q Q₁ : UpperSet M}
     (hP : bientail P P₁) (hQ : bientail Q Q₁) :
-    bientail (Amaryllis.and P Q) (Amaryllis.and P₁ Q₁) :=
+    bientail (Foxglove.and P Q) (Foxglove.and P₁ Q₁) :=
   ⟨fun m hm h ↦ ⟨hP.1 m hm h.1, hQ.1 m hm h.2⟩,
    fun m hm h ↦ ⟨hP.2 m hm h.1, hQ.2 m hm h.2⟩⟩
 
 lemma bientail_or {P P₁ Q Q₁ : UpperSet M}
     (hP : bientail P P₁) (hQ : bientail Q Q₁) :
-    bientail (Amaryllis.or P Q) (Amaryllis.or P₁ Q₁) :=
+    bientail (Foxglove.or P Q) (Foxglove.or P₁ Q₁) :=
   ⟨fun m hm h ↦ h.elim (fun h ↦ Or.inl (hP.1 m hm h)) (fun h ↦ Or.inr (hQ.1 m hm h)),
    fun m hm h ↦ h.elim (fun h ↦ Or.inl (hP.2 m hm h)) (fun h ↦ Or.inr (hQ.2 m hm h))⟩
 
@@ -321,7 +323,7 @@ lemma bientail_bimp {P P₁ Q Q₁ : UpperSet M}
 
 lemma bientail_sep {P P₁ Q Q₁ : UpperSet M}
     (hP : bientail P P₁) (hQ : bientail Q Q₁) :
-    bientail (Amaryllis.sep P Q) (Amaryllis.sep P₁ Q₁) :=
+    bientail (Foxglove.sep P Q) (Foxglove.sep P₁ Q₁) :=
   ⟨entail_sep_mono hP.1 hQ.1, entail_sep_mono hP.2 hQ.2⟩
 
 lemma bientail_wand {P P₁ Q Q₁ : UpperSet M}
@@ -379,15 +381,15 @@ instance : Iris.COFE (UpToBientail M) :=
   }
 
 instance : Iris.BI.BIBase (UpToBientail M) where
-  Entails := Quotient.lift₂ Amaryllis.entail fun _ _ _ _ h₁ h₂ ↦ entail_eq_of_bientail h₁ h₂
+  Entails := Quotient.lift₂ Foxglove.entail fun _ _ _ _ h₁ h₂ ↦ entail_eq_of_bientail h₁ h₂
   emp := Quotient.mk _ bident
-  pure P := Quotient.mk _ (Amaryllis.lift P)
-  and := lift₂ Amaryllis.and fun h₁ h₂ ↦ bientail_and h₁ h₂
-  or := lift₂ Amaryllis.or fun h₁ h₂ ↦ bientail_or h₁ h₂
+  pure P := Quotient.mk _ (Foxglove.lift P)
+  and := lift₂ Foxglove.and fun h₁ h₂ ↦ bientail_and h₁ h₂
+  or := lift₂ Foxglove.or fun h₁ h₂ ↦ bientail_or h₁ h₂
   imp := lift₂ bimp fun h₁ h₂ ↦ bientail_bimp h₁ h₂
   sForall P := Quotient.mk _ (sForallA fun p ↦ P (Quotient.mk _ p))
   sExists P := Quotient.mk _ (sExistsA fun p ↦ P (Quotient.mk _ p))
-  sep := lift₂ Amaryllis.sep fun h₁ h₂ ↦ bientail_sep h₁ h₂
+  sep := lift₂ Foxglove.sep fun h₁ h₂ ↦ bientail_sep h₁ h₂
   wand := lift₂ wand fun h₁ h₂ ↦ bientail_wand h₁ h₂
   persistently := lift bpersistently fun h ↦ bientail_bpersistently h
   later := id
@@ -572,11 +574,11 @@ instance : Iris.BI (UpToBientail M) where
   later_intro := entails_rfl
   later_sForall_2 := by
     intro Φ m hm h r hΦ
-    exact h (bimp (Amaryllis.lift (Φ (Quotient.mk _ r))) r)
+    exact h (bimp (Foxglove.lift (Φ (Quotient.mk _ r))) r)
       ⟨Quotient.mk _ r, rfl⟩ m (le_refl m) hm hΦ
   later_sExists_false := by
     rintro Φ m _ ⟨r, hΦ, hr⟩
-    exact Or.inr ⟨Amaryllis.and (Amaryllis.lift (Φ (Quotient.mk _ r))) r,
+    exact Or.inr ⟨Foxglove.and (Foxglove.lift (Φ (Quotient.mk _ r))) r,
       ⟨Quotient.mk _ r, rfl⟩, hΦ, hr⟩
   later_sep := fun {_ _} ↦ ⟨entails_rfl, entails_rfl⟩
   later_persistently := fun {_} ↦ ⟨entails_rfl, entails_rfl⟩
@@ -587,6 +589,7 @@ instance : Iris.BI (UpToBientail M) where
 
 end UpToBientail
 
+
 end
 
-end Amaryllis
+end Foxglove
