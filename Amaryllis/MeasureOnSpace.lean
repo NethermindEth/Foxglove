@@ -1,6 +1,7 @@
 import Mathlib.Probability.Independence.Conditional
 import Mathlib.Data.Set.Basic
 import Mathlib.MeasureTheory.Measure.Sum
+import Mathlib.Probability.Distributions.Uniform
 import Mathlib.Probability.ProbabilityMassFunction.Constructions
 import Amaryllis.OURA
 
@@ -638,6 +639,44 @@ def PSpace.unit [Inhabited Ω] : PSpace Ω := ⟨{
 
 instance [Inhabited Ω] : One (PSpace Ω) where
   one := PSpace.unit
+
+section UnitSpace
+
+variable [Inhabited Ω]
+
+/-! These are deliberately not `@[simp]`: making them global simp lemmas perturbs the
+`PSp.one_le` proof below.  Use `attribute [local simp]` where they are wanted. -/
+
+lemma PSpace.one_ms : (1 : PSpace Ω).ms = (⊥ : MeasurableSpace Ω) := rfl
+
+lemma PSpace.one_measure_univ : (1 : PSpace Ω).μ Set.univ = 1 :=
+  (1 : PSpace Ω).2.measure_univ
+
+lemma PSpace.one_measure_empty : (1 : PSpace Ω).μ (∅ : Set Ω) = 0 := measure_empty
+
+end UnitSpace
+
+/-- A space whose every subset is measurable carries the discrete σ-algebra. -/
+lemma PSpace.ms_eq_top_of_all {p : PSpace Ω} (h : ∀ S : Set Ω, MeasurableSet[p.ms] S) :
+    p.ms = (⊤ : MeasurableSpace Ω) :=
+  le_antisymm le_top (fun S _ => h S)
+
+/-- Two *discrete* spaces on a countable carrier are equal as soon as they agree on
+singletons.  This is the practical way to show a construction computes a given
+distribution: check the σ-algebra is discrete, then check point masses. -/
+lemma PSpace.eq_of_singletons [Countable Ω] {p q : PSpace Ω}
+    (hp : p.ms = (⊤ : MeasurableSpace Ω)) (hq : q.ms = (⊤ : MeasurableSpace Ω))
+    (h : ∀ a, p.μ {a} = q.μ {a}) : p = q := by
+  obtain ⟨⟨mp, μp⟩, hpp⟩ := p
+  obtain ⟨⟨mq, μq⟩, hpq⟩ := q
+  simp only [PSpace.ms] at hp hq
+  subst hp; subst hq
+  let _ : MeasurableSpace Ω := ⊤
+  have : MeasurableSingletonClass Ω := ⟨fun _ => trivial⟩
+  have hμ : μp = μq := (MeasureTheory.Measure.ext_iff_singleton ..).mpr (fun a => h a)
+  refine PSpace.ext_ms rfl (fun E _ => ?_)
+  show μp E = μq E
+  rw [hμ]
 
 lemma empty_sigma_algebra_is_identity [Inhabited Ω] (m : MeasureOnSpace Ω)
   : m.ms = MeasurableSpace.generateFrom (unit.1.ms.MeasurableSet' ∪ m.ms.MeasurableSet') := by
@@ -1446,6 +1485,125 @@ instance [Inhabited Ω] : OrderedUnitalResourceAlgebra (PSp Ω) := {
   valid_mul := by apply PSp.mul_defined_imp_defined
 }
 
+section Examples
+
+open unitInterval
+
+open MeasureTheory in
+open scoped ENNReal in
+noncomputable def PSpace.uniform (n : ℕ) : PSpace (Fin (n + 1)) :=
+  ⟨⟨⊤, (PMF.uniformOfFintype (Fin (n + 1))).toMeasure⟩, inferInstance⟩
+
+noncomputable def PSp.uniform (n : ℕ) : PSp (Fin (n + 1)) := .some (PSpace.uniform n)
+
+@[simp] lemma PSpace.uniform_ms (n : ℕ) :
+    (PSpace.uniform n).ms = (⊤ : MeasurableSpace (Fin (n + 1))) := rfl
+
+open scoped ENNReal in
+/-- Every point has mass `1 / (n + 1)`. -/
+lemma PSpace.uniform_apply_singleton (n : ℕ) (i : Fin (n + 1)) :
+    (PSpace.uniform n).μ {i} = (n + 1 : ℝ≥0∞)⁻¹ := by
+  show (PMF.uniformOfFintype (Fin (n + 1))).toMeasure {i} = _
+  rw [PMF.toMeasure_apply_singleton _ _ (by trivial), PMF.uniformOfFintype_apply]
+  simp
+
+open scoped ENNReal in
+/-- More generally, an event has mass proportional to its cardinality. -/
+lemma PSpace.uniform_apply (n : ℕ) (s : Set (Fin (n + 1))) [Fintype s] :
+    (PSpace.uniform n).μ s = (Fintype.card s : ℝ≥0∞) / (n + 1) := by
+  show (PMF.uniformOfFintype (Fin (n + 1))).toMeasure s = _
+  rw [PMF.toMeasure_uniformOfFintype_apply _ (by trivial)]
+  simp
+
+open MeasureTheory in
+open scoped ENNReal in
+/-- A discrete space on `Fin (n + 1)` giving every point mass `1 / (n + 1)` *is* the
+uniform space.  This is the shape a proof that some program is uniform will take. -/
+lemma PSpace.eq_uniform {n : ℕ} {p : PSpace (Fin (n + 1))}
+    (hms : p.ms = (⊤ : MeasurableSpace (Fin (n + 1))))
+    (h : ∀ i, p.μ {i} = (n + 1 : ℝ≥0∞)⁻¹) : p = PSpace.uniform n := by
+  obtain ⟨⟨m, μ⟩, hp⟩ := p
+  simp only [PSpace.ms] at hms
+  subst hms
+  have hμ : μ = (PSpace.uniform n).μ :=
+    (MeasureTheory.Measure.ext_iff_singleton ..).mpr (fun i => by
+      show μ {i} = (PSpace.uniform n).μ {i}
+      rw [PSpace.uniform_apply_singleton]
+      exact h i)
+  refine PSpace.ext_ms rfl (fun E _ => ?_)
+  show μ E = (PSpace.uniform n).μ E
+  rw [hμ]
+  rfl
+
+noncomputable def PSpace.bernoulli (p : I) : PSpace Bool :=
+  ⟨⟨⊤, (PMF.bernoulli ⟨p.1, (Set.mem_Icc.mp p.2).1⟩ (Set.mem_Icc.mp p.2).2).toMeasure⟩, inferInstance⟩
+
+open unitInterval in
+noncomputable def PSp.bernoulli (p : I) : PSp Bool := .some (PSpace.bernoulli p)
+
+@[simp] lemma PSpace.bernoulli_ms (p : I) :
+    (PSpace.bernoulli p).ms = (⊤ : MeasurableSpace Bool) := rfl
+
+open scoped ENNReal in
+open unitInterval in
+/-- `true` has mass `p`. -/
+lemma PSpace.bernoulli_apply_singleton_true {p : I} :
+    (PSpace.bernoulli p).μ {true} = .some ⟨p.1, (Set.mem_Icc.mp p.2).1⟩ := by
+  rw [PSpace.bernoulli, PMF.toMeasure_apply_singleton _ _ (by trivial)]
+  exact PMF.bernoulli_apply _ true
+
+open scoped ENNReal in
+open unitInterval in
+/-- `false` has mass `1 - p`. -/
+lemma PSpace.bernoulli_apply_singleton_false {p : I} :
+    (PSpace.bernoulli p).μ {false} = .some ⟨1 - p.1, by linarith [(Set.mem_Icc.mp p.2).2]⟩ := by
+  rw [PSpace.bernoulli, PMF.toMeasure_apply_singleton _ _ (by trivial)]
+  exact (PMF.bernoulli_apply _ false).trans
+    (congrArg _ (NNReal.coe_injective (NNReal.coe_sub (Set.mem_Icc.mp p.2).2)))
+
+open scoped ENNReal in
+open unitInterval in
+/-- `PSpace.bernoulli_apply_singleton_true`, with the mass as an `ℝ≥0∞` via
+`unitInterval.toNNReal` -- the form weighted sums produce. -/
+lemma PSpace.bernoulli_μ_true {p : I} :
+    (PSpace.bernoulli p).μ {true} = (unitInterval.toNNReal p : ℝ≥0∞) :=
+  PSpace.bernoulli_apply_singleton_true
+
+open scoped ENNReal in
+open unitInterval in
+/-- `PSpace.bernoulli_apply_singleton_false`, likewise.  The subtraction is truncated on
+both sides, and the two agree because `p ≤ 1`. -/
+lemma PSpace.bernoulli_μ_false {p : I} :
+    (PSpace.bernoulli p).μ {false} = 1 - (unitInterval.toNNReal p : ℝ≥0∞) := by
+  have hle : unitInterval.toNNReal p ≤ 1 :=
+    NNReal.coe_le_coe.mp (by simpa using (Set.mem_Icc.mp p.2).2)
+  rw [PSpace.bernoulli_apply_singleton_false, ← ENNReal.coe_one, ← ENNReal.coe_sub]
+  congr 1
+  exact NNReal.coe_injective (NNReal.coe_sub hle).symm
+
+open scoped ENNReal in
+/-- More generally, an event collects `p` if it contains `true` and `1 - p` if it contains
+`false`.
+
+Unlike `PSpace.uniform_apply`, this is *not* proportional to the cardinality of the event:
+the two points carry different mass unless `p = 1/2`. -/
+lemma PSpace.bernoulli_apply (p : I) (s : Set Bool) [DecidablePred (· ∈ s)] :
+    (PSpace.bernoulli p).μ s
+      = (if true ∈ s then (.some ⟨p.1, (Set.mem_Icc.mp p.2).1⟩ : ℝ≥0∞) else 0)
+        + (if false ∈ s then (.some ⟨1 - p.1, by linarith [(Set.mem_Icc.mp p.2).2]⟩ : ℝ≥0∞)
+            else 0) := by
+  have htrue : (PMF.bernoulli ⟨p.1, (Set.mem_Icc.mp p.2).1⟩ (Set.mem_Icc.mp p.2).2) true
+      = (.some ⟨p.1, (Set.mem_Icc.mp p.2).1⟩ : ℝ≥0∞) := PMF.bernoulli_apply _ true
+  have hfalse : (PMF.bernoulli ⟨p.1, (Set.mem_Icc.mp p.2).1⟩ (Set.mem_Icc.mp p.2).2) false
+      = (.some ⟨1 - p.1, by linarith [(Set.mem_Icc.mp p.2).2]⟩ : ℝ≥0∞) :=
+    (PMF.bernoulli_apply _ false).trans
+      (congrArg _ (NNReal.coe_injective (NNReal.coe_sub (Set.mem_Icc.mp p.2).2)))
+  rw [PSpace.bernoulli, PMF.toMeasure_apply _ (by trivial), tsum_bool,
+    Set.indicator_apply, Set.indicator_apply, htrue, hfalse, add_comm]
+  rfl
+
+end Examples
+
 end PSp
 
 section WeightedSum
@@ -1610,7 +1768,7 @@ lemma PSpace.measurableSet_map {f : Ω → Ω'} {p : PSpace Ω} {S : Set Ω'} :
 lemma PSpace.map_ms_eq_top {p : PSpace Ω} {f : Ω → Ω'}
     (h : ∀ S : Set Ω', MeasurableSet[p.ms] (f ⁻¹' S)) :
     (PSpace.map f p).ms = (⊤ : MeasurableSpace Ω') :=
-  le_antisymm le_top (fun S _ => h S)
+  PSpace.ms_eq_top_of_all (fun S => h S)
 
 /-- An event measurable in both branches is measurable in their weighted sum. -/
 lemma PSpace.measurableSet_wsum₂ {r : NNReal} {hr : r ≤ 1} {p₀ p₁ : PSpace Ω} {E : Set Ω}
