@@ -87,10 +87,30 @@ def jointConditioning {A : Type} (μ : PMF A) (K : A → OURAProp PSpΩ) : OURAP
     ∃ κ : TrivialMarkovKernel A m,
       own m ∗
       ⌜m.μ = (μ.toMeasureWithMs ⊤).bind κ⌝ ∗
-      ∀ v : μ.support, own (κ v) -∗ (K v)
+      ∀ v : μ.support, own (κ v) -∗ K v
   )
 
 notation "𝒞" "⟨" μ "⟩" v ";" K => jointConditioning μ (fun v => iprop(K))
+
+def almostMeasurable {A Ω : Type} (E : Ω → A) (P : PSp Ω) : Prop :=
+  match P with
+  | none => False
+  | some p => @AEMeasurable Ω A ⊤ _ E p.1.μ
+
+def hasDistribution {A : Type} (E : Ω → A) (μ : PMF A)
+  : OURAProp PSpΩ :=
+  iprop(
+    ∃ P : PSpace Ω,
+      own P ∗
+      ⌜
+        have Eμ := @P.μ.map Ω A P.ms ⊤ E
+        almostMeasurable E P ∧ Eμ = μ.toMeasureWithMs ⊤
+      ⌝
+  )
+
+notation:100 E:100 "⟨" i:100 "⟩" " ~ " p:100 => hasDistribution E i p
+
+
 
 end
 
