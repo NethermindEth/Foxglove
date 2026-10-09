@@ -1599,6 +1599,26 @@ lemma PSpace.wsum₂_map_apply (r : NNReal) (hr : r ≤ 1) (f₀ f₁ : Ω → �
     · rw [PSpace.map_apply f₁ p₁
         (PSpace.wsumSpace_le (PMF.mem_support_bernoulli_true (hr := hr) h1) S hS)]
 
+/-! ### Measurability helpers for pushforwards and weighted sums -/
+
+@[simp]
+lemma PSpace.measurableSet_map {f : Ω → Ω'} {p : PSpace Ω} {S : Set Ω'} :
+    MeasurableSet[(PSpace.map f p).ms] S ↔ MeasurableSet[p.ms] (f ⁻¹' S) := Iff.rfl
+
+/-- If every subset of the target has a `p`-measurable preimage, the pushforward's
+σ-algebra is the discrete one. -/
+lemma PSpace.map_ms_eq_top {p : PSpace Ω} {f : Ω → Ω'}
+    (h : ∀ S : Set Ω', MeasurableSet[p.ms] (f ⁻¹' S)) :
+    (PSpace.map f p).ms = (⊤ : MeasurableSpace Ω') :=
+  le_antisymm le_top (fun S _ => h S)
+
+/-- An event measurable in both branches is measurable in their weighted sum. -/
+lemma PSpace.measurableSet_wsum₂ {r : NNReal} {hr : r ≤ 1} {p₀ p₁ : PSpace Ω} {E : Set Ω}
+    (h₀ : MeasurableSet[p₀.ms] E) (h₁ : MeasurableSet[p₁.ms] E) :
+    MeasurableSet[(PSpace.wsum₂ r hr p₀ p₁).ms] E :=
+  MeasurableSpace.measurableSet_iInf.mpr (fun v =>
+    MeasurableSpace.measurableSet_iInf.mpr (fun _ => by cases v <;> simpa))
+
 end WeightedSum
 
 /-
