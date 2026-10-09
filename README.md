@@ -4,11 +4,11 @@
 
 # Foxglove
 
-A Lean 4 formalisation of a separation logic for probabilistic programs using Iris-lean. 
-Intend to aid in formally verifying cryptographic primitives formalised as part of the [ArkLib](https://github.com/Verified-zkEVM/ArkLib) effort. 
+A Lean 4 formalisation of a separation logic for probabilistic programs using Iris-lean.
+Intend to aid in formally verifying cryptographic primitives formalised as part of the [ArkLib](https://github.com/Verified-zkEVM/ArkLib) effort.
 
 The Foxglove logic is based primarily on **Bluebell**, with some ideas borrowed from
-**Amaryllis** in order to extend it to functional Hoare triples.
+**Amaryllis** in order to extend it to functional specifications.
 
 ## Layout
 
