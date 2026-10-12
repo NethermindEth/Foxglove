@@ -81,7 +81,7 @@ instance {A : Type} {p : PSpace Ω} : FunLike (TrivialMarkovKernel A p) A (PSpac
 def _root_.PMF.toMeasureWithMs {A : Type} (μ : PMF A) (ms : MeasurableSpace A) : @MeasureTheory.Measure A ms :=
   @μ.toMeasure A ms
 
-def own {M} [OrderedUnitalResourceAlgebra M] (b : M) : OURAProp M := Quotient.mk _ (UpperSetBI.own b)
+def own {M} [OrderedUnitalResourceAlgebra M] (b : M) : OURAProp M := UpperSetBI.own b
 
 def jointConditioning {A : Type} (μ : PMF A) (K : A → FProp) : FProp :=
   iprop(
@@ -111,6 +111,9 @@ def hasDistribution {A : Type} (E : Ω → A) (μ : PMF A) : FProp :=
 
 notation:100 E:100 "⟨" i:100 "⟩" " ~ " p:100 => hasDistribution E i p
 
+def liftPred (a : Ω → Prop) : FProp := sorry
+  -- set of probability spaces, where the prob of prop = true ≃ 1
+
 -- def wp {Var Val : Type*}
 --   [DecidableEq Var] [Inhabited Val] [Finite Var] [Countable Val]
 --   (t : IndexedPSpPm I Var Val → IndexedPSpPm I Var Val)
@@ -131,7 +134,198 @@ end
 
 section
 
--- lemma abc {P Q : }: 
+open Iris BI UpperSetBI OURAProp
+
+noncomputable def ftrue : FProp := fmk UpperSetBI.true
+
+noncomputable def ffalse : FProp := fmk UpperSetBI.false
+
+variable {P Q R : FProp}
+
+attribute [grind .] and_intro entails_rfl pure_intro
+                    Iris.BI.BIBase.pure and_elim_l and_elim_r Iris.BI.BIBase.BiEntails.mk
+
+attribute [grind cases] Iris.BI.BIBase.BiEntails
+
+attribute [grind →] entails_trans
+
+@[simp, grind .]
+lemma entails_ftrue : P ⊢ ftrue := pure_intro True.intro
+
+@[simp, grind .]
+theorem and_ident : P ∧ ftrue ⊣⊢ P := by grind
+
+@[simp, grind .]
+theorem and_comm : P ∧ Q ⊣⊢ Q ∧ P := by grind
+
+@[simp, grind .]
+theorem and_entails_of_entails (h : P ⊢ R) : P ∧ Q ⊢ R := by
+  have : P ∧ Q ⊢ P := by grind
+  grind
+
+theorem and_assoc : (P ∧ Q) ∧ R ⊣⊢ P ∧ (Q ∧ R) := by
+  constructor
+  · grind
+  · sorry
+
+-- theorem or_ident {P : bProp I Var Val}
+--   : P ∨ BFalse ⊣⊢ P := by
+--   constructor
+--   · intro m _ hm
+--     rcases hm with hP | hF
+--     · exact hP
+--     · exact hF.elim
+--   · intro m _ hm
+--     exact Or.inl hm
+
+-- theorem or_comm {P Q : bProp I Var Val}
+--   : P ∨ Q ⊣⊢ Q ∨ P := by
+--   constructor
+--   · intro m _ hm
+--     exact hm.symm
+--   · intro m _ hm
+--     exact hm.symm
+
+-- theorem or_assoc {P Q R : bProp I Var Val}
+--   : (P ∨ Q) ∨ R ⊣⊢ P ∨ (Q ∨ R) := by
+--   constructor
+--   · intro m _ hm
+--     rcases hm with (hP | hQ) | hR
+--     · exact Or.inl hP
+--     · exact Or.inr (Or.inl hQ)
+--     · exact Or.inr (Or.inr hR)
+--   · intro m _ hm
+--     rcases hm with hP | hQ | hR
+--     · exact Or.inl (Or.inl hP)
+--     · exact Or.inl (Or.inr hQ)
+--     · exact Or.inr hR
+
+-- theorem sep_ident {P : bProp I Var Val}
+--   : P ∗ True ⊣⊢ P := by
+--   refine ⟨?_, ?_⟩
+--   · iintro ⟨h, _⟩
+--     iexact h
+--   · iintro h
+--     isplitl [h]
+--     · iexact h
+--     · exact fun m a a_1 => a_1
+
+-- theorem sep_comm {P Q : bProp I Var Val}
+--   : P ∗ Q ⊣⊢ Q ∗ P := by
+--   constructor
+--   · intro m hv hm
+--     obtain ⟨b₁, ⟨b₂, h⟩⟩ := hm
+--     use b₂, b₁
+--     have : b₁ * b₂ = b₂ * b₁ := CommMonoid.mul_comm b₁ b₂
+--     aesop
+--   · intro m hv hm
+--     obtain ⟨b₁, ⟨b₂, h⟩⟩ := hm
+--     use b₂, b₁
+--     have : b₁ * b₂ = b₂ * b₁ := CommMonoid.mul_comm b₁ b₂
+--     aesop
+
+-- theorem sep_assoc {P Q R : bProp I Var Val}
+--   : (P ∗ Q) ∗ R ⊣⊢ P ∗ (Q ∗ R) := by
+--   constructor
+--   · intro m _ hm
+--     obtain ⟨b₁, b₂, hle, ⟨c₁, c₂, hle', hPc₁, hQc₂⟩, hRb₂⟩ := hm
+--     refine ⟨c₁, c₂ * b₂, ?_, hPc₁, c₂, b₂, le_refl _, hQc₂, hRb₂⟩
+--     calc c₁ * (c₂ * b₂)
+--         = (c₁ * c₂) * b₂ := (mul_assoc c₁ c₂ b₂).symm
+--       _ ≤ b₁ * b₂ := mul_left_mono hle'
+--       _ ≤ m := hle
+--   · intro m _ hm
+--     obtain ⟨b₁, b₂, hle, hPb₁, ⟨c₁, c₂, hle', hQc₁, hRc₂⟩⟩ := hm
+--     refine ⟨b₁ * c₁, c₂, ?_, ⟨b₁, c₁, le_refl _, hPb₁, hQc₁⟩, hRc₂⟩
+--     calc (b₁ * c₁) * c₂
+--         = b₁ * (c₁ * c₂) := mul_assoc b₁ c₁ c₂
+--       _ ≤ b₁ * b₂ := by
+--           rw [mul_comm b₁ (c₁ * c₂), mul_comm b₁ b₂]
+--           exact mul_left_mono hle'
+--       _ ≤ m := hle
+
+-- variable [Finite Var] [Countable Val]
+
+-- example {P : bProp I Var Val} : ⊢ P -∗ BTrue := by
+--   exact Iris.BI.entails_wand fun m a a_1 => trivial
+
+-- omit [Finite Var] [Countable Val]
+-- lemma emp_implies_own_unit : emp ⊢ own (1 : IndexedPSpPm I Var Val) := by
+--   intro m hv hemp
+--   have : m ∈ {a | 1 ≤ a} := by
+--     have : 1 ≤ m := IndexedPSpPm.one_le I Val Var
+--     aesop
+--   assumption
+
+-- lemma true_subst_star
+--   {P Q : bProp I Var Val} (h : Q ⊣⊢ BTrue)
+--   : P ⊢ P ∗ Q := by
+--   intro m hv hp
+--   simp [Iris.BI.sep]
+--   have : m ∈ sep P Q := by
+--     simp [Membership.mem, Set.Mem, sep]
+--     use m, 1
+--     have : Q 1 := by
+--       have : 1 ∈ (BTrue : bProp I Var Val) := by
+--         simp [Membership.mem, Set.Mem, BTrue]
+--         trivial
+--       have := h.2 1 (by aesop) this
+--       assumption
+--     constructor
+--     · have : m * 1 = m := MulOneClass.mul_one m
+--       rw [this]
+--     · exact ⟨hp, by assumption⟩
+--   assumption
+
+-- noncomputable instance : OfNat (ValidIndexedPSpPm I Var Val) 1 where
+--   ofNat := ⟨1, by aesop⟩
+
+-- noncomputable def validOne : ValidIndexedPSpPm I Var Val := 1
+
+-- noncomputable def k {A : Type*} : CompatibleKernel A (@validOne I Var Val _ _) := {
+--   kernel := fun i _ => PSpace.unit.1.μ
+--   isProb := fun i a => by
+--     have := (@validOne.PSpace I Var Val _ _ i).2
+--     assumption
+--   isComp := by
+--     intro i a
+--     cases h : (@validOne I Var Val _ _).1 i
+--     obtain ⟨p, h⟩ := h
+--     aesop
+-- }
+
+-- lemma C_True
+--   {I Var Val A : Type*} [DecidableEq Var] [Inhabited Val]
+--   [Finite Var] [Countable Val] {μ : PMF A}
+--   : ⊢ (𝒞⟨μ⟩ _v; BTrue : bProp I Var Val) := by
+--   unfold jointConditioning
+--   iexists 1, k
+--   isplitl
+--   · intro m _ _ i
+--     have := @IndexedPSpPm.one_le I Val Var _ _ m i
+--     trivial
+--   · isplitl
+--     · apply Iris.BI.forall_intro
+--       intro i _ _ _
+--       have : (@ValidIndexedPSpPm.μ I Var Val _ _) 1 i
+--         = (1 : MeasureOnSpace (Var → Val)).μ := by rfl
+--       rw [this]
+--       let k' (v : A) := (k.kernel i v : @Measure (Var → Val) ⊥)
+--       have {v : A} : k' v = (1 : MeasureOnSpace (Var → Val)).μ := by rfl
+--       have : (@μ.toMeasure A ⊤).bind k' = MeasureOnSpace.μ 1 := by aesop
+--       rw [this]
+--       trivial
+--     · apply Iris.BI.forall_intro
+--       intro v _ _ _ _ _ _
+--       trivial
+
+-- lemma sep_affine
+--   {P Q : bProp I Var Val}
+--   : P ∗ Q ⊢ P := by
+--   iintro ⟨h1, h2⟩
+--   iexact h1
+
+-- end Properties
 
 end
 

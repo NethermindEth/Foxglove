@@ -405,6 +405,16 @@ namespace UpperSetBI
 
 variable {M : Type} [OrderedUnitalResourceAlgebra M]
 
+def true : UpperSet M := {
+  carrier := Set.univ
+  upper' := by aesop
+}
+
+def false : UpperSet M := {
+  carrier := ∅
+  upper' := by aesop
+}
+
 def pure (φ : Prop) : UpperSet M := {
   carrier := {x | φ}
   upper' := by aesop
@@ -694,15 +704,24 @@ def map₂ (f : UpperSet M → UpperSet M → UpperSet M)
 The `OFE` instance comes from `COFE.toOFE`. -/
 instance : Iris.COFE (OURAProp M) := Iris.COFE.ofDiscrete _
 
+/--
+It's annoying to type `Quotient.mk _` but the abstraction buys nothing, so make this transparent.
+-/
+@[simp, grind =]
+abbrev fmk {M} [OrderedUnitalResourceAlgebra M] (a : UpperSet M) : OURAProp M := Quotient.mk _ a
+
+@[reducible]
+instance : Coe (UpperSet M) (OURAProp M) := ⟨fmk⟩
+
 instance : Iris.BI.BIBase (OURAProp M) where
   Entails := Quotient.lift₂ entail fun _ _ _ _ h₁ h₂ ↦ entail_eq_of_bientail h₁ h₂
-  emp := Quotient.mk _ emp
-  pure P := Quotient.mk _ (pure P)
+  emp := fmk emp
+  pure P := fmk (pure P)
   and := map₂ and fun h₁ h₂ ↦ bientail_and h₁ h₂
   or := map₂ or fun h₁ h₂ ↦ bientail_or h₁ h₂
   imp := map₂ imp fun h₁ h₂ ↦ bientail_imp h₁ h₂
-  sForall P := Quotient.mk _ (sForall fun p ↦ P (Quotient.mk _ p))
-  sExists P := Quotient.mk _ (sExists fun p ↦ P (Quotient.mk _ p))
+  sForall P := fmk (sForall fun p ↦ P p)
+  sExists P := fmk (sExists fun p ↦ P p)
   sep := map₂ sep fun h₁ h₂ ↦ bientail_sep h₁ h₂
   wand := map₂ wand fun h₁ h₂ ↦ bientail_wand h₁ h₂
   persistently := map persistently fun h ↦ bientail_persistently h
@@ -720,6 +739,7 @@ theorem nonExpansive₂_of_dist_eq {f : OURAProp M → OURAProp M → OURAProp M
   ⟨fun _ _ _ h₁ _ _ h₂ ↦ dist_iff_eq.2 (by rw [dist_iff_eq.1 h₁, dist_iff_eq.1 h₂])⟩
 
 /-- Entailment on the quotient is reflexive. -/
+@[refl, simp]
 theorem entails_rfl {P : OURAProp M} : Iris.BI.BIBase.Entails P P := by
   induction P using Quotient.ind
   exact entail_refl
@@ -810,7 +830,7 @@ instance : Iris.BI (OURAProp M) where
   sForall_intro := by
     intro P Ψ
     induction P using Quotient.ind with
-    | _ P => exact fun h m hm hP p hΨ ↦ h (Quotient.mk _ p) hΨ m hm hP
+    | _ P => exact fun h m hm hP p hΨ ↦ h p hΨ m hm hP
   sForall_elim := by
     intro Ψ p
     induction p using Quotient.ind with
@@ -824,7 +844,7 @@ instance : Iris.BI (OURAProp M) where
     induction Q using Quotient.ind with
     | _ Q =>
       rintro h m hm ⟨q, hΦ, hq⟩
-      exact h (Quotient.mk _ q) hΦ m hm hq
+      exact h q hΦ m hm hq
   sep_mono := by
     intro P P' Q Q'
     induction P using Quotient.ind
@@ -888,12 +908,12 @@ instance : Iris.BI (OURAProp M) where
   later_intro := entails_rfl
   later_sForall_2 := by
     intro Φ m hm h r hΦ
-    exact h (imp (pure (Φ (Quotient.mk _ r))) r)
-      ⟨Quotient.mk _ r, rfl⟩ m (le_refl m) hm hΦ
+    exact h (imp (pure (Φ r)) r)
+      ⟨r, rfl⟩ m (le_refl m) hm hΦ
   later_sExists_false := by
     rintro Φ m _ ⟨r, hΦ, hr⟩
-    exact Or.inr ⟨and (pure (Φ (Quotient.mk _ r))) r,
-      ⟨Quotient.mk _ r, rfl⟩, hΦ, hr⟩
+    exact Or.inr ⟨and (pure (Φ r)) r,
+      ⟨r, rfl⟩, hΦ, hr⟩
   later_sep := fun {_ _} ↦ ⟨entails_rfl, entails_rfl⟩
   later_persistently := fun {_} ↦ ⟨entails_rfl, entails_rfl⟩
   later_false_em := by

@@ -247,6 +247,73 @@ lemma outSpace_liftBind_μ (r : I) (f : Bool → BernoulliM α)
         + (unitInterval.toNNReal r : ℝ≥0∞) * (outSpace (f true)).μ S :=
   outSpace_liftBind_apply r f (measurableSet_outSpace _ S) (measurableSet_outSpace _ S)
 
+inductive ProbTree (α : Type) where
+  | leaf (m : BernoulliM α)
+  | node (p : I) (l r : ProbTree α)
+
+def step {α} /-(μ : Ω → ℝ)-/ (tree : ProbTree α) : ProbTree α :=
+  -- measure on a space where prefixes we care about are measurable
+  -- from a given tree, we can construct this set of measurable events
+  -- (all possible prefixes from root to leaf, and each of those map to an event,
+  -- even of all ρ that agree on prefix)
+  -- that is the atooms of a Σ-algebra, and then a probability measure on these atoms
+  -- the step function updates the set of atoms
+  -- new probability measure, that incorporates p and 1 - p
+  -- for some event e i, split to e i' and e i''
+  -- new μ' - non-split remains the same, otherwise = p * μ ei, 1 - p * μ ei
+  match tree with
+  | .leaf m =>
+    match m with
+    | .pure _ => tree
+    | .liftBind a cont => split a cont
+  | .node p l r => .node p (step l) (step r)
+  where split (a : BernoulliPFunctor.A)
+              (cont : BernoulliPFunctor.B a → BernoulliPFunctor.FreeM α) : ProbTree α :=
+    let p := a.1
+    let l : BernoulliM α := cont true
+    let r : BernoulliM α := cont false 
+    .node p (.leaf l) (.leaf r)
+
+def done {α} (tree : ProbTree α) : Bool :=
+  match tree with
+  | .leaf m =>
+    match m with
+    | .pure _ => true
+    | .liftBind a cont => false
+  | .node p l r => done l && done r
+
+def fixpoint (tree : ProbTree α) : ProbTree α :=
+  if done tree
+  then tree
+  else fixpoint (step tree)
+  decreasing_by sorry
+
+-- def (X : RV (BernoulliM α)) (ω : Ω) : BernoulliM α := X ω
+
+-- ∀ Y ∈ atoms P, ∀ ρ ρ' ∈ Y, c ρ = c ρ' -- bigstep to be well defined
+-- one atom corresponds to a specific reduction of the expression to something
+-- and we haven't reduced further
+
+-- wf_event (atom : Set Ω) (n : ℕ) : Prop := ∀ Y ≤ n, ∀ ρ ρ' ∈ atom, ρ i ≤ ρ' i
+-- ∀ ρ ∈ Y, ρ' : Ω, ∀ i < n, ρ i = ρ' i → ρ' ∈ Y
+
+-- f : Finset (List Bool) -- prefixes
+-- ∀ elem ∈ f, P elem = straightforward
+-- 011101001010
+-- ρ Ω, ∀ i < length.ls, ρ i = ls.get i
+-- ^ event
+-- μ event is the probability of event
+
+def bigStep (comp : BernoulliM α) : PSpΩ → RV (BernoulliM α) → PSpΩ × RV α :=
+  let trivialTree := ProbTree.leaf comp
+  let f := fixpoint trivialTree
+  _
+
+def bigStep' (comp : BernoulliM α) (atoms : Finset (List Bool)) : RV (BernoulliM α) → PSpΩ × RV α :=
+  let trivialTree := ProbTree.leaf comp
+  let f := fixpoint trivialTree
+  _
+
 end Interpretation
 
 end Interp
