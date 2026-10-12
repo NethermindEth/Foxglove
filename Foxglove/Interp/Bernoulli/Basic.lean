@@ -343,6 +343,57 @@ def depth (tree : ProbTree α) : ℕ :=
   | .leaf m   => leafDepth m
   | .node l r => max l.depth r.depth
 
+/-! ### Termination of `fixpoint`
+
+`split` peels one layer of flips off every leaf, so it strictly decreases `depth` unless
+the tree is already `done` — and a `done` tree has depth `0`. -/
+
+/-- A finished tree has nothing left to split. -/
+lemma depth_eq_zero_of_done {tree : ProbTree α} (h : tree.done = true) : tree.depth = 0 := by
+  induction tree with
+  | leaf m =>
+      cases m with
+      | pure a => rfl
+      | liftBind op cont => simp [done] at h
+  | node l r ihl ihr =>
+      rw [done] at h
+      simp only [Bool.and_eq_true] at h
+      simp [depth, ihl h.1, ihr h.2]
+
+/-- `split` never deepens a tree. -/
+lemma depth_split_le (tree : ProbTree α) : tree.split.depth ≤ tree.depth := by
+  induction tree with
+  | leaf m =>
+      cases m with
+      | pure a => exact le_rfl
+      | liftBind op cont => simp only [split, depth, leafDepth]; omega
+  | node l r ihl ihr => simp only [split, depth]; omega
+
+/-- As long as there is a flip left somewhere, `split` strictly decreases the depth. -/
+lemma depth_split_lt (tree : ProbTree α) (h : tree.done = false) :
+    tree.split.depth < tree.depth := by
+  induction tree with
+  | leaf m =>
+      cases m with
+      | pure a => simp [done] at h
+      | liftBind op cont => simp only [split, depth, leafDepth]; omega
+  | node l r ihl ihr =>
+      have hl := depth_split_le l
+      have hr := depth_split_le r
+      rw [done] at h
+      simp only [split, depth]
+      cases hdl : l.done with
+      | false =>
+          have h₁ := ihl hdl
+          cases hdr : r.done with
+          | false => have h₂ := ihr hdr; omega
+          | true => have h₂ := depth_eq_zero_of_done hdr; omega
+      | true =>
+          have hdr : r.done = false := by rw [hdl, Bool.true_and] at h; exact h
+          have h₁ := ihr hdr
+          have h₂ := depth_eq_zero_of_done hdl
+          omega
+
 instance isProbabilityMeasure_step {tree : ProbTree α}
   {μ : Measure[tree.ms] Ω} [IsProbabilityMeasure μ] :
   IsProbabilityMeasure (tree.step μ) := sorry
@@ -353,7 +404,10 @@ def fixpoint (tree : ProbTree α) (μ : Measure[tree.ms] Ω) [IsProbabilityMeasu
   then ⟨tree, μ⟩
   else fixpoint tree.split (tree.step μ)
   termination_by tree.depth
-  decreasing_by sorry
+  decreasing_by
+    rename_i h
+    simp only [Bool.not_eq_true] at h
+    exact depth_split_lt tree h
 
 end ProbTree
 
