@@ -23,6 +23,8 @@ lemma valid_def {psp : PSpΩ} : ✓psp ↔ psp ≠ (⊤ : PSpΩ) := by rfl
 @[grind norm]
 lemma top_def : (⊤ : PSpΩ) = .none := rfl
 
+abbrev FProp := Iris.UpperSetBI.OURAProp PSpΩ
+
 namespace ValidPSpΩ
 
 def toPSpace (vpsp : ValidPSpΩ) : PSpace Ω :=
@@ -51,7 +53,7 @@ instance : Iris.CMRA PSpΩ := inferInstance
 
 instance : Iris.UCMRA PSpΩ := inferInstance
 
-instance : Iris.BI (UpperSetBI.OURAProp PSpΩ) := inferInstance
+instance : Iris.BI FProp := inferInstance
 
 open UpperSetBI
 
@@ -81,7 +83,7 @@ def _root_.PMF.toMeasureWithMs {A : Type} (μ : PMF A) (ms : MeasurableSpace A) 
 
 def own {M} [OrderedUnitalResourceAlgebra M] (b : M) : OURAProp M := Quotient.mk _ (UpperSetBI.own b)
 
-def jointConditioning {A : Type} (μ : PMF A) (K : A → OURAProp PSpΩ) : OURAProp PSpΩ :=
+def jointConditioning {A : Type} (μ : PMF A) (K : A → FProp) : FProp :=
   iprop(
     ∃ m : PSpace Ω,
     ∃ κ : TrivialMarkovKernel A m,
@@ -97,8 +99,7 @@ def almostMeasurable {A Ω : Type} (E : Ω → A) (P : PSp Ω) : Prop :=
   | none => False
   | some p => @AEMeasurable Ω A ⊤ _ E p.1.μ
 
-def hasDistribution {A : Type} (E : Ω → A) (μ : PMF A)
-  : OURAProp PSpΩ :=
+def hasDistribution {A : Type} (E : Ω → A) (μ : PMF A) : FProp :=
   iprop(
     ∃ P : PSpace Ω,
       own P ∗
@@ -110,9 +111,27 @@ def hasDistribution {A : Type} (E : Ω → A) (μ : PMF A)
 
 notation:100 E:100 "⟨" i:100 "⟩" " ~ " p:100 => hasDistribution E i p
 
-
+-- def wp {Var Val : Type*}
+--   [DecidableEq Var] [Inhabited Val] [Finite Var] [Countable Val]
+--   (t : IndexedPSpPm I Var Val → IndexedPSpPm I Var Val)
+--   (Q : bProp I Var Val) : bProp I Var Val := {
+--   carrier := fun a =>
+--     ∀ μ₀ : IndexedPSpPm I Var Val,
+--       ∀ c : IndexedPSpPm I Var Val,
+--         ✓ μ₀ → (a * c) ≤ μ₀ → ∃ b : IndexedPSpPm I Var Val,
+--           (b * c) ≤ t μ₀ ∧ ✓ b ∧ Q b
+--   upper' := by
+--     intro x y hxy hx μ₀ c hvμ₀ hmul
+--     exact hx μ₀ c hvμ₀ (le_trans (mul_left_mono hxy) hmul)
+-- }
 
 end
+
+end
+
+section
+
+-- lemma abc {P Q : }: 
 
 end
 
