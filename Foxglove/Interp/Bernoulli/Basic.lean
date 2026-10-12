@@ -249,70 +249,139 @@ lemma outSpace_liftBind_μ (r : I) (f : Bool → BernoulliM α)
 
 inductive ProbTree (α : Type) where
   | leaf (m : BernoulliM α)
-  | node (p : I) (l r : ProbTree α)
+  | node (l r : ProbTree α)
 
-def step {α} /-(μ : Ω → ℝ)-/ (tree : ProbTree α) : ProbTree α :=
-  -- measure on a space where prefixes we care about are measurable
-  -- from a given tree, we can construct this set of measurable events
-  -- (all possible prefixes from root to leaf, and each of those map to an event,
-  -- even of all ρ that agree on prefix)
-  -- that is the atooms of a Σ-algebra, and then a probability measure on these atoms
-  -- the step function updates the set of atoms
-  -- new probability measure, that incorporates p and 1 - p
-  -- for some event e i, split to e i' and e i''
-  -- new μ' - non-split remains the same, otherwise = p * μ ei, 1 - p * μ ei
+/-
+Honestly, abbrevs just for my own sanity.
+-/
+abbrev BoolSeq := List Bool
+
+abbrev Event := Set Ω
+
+namespace ProbTree
+
+section
+
+variable {α : Type}
+
+/--
+`{[true], [false]}`
+`{[true, true], [true, false], [false, true], [false, false]}`
+...
+-/
+def prefixes (tree : ProbTree α) : Finset BoolSeq :=
+  match tree with
+  | .leaf _ => {[]}
+  | .node l r =>
+    l.prefixes.map ⟨(true :: ·), List.cons_injective⟩ ∪
+    r.prefixes.map ⟨(false :: ·), List.cons_injective⟩
+
+def prefixEqEvent (tape : BoolSeq) : Event := {ω | ∃ n, tape <+: List.ofFn fun i : Fin n ↦ ω i}
+
+def events (tree : ProbTree α) : Set Event := prefixEqEvent '' {tape | tape ∈ tree.prefixes}
+
+lemma measurableSet_prefixEqEvent {l : BoolSeq} : MeasurableSet (ProbTree.prefixEqEvent l) := by sorry
+
+def split (tree : ProbTree α) : ProbTree α :=
   match tree with
   | .leaf m =>
     match m with
     | .pure _ => tree
-    | .liftBind a cont => split a cont
-  | .node p l r => .node p (step l) (step r)
-  where split (a : BernoulliPFunctor.A)
-              (cont : BernoulliPFunctor.B a → BernoulliPFunctor.FreeM α) : ProbTree α :=
-    let p := a.1
-    let l : BernoulliM α := cont true
-    let r : BernoulliM α := cont false 
-    .node p (.leaf l) (.leaf r)
+    | .liftBind _ cont => .node (.leaf (cont true)) (.leaf (cont false))
+  | .node l r => .node l.split r.split
 
-def done {α} (tree : ProbTree α) : Bool :=
+def _root_.unitInterval.invert (i : I) : I := ⟨(1 : ℝ) - i, by grind⟩
+
+/--
+Get it? A `tape... measure`? No? Ok :(.
+-/
+def updateMeasure (tree : ProbTree α) (tape : BoolSeq) (μ : BoolSeq → I) : BoolSeq → I :=
+  letI lTape := tape ++ [true]
+  letI rTape := tape ++ [false]
+  match tree, μ with
+  | .leaf m, μ =>
+    match m with
+    | .pure _ => μ
+    | .liftBind a _ =>
+      letI p := a.1
+      letI lProb := p * μ tape
+      letI rProb := unitInterval.invert p * μ tape
+      letI updateLeft := Function.update μ lTape lProb
+      letI updateRight := Function.update updateLeft rTape rProb
+      updateRight
+  | .node l r, μ => r.updateMeasure rTape (l.updateMeasure lTape μ)
+
+@[instance_reducible]
+def ms {α : Type} (tree : ProbTree α) : MeasurableSpace Ω := MeasurableSpace.generateFrom tree.events
+
+@[instance_reducible]
+def msAfterSplit {α : Type} (tree : ProbTree α) : MeasurableSpace Ω := tree.split.ms
+
+def step (tree : ProbTree α) (μ : Measure[tree.ms] Ω) [IsProbabilityMeasure μ] :
+         Measure[tree.msAfterSplit] Ω  :=
+  let w :=
+    tree.updateMeasure [] fun l ↦ ⟨μ.real (prefixEqEvent l), measureReal_nonneg, measureReal_le_one⟩
+  sorry -- What now?
+
+end
+
+def done (tree : ProbTree α) : Bool :=
   match tree with
   | .leaf m =>
     match m with
     | .pure _ => true
-    | .liftBind a cont => false
-  | .node p l r => done l && done r
+    | .liftBind .. => false
+  | .node l r => done l && done r
 
-def fixpoint (tree : ProbTree α) : ProbTree α :=
+def leafDepth (m : BernoulliM α) : ℕ :=
+  match m with
+  | .pure _ => 0
+  | .liftBind _ c => 1 + max (leafDepth (c true)) (leafDepth (c false))
+
+def depth (tree : ProbTree α) : ℕ :=
+  match tree with
+  | .leaf m   => leafDepth m
+  | .node l r => max l.depth r.depth
+
+instance isProbabilityMeasure_step {tree : ProbTree α}
+  {μ : Measure[tree.ms] Ω} [IsProbabilityMeasure μ] :
+  IsProbabilityMeasure (tree.step μ) := sorry
+
+def fixpoint (tree : ProbTree α) (μ : Measure[tree.ms] Ω) [IsProbabilityMeasure μ] :
+    Σ (tree' : ProbTree α), Measure[tree'.ms] Ω :=
   if done tree
-  then tree
-  else fixpoint (step tree)
+  then ⟨tree, μ⟩
+  else fixpoint tree.split (tree.step μ)
+  termination_by tree.depth
   decreasing_by sorry
 
--- def (X : RV (BernoulliM α)) (ω : Ω) : BernoulliM α := X ω
+end ProbTree
 
--- ∀ Y ∈ atoms P, ∀ ρ ρ' ∈ Y, c ρ = c ρ' -- bigstep to be well defined
--- one atom corresponds to a specific reduction of the expression to something
--- and we haven't reduced further
+-- -- def (X : RV (BernoulliM α)) (ω : Ω) : BernoulliM α := X ω
 
--- wf_event (atom : Set Ω) (n : ℕ) : Prop := ∀ Y ≤ n, ∀ ρ ρ' ∈ atom, ρ i ≤ ρ' i
--- ∀ ρ ∈ Y, ρ' : Ω, ∀ i < n, ρ i = ρ' i → ρ' ∈ Y
+-- -- ∀ Y ∈ atoms P, ∀ ρ ρ' ∈ Y, c ρ = c ρ' -- bigstep to be well defined
+-- -- one atom corresponds to a specific reduction of the expression to something
+-- -- and we haven't reduced further
 
--- f : Finset (List Bool) -- prefixes
--- ∀ elem ∈ f, P elem = straightforward
--- 011101001010
--- ρ Ω, ∀ i < length.ls, ρ i = ls.get i
--- ^ event
--- μ event is the probability of event
+-- -- wf_event (atom : Set Ω) (n : ℕ) : Prop := ∀ Y ≤ n, ∀ ρ ρ' ∈ atom, ρ i ≤ ρ' i
+-- -- ∀ ρ ∈ Y, ρ' : Ω, ∀ i < n, ρ i = ρ' i → ρ' ∈ Y
 
-def bigStep (comp : BernoulliM α) : PSpΩ → RV (BernoulliM α) → PSpΩ × RV α :=
-  let trivialTree := ProbTree.leaf comp
-  let f := fixpoint trivialTree
-  _
+-- -- f : Finset (List Bool) -- prefixes
+-- -- ∀ elem ∈ f, P elem = straightforward
+-- -- 011101001010
+-- -- ρ Ω, ∀ i < length.ls, ρ i = ls.get i
+-- -- ^ event
+-- -- μ event is the probability of event
 
-def bigStep' (comp : BernoulliM α) (atoms : Finset (List Bool)) : RV (BernoulliM α) → PSpΩ × RV α :=
-  let trivialTree := ProbTree.leaf comp
-  let f := fixpoint trivialTree
-  _
+-- def bigStep (comp : BernoulliM α) : PSpΩ → RV (BernoulliM α) → PSpΩ × RV α :=
+--   let trivialTree := ProbTree.leaf comp
+--   let f := fixpoint trivialTree
+--   _
+
+-- def bigStep' (comp : BernoulliM α) (atoms : Finset (List Bool)) : RV (BernoulliM α) → PSpΩ × RV α :=
+--   let trivialTree := ProbTree.leaf comp
+--   let f := fixpoint trivialTree
+--   _
 
 end Interpretation
 
