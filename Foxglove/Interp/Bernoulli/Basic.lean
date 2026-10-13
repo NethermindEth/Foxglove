@@ -420,7 +420,7 @@ structure BoundedFootprintPsp where
   agreeOnPrefix : ∀ X : atoms, ∀ ρ ∈ X.1, ∀ ρ' ∈ X.1, ∀ i < (prefixes X).length, ρ i = ρ' i
   determinedByPrefix : ∀ X : atoms, ∀ ρ ∈ X.1, ∀ ρ' : Ω, (∀ i < (prefixes X).length, ρ i = ρ' i) → ρ' ∈ X.1
 
-  pathInTreeValid : Function.Injective prefixes
+  pathInTreeValid : ∀ X Y : atoms, X ≠ Y → ¬ prefixes X <+: prefixes Y
 
 def BoundedFootprintPsp.boundmap (bpsp : BoundedFootprintPsp) : bpsp.atoms → ℕ :=
   List.length ∘ bpsp.prefixes
