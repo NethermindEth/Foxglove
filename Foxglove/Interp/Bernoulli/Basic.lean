@@ -276,11 +276,9 @@ def prefixes (tree : ProbTree α) : Finset BoolSeq :=
     l.prefixes.map ⟨(true :: ·), List.cons_injective⟩ ∪
     r.prefixes.map ⟨(false :: ·), List.cons_injective⟩
 
-def prefixEqEvent (tape : BoolSeq) : Event := {ω | ∃ n, tape <+: List.ofFn fun i : Fin n ↦ ω i}
+def prefixEqEvent (tape : BoolSeq) : Event := {ω | ∀ (i : Fin tape.length), ω i = tape[i]}
 
 def events (tree : ProbTree α) : Set Event := prefixEqEvent '' {tape | tape ∈ tree.prefixes}
-
-lemma measurableSet_prefixEqEvent {l : BoolSeq} : MeasurableSet (ProbTree.prefixEqEvent l) := by sorry
 
 def split (tree : ProbTree α) : ProbTree α :=
   match tree with
