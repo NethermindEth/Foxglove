@@ -316,9 +316,11 @@ def ms {α : Type} (tree : ProbTree α) : MeasurableSpace Ω := MeasurableSpace.
 def msAfterSplit {α : Type} (tree : ProbTree α) : MeasurableSpace Ω := tree.split.ms
 
 def step (tree : ProbTree α) (μ : Measure[tree.ms] Ω) [IsProbabilityMeasure μ] :
-         Measure[tree.msAfterSplit] Ω  :=
-  let w :=
+         Measure[tree.msAfterSplit] Ω :=
+  let w : BoolSeq → I :=
     tree.updateMeasure [] fun l ↦ ⟨μ.real (prefixEqEvent l), measureReal_nonneg, measureReal_le_one⟩
+    -- fold over the set of traces that have been updated
+    -- this yields a final boolseq (turn into a measure)
   sorry -- What now?
 
 end
@@ -407,33 +409,26 @@ def fixpoint (tree : ProbTree α) (μ : Measure[tree.ms] Ω) [IsProbabilityMeasu
     simp only [Bool.not_eq_true] at h
     exact depth_split_lt tree h
 
+structure BoundedFootprintPsp where
+  psp : PSpΩ
+  atoms : Set Event
+
+  measurable : ∀ X ∈ atoms, ∀ (h : ✓psp), MeasurableSet[(ValidPSpΩ.toPSpace ⟨psp, h⟩).ms] X
+  sigmaAgrees : (h : ✓psp) → (ValidPSpΩ.toPSpace ⟨psp, h⟩).ms = MeasurableSpace.generateFrom atoms
+  disjoint : atoms.PairwiseDisjoint id
+  prefixes : atoms → List Bool
+  agreeOnPrefix : ∀ X : atoms, ∀ ρ ∈ X.1, ∀ ρ' ∈ X.1, ∀ i < (prefixes X).length, ρ i = ρ' i
+  determinedByPrefix : ∀ X : atoms, ∀ ρ ∈ X.1, ∀ ρ' : Ω, (∀ i < (prefixes X).length, ρ i = ρ' i) → ρ' ∈ X.1
+
+  pathInTreeValid : Function.Injective prefixes
+
+def BoundedFootprintPsp.boundmap (bpsp : BoundedFootprintPsp) : bpsp.atoms → ℕ :=
+  List.length ∘ bpsp.prefixes
+
+-- ∀ X ∈ atoms, ∀ ρ ρ' ∈ X , rv ρ = rv ρ'.... (or instead of RV, `atoms → BErnualliM α`) -- Σ psp : BSPp, psp.atoms → BernulliM α
+-- initially, you start in 1 : PSp, single atom generating its Σ (this is Set.univ)
+
 end ProbTree
-
--- -- def (X : RV (BernoulliM α)) (ω : Ω) : BernoulliM α := X ω
-
--- -- ∀ Y ∈ atoms P, ∀ ρ ρ' ∈ Y, c ρ = c ρ' -- bigstep to be well defined
--- -- one atom corresponds to a specific reduction of the expression to something
--- -- and we haven't reduced further
-
--- -- wf_event (atom : Set Ω) (n : ℕ) : Prop := ∀ Y ≤ n, ∀ ρ ρ' ∈ atom, ρ i ≤ ρ' i
--- -- ∀ ρ ∈ Y, ρ' : Ω, ∀ i < n, ρ i = ρ' i → ρ' ∈ Y
-
--- -- f : Finset (List Bool) -- prefixes
--- -- ∀ elem ∈ f, P elem = straightforward
--- -- 011101001010
--- -- ρ Ω, ∀ i < length.ls, ρ i = ls.get i
--- -- ^ event
--- -- μ event is the probability of event
-
--- def bigStep (comp : BernoulliM α) : PSpΩ → RV (BernoulliM α) → PSpΩ × RV α :=
---   let trivialTree := ProbTree.leaf comp
---   let f := fixpoint trivialTree
---   _
-
--- def bigStep' (comp : BernoulliM α) (atoms : Finset (List Bool)) : RV (BernoulliM α) → PSpΩ × RV α :=
---   let trivialTree := ProbTree.leaf comp
---   let f := fixpoint trivialTree
---   _
 
 end Interpretation
 

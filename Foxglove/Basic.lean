@@ -142,7 +142,7 @@ noncomputable def ffalse : FProp := fmk UpperSetBI.false
 
 variable {P Q R : FProp}
 
-attribute [grind .] and_intro entails_rfl pure_intro
+attribute [grind .] and_intro entails_rfl pure_intro or_intro_l or_intro_r or_elim
                     Iris.BI.BIBase.pure and_elim_l and_elim_r Iris.BI.BIBase.BiEntails.mk
 
 attribute [grind cases] Iris.BI.BIBase.BiEntails
@@ -159,46 +159,34 @@ theorem and_ident : P ∧ ftrue ⊣⊢ P := by grind
 theorem and_comm : P ∧ Q ⊣⊢ Q ∧ P := by grind
 
 @[simp, grind .]
-theorem and_entails_of_entails (h : P ⊢ R) : P ∧ Q ⊢ R := by
+theorem and_entails_of_entails_l (h : P ⊢ R) : P ∧ Q ⊢ R := by
   have : P ∧ Q ⊢ P := by grind
   grind
 
+@[simp, grind .]
+theorem and_entails_of_entails_r (h : Q ⊢ R) : P ∧ Q ⊢ R := by
+  have : P ∧ Q ⊢ Q := by grind
+  grind
+
+@[simp, grind .]
 theorem and_assoc : (P ∧ Q) ∧ R ⊣⊢ P ∧ (Q ∧ R) := by
-  constructor
-  · grind
-  · sorry
+  grind
 
--- theorem or_ident {P : bProp I Var Val}
---   : P ∨ BFalse ⊣⊢ P := by
---   constructor
---   · intro m _ hm
---     rcases hm with hP | hF
---     · exact hP
---     · exact hF.elim
---   · intro m _ hm
---     exact Or.inl hm
+@[simp, grind .]
+lemma fals_entails : ffalse ⊢ P := by
+  apply pure_elim'
+  grind
 
--- theorem or_comm {P Q : bProp I Var Val}
---   : P ∨ Q ⊣⊢ Q ∨ P := by
---   constructor
---   · intro m _ hm
---     exact hm.symm
---   · intro m _ hm
---     exact hm.symm
+@[simp, grind .]
+theorem or_ident : P ∨ ffalse ⊣⊢ P := by
+  grind
 
--- theorem or_assoc {P Q R : bProp I Var Val}
---   : (P ∨ Q) ∨ R ⊣⊢ P ∨ (Q ∨ R) := by
---   constructor
---   · intro m _ hm
---     rcases hm with (hP | hQ) | hR
---     · exact Or.inl hP
---     · exact Or.inr (Or.inl hQ)
---     · exact Or.inr (Or.inr hR)
---   · intro m _ hm
---     rcases hm with hP | hQ | hR
---     · exact Or.inl (Or.inl hP)
---     · exact Or.inl (Or.inr hQ)
---     · exact Or.inr hR
+@[simp, grind .]
+theorem or_comm : P ∨ Q ⊣⊢ Q ∨ P := by
+  grind
+
+theorem or_assoc : (P ∨ Q) ∨ R ⊣⊢ P ∨ (Q ∨ R) := by
+  sorry
 
 -- theorem sep_ident {P : bProp I Var Val}
 --   : P ∗ True ⊣⊢ P := by
