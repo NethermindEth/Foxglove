@@ -404,16 +404,11 @@ noncomputable def step' (tree : ProbTree α) (path : List Bool) (μ : Measure[tr
     let μ' : Measure[t'.ms] Ω := joinMeasure μₗ' μᵣ'
     Sigma.mk (ProbTree.node l' r') μ'
 
+noncomputable def step (tree : ProbTree α) (μ : Measure[tree.ms] Ω) : Σ tree : ProbTree α, Measure[tree.ms] Ω :=
+  step' tree [] μ
+
 @[instance_reducible]
 def msAfterSplit {α : Type} (tree : ProbTree α) : MeasurableSpace Ω := tree.split.ms
-
-def step (tree : ProbTree α) (μ : Measure[tree.ms] Ω) [IsProbabilityMeasure μ] :
-         Measure[tree.msAfterSplit] Ω :=
-  let w : BoolSeq → I :=
-    tree.updateMeasure [] fun l ↦ ⟨μ.real (prefixEqEvent l), measureReal_nonneg, measureReal_le_one⟩
-    -- fold over the set of traces that have been updated
-    -- this yields a final boolseq (turn into a measure)
-  sorry -- What now?
 
 end
 
