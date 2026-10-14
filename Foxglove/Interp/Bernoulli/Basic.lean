@@ -509,70 +509,72 @@ lemma joinMeasure_univ {l r : ProbTree α} (μₗ : Measure[l.ms] Ω) (μᵣ : M
 
 abbrev TreeWithMeasure (α : Type) := Σ tree : ProbTree α, Measure[tree.ms] Ω
 
-noncomputable def step'
-  (tree : ProbTree α) (path : BoolSeq) (μ : Measure[tree.ms] Ω) : TreeWithMeasure α :=
+noncomputable def step' (path : BoolSeq) (tree : TreeWithMeasure α) : TreeWithMeasure α :=
   match tree with
-  | .leaf m =>
+  | ⟨.leaf m, μ⟩ =>
     match m with
     | .pure _ => Sigma.mk (.leaf m) μ
     | .liftBind a c =>
       let tree' : ProbTree α := .node (.leaf (c true)) (.leaf (c false))
       let μ' : Measure[tree'.ms] Ω := μ Set.univ • flipMeasure tree'.ms a.1
       Sigma.mk tree' μ'
-  | .node l r =>
+  | ⟨.node l r, μ⟩ =>
     let μₗ : Measure[l.ms] Ω := branchMeasure true μ
     let μᵣ : Measure[r.ms] Ω := branchMeasure false μ
-    let ⟨l', μₗ'⟩ := step' l (path ++ [true]) μₗ
-    let ⟨r', μᵣ'⟩ := step' r (path ++ [false]) μᵣ
+    let ⟨l', μₗ'⟩ := step' (path ++ [true]) ⟨l, μₗ⟩
+    let ⟨r', μᵣ'⟩ := step' (path ++ [false]) ⟨r, μᵣ⟩
     let t' := ProbTree.node l' r'
     let μ' : Measure[t'.ms] Ω := joinMeasure μₗ' μᵣ'
     Sigma.mk (ProbTree.node l' r') μ'
 
-noncomputable def step (tree : ProbTree α) (μ : Measure[tree.ms] Ω) : TreeWithMeasure α :=
-  step' tree [] μ
+noncomputable def step (tree : TreeWithMeasure α) : TreeWithMeasure α :=
+  step' [] tree
 
 /-- On trees, `step'` is just `split`; it only adds the measure. -/
-lemma step'_fst (tree : ProbTree α) (path : BoolSeq) (μ : Measure[tree.ms] Ω) :
-    (step' tree path μ).1 = tree.split := by
+lemma step'_fst {path : BoolSeq} {tree : TreeWithMeasure α} :
+    (step' path tree).1 = tree.1.split := by
+  obtain ⟨tree, μ⟩ := tree
   induction tree generalizing path with
   | leaf m =>
     cases m with
-    | pure a => rfl
-    | liftBind a c => rfl
+    | pure a => simp only [step', split]
+    | liftBind a c => simp only [step', split]
   | node l r ihl ihr =>
-    have hl := ihl (path ++ [true]) (branchMeasure true μ)
-    have hr := ihr (path ++ [false]) (branchMeasure false μ)
+    have hl := @ihl (path ++ [true]) (branchMeasure true μ)
+    have hr := @ihr (path ++ [false]) (branchMeasure false μ)
     simp only [step', split]
     revert hl hr
-    generalize step' l (path ++ [true]) (branchMeasure true μ) = sl
-    generalize step' r (path ++ [false]) (branchMeasure false μ) = sr
+    generalize step' (path ++ [true]) ⟨l, branchMeasure true μ⟩ = sl
+    generalize step' (path ++ [false]) ⟨r, branchMeasure false μ⟩ = sr
     obtain ⟨l', μl'⟩ := sl
     obtain ⟨r', μr'⟩ := sr
     rintro (rfl : l' = l.split) (rfl : r' = r.split)
     rfl
 
-lemma step_fst (tree : ProbTree α) (μ : Measure[tree.ms] Ω) : (step tree μ).1 = tree.split :=
-  step'_fst tree [] μ
+lemma step_fst {tree : TreeWithMeasure α} : (step tree).1 = tree.1.split :=
+  step'_fst
 
 /-- `step'` only redistributes mass: a leaf keeps its own, a flip splits it between the two
 new branches, and a node hands each branch the mass of its half and adds the two back up. -/
-lemma step'_univ (tree : ProbTree α) (path : BoolSeq) (μ : Measure[tree.ms] Ω) :
-    (step' tree path μ).2 Set.univ = μ Set.univ := by
+lemma step'_univ {path : BoolSeq} {tree : TreeWithMeasure α} :
+    (step' path tree).2 Set.univ = tree.2 Set.univ := by
+  obtain ⟨tree, μ⟩ := tree
   induction tree generalizing path with
   | leaf m =>
     cases m with
-    | pure a => rfl
+    | pure a => rw [step']
     | liftBind a c =>
+      rw [step']
       show (μ Set.univ • flipMeasure _ a.1) Set.univ = μ Set.univ
       rw [Measure.smul_apply, smul_eq_mul]
       simp
   | node l r ihl ihr =>
-    have hl := ihl (path ++ [true]) (branchMeasure true μ)
-    have hr := ihr (path ++ [false]) (branchMeasure false μ)
+    have hl := @ihl (path ++ [true]) (branchMeasure true μ)
+    have hr := @ihr (path ++ [false]) (branchMeasure false μ)
     rw [step']
     revert hl hr
-    generalize step' l (path ++ [true]) (branchMeasure true μ) = sl
-    generalize step' r (path ++ [false]) (branchMeasure false μ) = sr
+    generalize step' (path ++ [true]) ⟨l, branchMeasure true μ⟩ = sl
+    generalize step' (path ++ [false]) ⟨r, branchMeasure false μ⟩ = sr
     obtain ⟨l', μl'⟩ := sl
     obtain ⟨r', μr'⟩ := sr
     intro hl hr
@@ -580,9 +582,9 @@ lemma step'_univ (tree : ProbTree α) (path : BoolSeq) (μ : Measure[tree.ms] Ω
     rw [joinMeasure_univ, hl, hr, branchMeasure_univ, branchMeasure_univ,
       measure_prefixEqEvent_add]
 
-lemma step_univ (tree : ProbTree α) (μ : Measure[tree.ms] Ω) :
-    (step tree μ).2 Set.univ = μ Set.univ :=
-  step'_univ tree [] μ
+lemma step_univ (tree : TreeWithMeasure α) :
+    (step tree).2 Set.univ = tree.2 Set.univ :=
+  step'_univ
 
 @[instance_reducible]
 def msAfterSplit {α : Type} (tree : ProbTree α) : MeasurableSpace Ω := tree.split.ms
@@ -660,21 +662,44 @@ lemma depth_split_lt {α : Type} (tree : ProbTree α) (h : tree.done = false) :
 
 /-- A round of `step` is again a probability measure: by `step_univ` it has the same total
 mass as the measure it started from. -/
-instance isProbabilityMeasure_step {α : Type} {tree : ProbTree α}
-  {μ : Measure[tree.ms] Ω} [IsProbabilityMeasure μ] :
-  IsProbabilityMeasure (tree.step μ).2 :=
-  ⟨(step_univ tree μ).trans measure_univ⟩
+instance {α : Type} {tree : TreeWithMeasure α} [IsProbabilityMeasure tree.2] :
+  IsProbabilityMeasure (step tree).2 :=
+  ⟨(step_univ tree).trans measure_univ⟩
 
 noncomputable def fixpoint {α : Type} (tree : TreeWithMeasure α) : TreeWithMeasure α :=
   if done tree.1
   then tree
-  else fixpoint (step tree.1 tree.2)
+  else fixpoint (step tree)
   termination_by tree.1.depth
   decreasing_by
     rename_i h
     simp only [Bool.not_eq_true] at h
     rw [step_fst]
     exact depth_split_lt tree.1 h
+
+instance {α : Type} {tree : TreeWithMeasure α} [IsProbabilityMeasure tree.2] :
+  IsProbabilityMeasure (fixpoint tree).2 := by
+  -- each round is a `step`, which preserves probability measures
+  rename_i hμ
+  revert hμ
+  induction tree using fixpoint.induct with
+  | case1 t hdone =>
+    intro hμ
+    -- `fixpoint t`'s measure has a type depending on `fixpoint t`, so rewrite it as a whole
+    have e : fixpoint t = t := by rw [fixpoint]; simp [hdone]
+    rw [e]
+    exact hμ
+  | case2 t hdone ih =>
+    intro hμ
+    have e : fixpoint t = fixpoint (step t) := by rw [fixpoint]; simp [hdone]
+    rw [e]
+    exact ih
+
+/-- `fixpoint` only stops once every leaf is a `pure`. -/
+lemma fixpoint_done {α : Type} {t : TreeWithMeasure α} : (fixpoint t).1.done = true := by
+  induction t using fixpoint.induct with
+  | case1 t hdone => rw [fixpoint]; simp [hdone]
+  | case2 t hdone ih => rw [fixpoint]; simp [hdone, ih]
 
 structure BoundedFootprintPsp where
   psp : PSpΩ
@@ -802,6 +827,77 @@ where
       simp only [List.length_append, List.length_singleton]
       omega
 
+/-- Every atom is exactly the event of its prefix: any tape starting with the prefix lies in
+some atom (`complete`), whose prefix is comparable with this one, so by `pathInTreeValid` it is
+this atom. -/
+lemma atom_eq_prefixEqEvent (bfpsp : BoundedFootprintPsp) (X : bfpsp.atoms) :
+    X.1 = prefixEqEvent (bfpsp.prefixes X) := by
+  ext ρ
+  refine ⟨fun h ↦ bfpsp.agreeOnPrefix X ρ h, fun h ↦ ?_⟩
+  obtain ⟨Y, hY, hρY⟩ := bfpsp.complete ρ
+  let Y' : bfpsp.atoms := ⟨Y, hY⟩
+  have hρY' : ρ ∈ prefixEqEvent (bfpsp.prefixes Y') := bfpsp.agreeOnPrefix Y' ρ hρY
+  by_cases hXY : Y' = X
+  · subst hXY
+    exact hρY
+  · rcases prefix_or_prefix_of_mem hρY' h with h' | h'
+    · exact absurd h' (bfpsp.pathInTreeValid Y' X hXY)
+    · exact absurd h' (bfpsp.pathInTreeValid X Y' (Ne.symm hXY))
+
+/-- Started at a `path` that extends no atom's prefix except possibly as `path` itself, `toTree.go`
+puts a leaf only at the full prefix of some atom. -/
+lemma toTree_go_prefixes {α : Type} (bfpsp : BoundedFootprintPsp)
+    (programs : bfpsp.atoms → BernoulliM α) (path : BoolSeq)
+    (hpath : ∀ X : bfpsp.atoms, bfpsp.prefixes X <+: path → bfpsp.prefixes X = path)
+    {q : BoolSeq} (hq : q ∈ (toTree.go bfpsp programs path).prefixes) :
+    ∃ X : bfpsp.atoms, bfpsp.prefixes X = path ++ q := by
+  induction path using toTree.go.induct bfpsp generalizing q with
+  | case1 path leafy =>
+    rw [toTree.go] at hq
+    simp only [leafy, ↓reduceDIte] at hq
+    simp only [ProbTree.prefixes, Finset.mem_singleton] at hq
+    obtain ⟨X, hX⟩ := leafy
+    exact ⟨X, by rw [hq, List.append_nil]; exact hpath X hX⟩
+  | case2 path leafy ihl ihr =>
+    rw [toTree.go] at hq
+    simp only [leafy, ↓reduceDIte] at hq
+    simp only [ProbTree.prefixes, Finset.mem_union, Finset.mem_map, Function.Embedding.coeFn_mk] at hq
+    -- an atom's prefix below `path ++ [b]` is not below `path`, so it is `path ++ [b]`
+    have hstep : ∀ b, ∀ X : bfpsp.atoms,
+        bfpsp.prefixes X <+: path ++ [b] → bfpsp.prefixes X = path ++ [b] := by
+      intro b X hX
+      by_cases hle : (bfpsp.prefixes X).length ≤ path.length
+      · exact absurd ⟨X, List.prefix_of_prefix_length_le hX (List.prefix_append _ _) hle⟩ leafy
+      · exact hX.eq_of_length (by have := hX.length_le; simp at this ⊢; omega)
+    rcases hq with ⟨a, ha, rfl⟩ | ⟨a, ha, rfl⟩
+    · obtain ⟨X, hX⟩ := ihl (hstep true) ha
+      exact ⟨X, by simp [hX]⟩
+    · obtain ⟨X, hX⟩ := ihr (hstep false) ha
+      exact ⟨X, by simp [hX]⟩
+
+/-- The tree's σ-algebra is no finer than the footprint's: each of the tree's events is the event of
+an atom's prefix, which is that atom. -/
+lemma toTree_ms_le {α : Type} (bfpsp : BoundedFootprintPsp) (programs : bfpsp.atoms → BernoulliM α) :
+    (toTree bfpsp programs).ms ≤ MeasurableSpace.generateFrom bfpsp.atoms := by
+  refine MeasurableSpace.generateFrom_le ?_
+  rintro _ ⟨q, hq, rfl⟩
+  obtain ⟨X, hX⟩ := toTree_go_prefixes bfpsp programs [] (fun _ h ↦ List.prefix_nil.mp h) hq
+  rw [List.nil_append] at hX
+  rw [← hX, ← atom_eq_prefixEqEvent]
+  exact MeasurableSpace.measurableSet_generateFrom X.2
+
+/-- The footprint's measure, moved onto the tree's σ-algebra, is still a probability measure. -/
+instance {α : Type} (bfpsp : BoundedFootprintPsp)
+  (valid : ✓bfpsp.psp) (programs : bfpsp.atoms → BernoulliM α) :
+    IsProbabilityMeasure
+      ((ValidPSpΩ.toPSpace ⟨bfpsp.psp, valid⟩).μ.cast (toTree bfpsp programs).ms) where
+  measure_univ := by
+    have hle : (toTree bfpsp programs).ms ≤ (ValidPSpΩ.toPSpace ⟨bfpsp.psp, valid⟩).ms := by
+      rw [bfpsp.sigmaAgrees valid]
+      exact toTree_ms_le bfpsp programs
+    rw [Measure.le_preserves_measure (h := hle) (hu := MeasurableSet.univ)]
+    exact (ValidPSpΩ.toPSpace ⟨bfpsp.psp, valid⟩).2.measure_univ
+
 noncomputable def ofTree {α : Type} (tree : TreeWithMeasure α) [φ : IsProbabilityMeasure tree.2] : BoundedFootprintPsp :=
   {
     psp                := .some ⟨⟨tree.1.ms, tree.2⟩, φ⟩
@@ -836,20 +932,45 @@ end ProbTree
 
 open ProbTree BoundedFootprintPsp
 
-noncomputable def bigStep (bfpsp : BoundedFootprintPsp)
+def _root_.Foxglove.Interp.ProbTree.followTape {α : Type}
+  (tree : ProbTree α) (tape : BoolSeq) : Option α :=
+  match tree, tape with
+  | .leaf (.pure a), _             => .some a
+  | .node l _      , true :: tape  => l.followTape tape
+  | .node _ r      , false :: tape => r.followTape tape
+  | _              , _             => .none
+
+/-- Following a root-to-leaf path of a finished tree reaches a value. -/
+lemma followTape_isSome {α : Type} {tree : ProbTree α} {tape : BoolSeq}
+  (h₁ : tree.done = true) (h₂ : tape ∈ tree.prefixes) : (tree.followTape tape).isSome := by
+  induction tree generalizing tape with
+  | leaf m =>
+    cases m with
+    | pure a => rfl
+    | liftBind op c => simp [done] at h₁
+  | node l r ihl ihr =>
+    simp only [done, Bool.and_eq_true] at h₁
+    simp only [ProbTree.prefixes, Finset.mem_union, Finset.mem_map,
+      Function.Embedding.coeFn_mk] at h₂
+    rcases h₂ with ⟨a, ha, rfl⟩ | ⟨a, ha, rfl⟩
+    · exact ihl h₁.1 ha
+    · exact ihr h₁.2 ha
+
+noncomputable def bigStep {α} (bfpsp : BoundedFootprintPsp)
                           (programs : bfpsp.atoms → BernoulliM α) :
-                          Σ bfpsp : BoundedFootprintPsp, bfpsp.atoms → α :=
+                          Option (Σ bfpsp : BoundedFootprintPsp, bfpsp.atoms → α) :=
   if valid : ✓bfpsp.psp
   then
     let tree := toTree bfpsp programs
     -- `(ValidPSpΩ.toPSpace ⟨bfpsp.psp, valid⟩).ms = tree.ms`
-    let ⟨tree', μ⟩ := fixpoint ⟨tree, (ValidPSpΩ.toPSpace ⟨bfpsp.psp, valid⟩).μ.cast tree.ms⟩
-    sorry
+    let tree' := fixpoint ⟨tree, (ValidPSpΩ.toPSpace ⟨bfpsp.psp, valid⟩).μ.cast tree.ms⟩
+    .some
+      ⟨
+        (ofTree tree'),
+        fun X ↦ (tree'.1.followTape X.2.choose).get (followTape_isSome fixpoint_done X.2.choose_spec.1)
+      ⟩
   else
-    sorry
-  -- measure is defined by breaking down input event into atoms,
-  -- for each one of those atoms, identify the prefix from the pref. function
-  -- pass the pref
+    .none
 
 -- end Interpretation
 
