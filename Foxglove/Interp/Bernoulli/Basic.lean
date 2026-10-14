@@ -417,7 +417,7 @@ structure BoundedFootprintPsp where
   sigmaAgrees : (h : ✓psp) → (ValidPSpΩ.toPSpace ⟨psp, h⟩).ms = MeasurableSpace.generateFrom atoms
   disjoint : atoms.PairwiseDisjoint id
   prefixes : atoms → List Bool
-  agreeOnPrefix : ∀ X : atoms, ∀ ρ ∈ X.1, ∀ ρ' ∈ X.1, ∀ i < (prefixes X).length, ρ i = ρ' i
+  agreeOnPrefix : ∀ X : atoms, ∀ ρ ∈ X.1, ∀ i : Fin (prefixes X).length, ρ i.1 = (prefixes X)[i]
   determinedByPrefix : ∀ X : atoms, ∀ ρ ∈ X.1, ∀ ρ' : Ω, (∀ i < (prefixes X).length, ρ i = ρ' i) → ρ' ∈ X.1
 
   pathInTreeValid : ∀ X Y : atoms, X ≠ Y → ¬ prefixes X <+: prefixes Y
