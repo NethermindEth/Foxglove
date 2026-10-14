@@ -381,8 +381,13 @@ noncomputable def branchMeasure (b : Bool) {l r : ProbTree α}
   Measure.map! (ProbTree.node l r).ms (if b then l else r).ms (descend b)
     (μ.restrict (prefixEqEvent [b]))
 
+noncomputable def joinMeasure {l r : ProbTree α}
+    (μₗ : Measure[l.ms] Ω) (μᵣ : Measure[r.ms] Ω) : Measure[(ProbTree.node l r).ms] Ω :=
+  Measure.map! l.ms (ProbTree.node l r).ms (consFlip true) μₗ
+    + Measure.map! r.ms (ProbTree.node l r).ms (consFlip false) μᵣ
+
 noncomputable def step' (tree : ProbTree α) (path : List Bool) (μ : Measure[tree.ms] Ω) : Σ tree : ProbTree α, Measure[tree.ms] Ω :=
-  match h : tree with
+  match tree with
   | .leaf m =>
     match m with
     | .pure _ => Sigma.mk (.leaf m) μ
@@ -394,9 +399,9 @@ noncomputable def step' (tree : ProbTree α) (path : List Bool) (μ : Measure[tr
     let μₗ : Measure[l.ms] Ω := branchMeasure true μ
     let μᵣ : Measure[r.ms] Ω := branchMeasure false μ
     let ⟨l', μₗ'⟩ := step' l (path ++ [true]) μₗ
-    let ⟨r', μᵣ'⟩ := step' r (path ++ [true]) μᵣ
+    let ⟨r', μᵣ'⟩ := step' r (path ++ [false]) μᵣ
     let t' := ProbTree.node l' r'
-    let μ' : Measure[t'.ms] Ω := sorry
+    let μ' : Measure[t'.ms] Ω := joinMeasure μₗ' μᵣ'
     Sigma.mk (ProbTree.node l' r') μ'
 
 @[instance_reducible]
