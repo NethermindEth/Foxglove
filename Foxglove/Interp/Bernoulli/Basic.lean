@@ -520,6 +520,41 @@ namespace BoundedFootprintPsp
 def boundmap (bpsp : BoundedFootprintPsp) : bpsp.atoms → ℕ :=
   List.length ∘ bpsp.prefixes
 
+/-- The prefixes of a footprint have bounded length: its nonempty atoms are cylinders, hence open,
+and they cover the compact space `Ω`, so finitely many of them already do. By disjointness these are
+all the nonempty atoms; the empty atom, if any, contributes one more value. -/
+lemma bddAbove_boundmap (bfpsp : BoundedFootprintPsp) : BddAbove (Set.range bfpsp.boundmap) := by
+  classical
+  have hopen : ∀ X : {X : bfpsp.atoms // X.1.Nonempty}, IsOpen X.1.1 := by
+    rintro ⟨X, ρ, hρ⟩
+    have hX : X.1 = ⋂ i : Fin (bfpsp.prefixes X).length, (fun ω : Ω ↦ ω i) ⁻¹' {ρ i} := by
+      ext ρ'
+      simp only [Set.mem_iInter, Set.mem_preimage, Set.mem_singleton_iff]
+      exact ⟨fun h' i ↦ by rw [bfpsp.agreeOnPrefix X ρ' h' i, bfpsp.agreeOnPrefix X ρ hρ i],
+        fun h' ↦ bfpsp.determinedByPrefix X ρ hρ ρ' fun i hi ↦ (h' ⟨i, hi⟩).symm⟩
+    rw [hX]
+    exact isOpen_iInter_of_finite fun i ↦ (isOpen_discrete _).preimage (continuous_apply _)
+  obtain ⟨t, ht⟩ := isCompact_univ.elim_finite_subcover
+    (fun X : {X : bfpsp.atoms // X.1.Nonempty} ↦ X.1.1) hopen fun ρ _ ↦ by
+      obtain ⟨X, hX, hρ⟩ := bfpsp.complete ρ
+      exact Set.mem_iUnion.mpr ⟨⟨⟨X, hX⟩, ρ, hρ⟩, hρ⟩
+  refine ((t.image fun X ↦ bfpsp.boundmap X.1).finite_toSet.union (Set.finite_singleton
+    (if h : ∅ ∈ bfpsp.atoms then bfpsp.boundmap ⟨∅, h⟩ else 0))).bddAbove.mono ?_
+  rintro _ ⟨X, rfl⟩
+  by_cases hne : X.1.Nonempty
+  · obtain ⟨ρ, hρ⟩ := hne
+    obtain ⟨Y, hY, hρY⟩ := Set.mem_iUnion₂.mp (ht (Set.mem_univ ρ))
+    have hYX : Y.1 = X := by
+      by_contra hYX
+      exact Set.disjoint_left.mp (bfpsp.disjoint Y.1.2 X.2 (Subtype.coe_ne_coe.mpr hYX)) hρY hρ
+    left
+    exact Finset.mem_coe.mpr (Finset.mem_image.mpr ⟨Y, hY, by rw [hYX]⟩)
+  · right
+    have hX : X.1 = ∅ := Set.not_nonempty_iff_eq_empty.mp hne
+    have hmem : ∅ ∈ bfpsp.atoms := hX ▸ X.2
+    simp only [Set.mem_singleton_iff, hmem, ↓reduceDIte]
+    exact congrArg bfpsp.boundmap (Subtype.ext hX)
+
 noncomputable def toTree {α : Type}
   (bfpsp : BoundedFootprintPsp)
   (programs : bfpsp.atoms → BernoulliM α) : ProbTree α :=
@@ -532,7 +567,32 @@ where
     -- `complete` will be needed to reach the base case
     .node (go (path ++ [true])) (go (path ++ [false]))
   termination_by (⨆ X : bfpsp.atoms, bfpsp.boundmap X) - path.length
-  decreasing_by all_goals sorry
+  decreasing_by
+    all_goals
+      -- the atom containing the tape through `path` has a prefix comparable with `path`, and
+      -- (by `leafy`) not a prefix of it, so strictly longer
+      obtain ⟨S, hS, hρ⟩ := bfpsp.complete (fun n ↦ path.getD n false)
+      let X : bfpsp.atoms := ⟨S, hS⟩
+      have hlt : path.length < (bfpsp.prefixes X).length := by
+        by_contra hle
+        rw [not_lt] at hle
+        refine leafy ⟨X, List.prefix_iff_eq_take.mpr
+          (List.ext_getElem (by simp; omega) fun i h₁ h₂ ↦ ?_)⟩
+        have h := bfpsp.agreeOnPrefix X _ hρ ⟨i, h₁⟩
+        simp only [List.getD_eq_getElem?_getD,
+          List.getElem?_eq_getElem (by omega : i < path.length), Option.getD_some] at h
+        rw [List.getElem_take]
+        exact h.symm
+      have hle : (bfpsp.prefixes X).length ≤ ⨆ X : bfpsp.atoms, bfpsp.boundmap X :=
+        le_ciSup (bddAbove_boundmap bfpsp) X
+      simp only [List.length_append, List.length_singleton]
+      omega
+
+-- noncomputable def fromTree {α : Type}
+--   (bfpsp : ProbTree α) : BoundedFootprintPsp :=
+--   match bfpsp with
+--   | .leaf m => _
+--   | .node l r => _
 
 end BoundedFootprintPsp
 
