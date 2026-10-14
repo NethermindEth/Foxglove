@@ -956,21 +956,19 @@ lemma followTape_isSome {α : Type} {tree : ProbTree α} {tape : BoolSeq}
     · exact ihl h₁.1 ha
     · exact ihr h₁.2 ha
 
-noncomputable def bigStep {α} (bfpsp : BoundedFootprintPsp)
+noncomputable def bigStep {α} [Inhabited α] (bfpsp : BoundedFootprintPsp)
                           (programs : bfpsp.atoms → BernoulliM α) :
-                          Option (Σ bfpsp : BoundedFootprintPsp, bfpsp.atoms → α) :=
+                          (Σ bfpsp : BoundedFootprintPsp, bfpsp.atoms → α) :=
   if valid : ✓bfpsp.psp
   then
     let tree := toTree bfpsp programs
     -- `(ValidPSpΩ.toPSpace ⟨bfpsp.psp, valid⟩).ms = tree.ms`
     let tree' := fixpoint ⟨tree, (ValidPSpΩ.toPSpace ⟨bfpsp.psp, valid⟩).μ.cast tree.ms⟩
-    .some
-      ⟨
-        (ofTree tree'),
-        fun X ↦ (tree'.1.followTape X.2.choose).get (followTape_isSome fixpoint_done X.2.choose_spec.1)
-      ⟩
+    Sigma.mk
+      (ofTree tree')
+      (fun X ↦ (tree'.1.followTape X.2.choose).get (followTape_isSome fixpoint_done X.2.choose_spec.1))
   else
-    .none
+    Sigma.mk bfpsp (fun _ ↦ default)
 
 -- end Interpretation
 
