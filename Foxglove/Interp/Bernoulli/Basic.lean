@@ -416,17 +416,40 @@ structure BoundedFootprintPsp where
   measurable : ∀ X ∈ atoms, ∀ (h : ✓psp), MeasurableSet[(ValidPSpΩ.toPSpace ⟨psp, h⟩).ms] X
   sigmaAgrees : (h : ✓psp) → (ValidPSpΩ.toPSpace ⟨psp, h⟩).ms = MeasurableSpace.generateFrom atoms
   disjoint : atoms.PairwiseDisjoint id
-  prefixes : atoms → List Bool
+
+  prefixes : atoms → BoolSeq
   agreeOnPrefix : ∀ X : atoms, ∀ ρ ∈ X.1, ∀ i : Fin (prefixes X).length, ρ i.1 = (prefixes X)[i]
   determinedByPrefix : ∀ X : atoms, ∀ ρ ∈ X.1, ∀ ρ' : Ω, (∀ i < (prefixes X).length, ρ i = ρ' i) → ρ' ∈ X.1
 
   pathInTreeValid : ∀ X Y : atoms, X ≠ Y → ¬ prefixes X <+: prefixes Y
 
-def BoundedFootprintPsp.boundmap (bpsp : BoundedFootprintPsp) : bpsp.atoms → ℕ :=
+section scratch
+
+end scratch
+
+structure CompleteBoundedFootprintPsp extends BoundedFootprintPsp where
+  complete : ∀ ρ : Ω, ∃ X ∈ atoms, ρ ∈ X
+
+namespace BoundedFootprintPsp
+
+def boundmap (bpsp : BoundedFootprintPsp) : bpsp.atoms → ℕ :=
   List.length ∘ bpsp.prefixes
 
--- ∀ X ∈ atoms, ∀ ρ ρ' ∈ X , rv ρ = rv ρ'.... (or instead of RV, `atoms → BErnualliM α`) -- Σ psp : BSPp, psp.atoms → BernulliM α
--- initially, you start in 1 : PSp, single atom generating its Σ (this is Set.univ)
+noncomputable def toTree {α : Type}
+  (cbfpsp : CompleteBoundedFootprintPsp)
+  (programs : cbfpsp.atoms → BernoulliM α) : ProbTree α :=
+  go []
+where
+  go (path : BoolSeq) : ProbTree α :=
+  if leafy : ∃ X : cbfpsp.atoms, cbfpsp.prefixes X <+: path then
+    .leaf (programs leafy.choose)
+  else
+    -- `complete` will be needed to reach the base case
+    .node (go (path ++ [true])) (go (path ++ [false]))
+  termination_by (⨆ X : cbfpsp.atoms, cbfpsp.boundmap X) - path.length
+  decreasing_by all_goals sorry
+
+end BoundedFootprintPsp
 
 end ProbTree
 
