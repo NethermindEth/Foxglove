@@ -78,172 +78,6 @@ lemma shift_consCoin (b : Bool) (ω : Ω) : (fun n => consFlip b ω (n + 1)) = �
 
 def shift (ω : Ω) : Ω := fun n => ω (n + 1)
 
--- noncomputable def interp_psp {α : Type} (m : BernoulliM α) : PSp Ω × RV α :=
---   match m with
---   | PFunctor.FreeM.pure a => (1, fun _ ↦ a)
---   | PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f =>
---     let (p₀, rv₀) := interp_psp (f false)
---     let (p₁, rv₁) := interp_psp (f true)
---     let rv' (ω : Ω) : α :=
---       if ω 0
---       then rv₁ (shift ω)
---       else rv₀ (shift ω)
---     ( PSp.wsum₂ (unitInterval.toNNReal r) (toNNReal_le_one r)
---         (PSp.map (consFlip false) p₀) (PSp.map (consFlip true) p₁)
---     , rv' )
-
--- noncomputable def outputPSp {α : Type} (out : PSp Ω × RV α) : PSp α := PSp.map out.2 out.1
-
--- /-! ## The `PSpace`-level interpretation
-
--- `interp_psp` never produces `↯`, so its space can be given at the `PSpace` level
--- (`interpSpace`); the output of a program is then `outSpace`, and `outputPSp_eq` relates
--- the two levels. -/
-
--- /-- `interp_psp` never yields `↯`; this is the same space at the `PSpace` level. -/
--- noncomputable def interpSpace {α : Type} (m : BernoulliM α) : PSpace Ω :=
---   match m with
---   | PFunctor.FreeM.pure _ => 1
---   | PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f =>
---       PSpace.wsum₂ (unitInterval.toNNReal r) (toNNReal_le_one r)
---         (PSpace.map (consFlip false) (interpSpace (f false)))
---         (PSpace.map (consFlip true) (interpSpace (f true)))
-
--- lemma interp_psp_fst {α : Type} (m : BernoulliM α) :
---     (interp_psp m).1 = .some (interpSpace m) := by
---   induction m with
---   | pure a => rfl
---   | liftBind op f ih =>
---       cases op with
---       | Flip r =>
---           show PSp.wsum₂ (unitInterval.toNNReal r) (toNNReal_le_one r)
---                  (PSp.map (consFlip false) (interp_psp (f false)).1)
---                  (PSp.map (consFlip true) (interp_psp (f true)).1)
---              = .some (PSpace.wsum₂ (unitInterval.toNNReal r) (toNNReal_le_one r)
---                  (PSpace.map (consFlip false) (interpSpace (f false)))
---                  (PSpace.map (consFlip true) (interpSpace (f true))))
---           rw [ih false, ih true]
---           rfl
-
--- /-- The output space of an interpreted program. -/
--- noncomputable def outSpace {α : Type} (m : BernoulliM α) : PSpace α :=
---   PSpace.map (interp_psp m).2 (interpSpace m)
-
--- lemma outputPSp_eq {α : Type} (m : BernoulliM α) :
---     outputPSp (interp_psp m) = .some (outSpace m) := by
---   show PSp.map (interp_psp m).2 (interp_psp m).1 = _
---   rw [interp_psp_fst]
---   rfl
-
--- section Interpretation
-
--- /-! ## Evaluating an interpreted program
-
--- The two laws that matter are `outSpace_pure_apply` and `outSpace_liftBind_apply`: the
--- output of `pure a` is the point mass at `a`, and the output of a flip is the *mixture* of
--- the two branch outputs.  Together they let any program be evaluated by structural
--- recursion, and `outSpace_ms` says the result is always discrete. -/
-
--- variable {α : Type}
-
--- lemma interpSpace_liftBind (r : I) (f : Bool → BernoulliM α) :
---     interpSpace (PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f)
---       = PSpace.wsum₂ (unitInterval.toNNReal r) (toNNReal_le_one r)
---           (PSpace.map (consFlip false) (interpSpace (f false)))
---           (PSpace.map (consFlip true) (interpSpace (f true))) := rfl
-
--- lemma rv_liftBind (r : I) (f : Bool → BernoulliM α) :
---     (interp_psp (PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f)).2
---       = fun ω : Ω => if ω 0 = true then (interp_psp (f true)).2 (fun n => ω (n + 1))
---                      else (interp_psp (f false)).2 (fun n => ω (n + 1)) := rfl
-
--- /-- Prepending the bit `c` makes the outer random variable agree with branch `c`'s. -/
--- lemma preimage_consFlip_rv (r : I) (f : Bool → BernoulliM α)
---     (c : Bool) (S : Set α) :
---     consFlip c ⁻¹' ((interp_psp (PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f)).2 ⁻¹' S)
---       = (interp_psp (f c)).2 ⁻¹' S := by
---   ext ω; cases c <;> simp [Set.mem_preimage, rv_liftBind]
-
--- /-! ### `pure` -/
-
--- lemma outSpace_pure (a : α) : outSpace (PFunctor.FreeM.pure a) = PSpace.map (fun _ : Ω => a) 1 :=
---   rfl
-
--- @[simp] lemma outSpace_pure_ms (a : α) :
---     (outSpace (PFunctor.FreeM.pure a)).ms = (⊤ : MeasurableSpace α) :=
---   MeasurableSpace.map_const a
-
--- lemma measurableSet_outSpace_pure (a : α) (S : Set α) :
---     MeasurableSet[(outSpace (PFunctor.FreeM.pure a)).ms] S := by
---   rw [outSpace_pure_ms]; trivial
-
--- lemma outSpace_pure_apply (a : α) (S : Set α) :
---     (outSpace (PFunctor.FreeM.pure a)).μ S = if a ∈ S then 1 else 0 := by
---   rw [outSpace, PSpace.map_apply _ _ (measurableSet_outSpace_pure a S)]
---   show (1 : PSpace Ω).μ ((fun _ : Ω => a) ⁻¹' S) = _
---   by_cases h : a ∈ S
---   · have he : (fun _ : Ω => a) ⁻¹' S = Set.univ := by ext ω; simp [h]
---     rw [he]; simp [h]
---   · have he : (fun _ : Ω => a) ⁻¹' S = ∅ := by ext ω; simp [h]
---     rw [he]; simp [h]
-
--- /-! ### `flip` -/
-
--- lemma measurableSet_outSpace_liftBind (r : I) (f : Bool → BernoulliM α)
---     {S : Set α}
---     (h₀ : MeasurableSet[(outSpace (f false)).ms] S)
---     (h₁ : MeasurableSet[(outSpace (f true)).ms] S) :
---     MeasurableSet[(outSpace (PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f)).ms] S := by
---   rw [outSpace, PSpace.measurableSet_map, interpSpace_liftBind]
---   refine PSpace.measurableSet_wsum₂ ?_ ?_ <;>
---     rw [PSpace.measurableSet_map, preimage_consFlip_rv]
---   · exact h₀
---   · exact h₁
-
--- /-- The output measure of a flip is the mixture of the branch output measures. -/
--- lemma outSpace_liftBind_apply (r : I) (f : Bool → BernoulliM α)
---     {S : Set α}
---     (h₀ : MeasurableSet[(outSpace (f false)).ms] S)
---     (h₁ : MeasurableSet[(outSpace (f true)).ms] S) :
---     (outSpace (PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f)).μ S
---       = (1 - (unitInterval.toNNReal r : ℝ≥0∞)) * (outSpace (f false)).μ S
---         + (unitInterval.toNNReal r : ℝ≥0∞) * (outSpace (f true)).μ S := by
---   rw [outSpace, PSpace.map_apply _ _ (by
---         rw [← outSpace]; exact measurableSet_outSpace_liftBind r f h₀ h₁),
---       interpSpace_liftBind,
---       PSpace.wsum₂_map_apply _ _ (consFlip false) (consFlip true) _ _
---         (by rw [← interpSpace_liftBind, ← PSpace.measurableSet_map, ← outSpace]
---             exact measurableSet_outSpace_liftBind r f h₀ h₁),
---       preimage_consFlip_rv, preimage_consFlip_rv,
---       ← PSpace.map_apply _ _ h₀, ← PSpace.map_apply _ _ h₁]
---   rfl
-
--- /-- The output space of *any* interpreted program is discrete: a program only ever
--- produces finitely many values, through finitely many coin flips. -/
--- lemma outSpace_ms (m : BernoulliM α) :
---     (outSpace m).ms = (⊤ : MeasurableSpace α) := by
---   induction m with
---   | pure a => exact outSpace_pure_ms a
---   | liftBind op f ih =>
---       cases op with
---       | Flip r =>
---           refine PSpace.ms_eq_top_of_all (fun S =>
---             measurableSet_outSpace_liftBind r f ?_ ?_)
---           · rw [ih false]; trivial
---           · rw [ih true]; trivial
-
--- lemma measurableSet_outSpace (m : BernoulliM α) (S : Set α) :
---     MeasurableSet[(outSpace m).ms] S := by rw [outSpace_ms]; trivial
-
--- /-- `outSpace_liftBind_apply` with its side conditions discharged by `outSpace_ms`.  This
--- is the workhorse: it evaluates a program one flip at a time. -/
--- lemma outSpace_liftBind_μ (r : I) (f : Bool → BernoulliM α)
---     (S : Set α) :
---     (outSpace (PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f)).μ S
---       = (1 - (unitInterval.toNNReal r : ℝ≥0∞)) * (outSpace (f false)).μ S
---         + (unitInterval.toNNReal r : ℝ≥0∞) * (outSpace (f true)).μ S :=
---   outSpace_liftBind_apply r f (measurableSet_outSpace _ S) (measurableSet_outSpace _ S)
-
 inductive ProbTree (α : Type) where
   | leaf (m : BernoulliM α)
   | node (l r : ProbTree α)
@@ -701,20 +535,8 @@ lemma fixpoint_done {α : Type} {t : TreeWithMeasure α} : (fixpoint t).1.done =
   | case1 t hdone => rw [fixpoint]; simp [hdone]
   | case2 t hdone ih => rw [fixpoint]; simp [hdone, ih]
 
-structure BoundedFootprintPsp where
-  psp : PSpΩ
-  atoms : Set Event
-
-  measurable : ∀ X ∈ atoms, ∀ (h : ✓psp), MeasurableSet[(ValidPSpΩ.toPSpace ⟨psp, h⟩).ms] X
-  sigmaAgrees : (h : ✓psp) → (ValidPSpΩ.toPSpace ⟨psp, h⟩).ms = MeasurableSpace.generateFrom atoms
-  disjoint : atoms.PairwiseDisjoint id
-
-  prefixes : atoms → BoolSeq
-  agreeOnPrefix : ∀ X : atoms, ∀ ρ ∈ X.1, ∀ i : Fin (prefixes X).length, ρ i.1 = (prefixes X)[i]
-  determinedByPrefix : ∀ X : atoms, ∀ ρ ∈ X.1, ∀ ρ' : Ω, (∀ i < (prefixes X).length, ρ i = ρ' i) → ρ' ∈ X.1
-
-  pathInTreeValid : ∀ X Y : atoms, X ≠ Y → ¬ prefixes X <+: prefixes Y
-  complete : ∀ ρ : Ω, ∃ X ∈ atoms, ρ ∈ X
+/-- The footprints over coin tapes: `ProbSpace.BoundedFootprintPsp` at `α := Bool`. -/
+abbrev BoundedFootprintPsp := ProbSpace.BoundedFootprintPsp Bool
 
 section scratch
 
@@ -756,44 +578,6 @@ end
 
 namespace BoundedFootprintPsp
 
-def boundmap (bpsp : BoundedFootprintPsp) : bpsp.atoms → ℕ :=
-  List.length ∘ bpsp.prefixes
-
-/-- The prefixes of a footprint have bounded length: its nonempty atoms are cylinders, hence open,
-and they cover the compact space `Ω`, so finitely many of them already do. By disjointness these are
-all the nonempty atoms; the empty atom, if any, contributes one more value. -/
-lemma bddAbove_boundmap (bfpsp : BoundedFootprintPsp) : BddAbove (Set.range bfpsp.boundmap) := by
-  classical
-  have hopen : ∀ X : {X : bfpsp.atoms // X.1.Nonempty}, IsOpen X.1.1 := by
-    rintro ⟨X, ρ, hρ⟩
-    have hX : X.1 = ⋂ i : Fin (bfpsp.prefixes X).length, (fun ω : Ω ↦ ω i) ⁻¹' {ρ i} := by
-      ext ρ'
-      simp only [Set.mem_iInter, Set.mem_preimage, Set.mem_singleton_iff]
-      exact ⟨fun h' i ↦ by rw [bfpsp.agreeOnPrefix X ρ' h' i, bfpsp.agreeOnPrefix X ρ hρ i],
-        fun h' ↦ bfpsp.determinedByPrefix X ρ hρ ρ' fun i hi ↦ (h' ⟨i, hi⟩).symm⟩
-    rw [hX]
-    exact isOpen_iInter_of_finite fun i ↦ (isOpen_discrete _).preimage (continuous_apply _)
-  obtain ⟨t, ht⟩ := isCompact_univ.elim_finite_subcover
-    (fun X : {X : bfpsp.atoms // X.1.Nonempty} ↦ X.1.1) hopen fun ρ _ ↦ by
-      obtain ⟨X, hX, hρ⟩ := bfpsp.complete ρ
-      exact Set.mem_iUnion.mpr ⟨⟨⟨X, hX⟩, ρ, hρ⟩, hρ⟩
-  refine ((t.image fun X ↦ bfpsp.boundmap X.1).finite_toSet.union (Set.finite_singleton
-    (if h : ∅ ∈ bfpsp.atoms then bfpsp.boundmap ⟨∅, h⟩ else 0))).bddAbove.mono ?_
-  rintro _ ⟨X, rfl⟩
-  by_cases hne : X.1.Nonempty
-  · obtain ⟨ρ, hρ⟩ := hne
-    obtain ⟨Y, hY, hρY⟩ := Set.mem_iUnion₂.mp (ht (Set.mem_univ ρ))
-    have hYX : Y.1 = X := by
-      by_contra hYX
-      exact Set.disjoint_left.mp (bfpsp.disjoint Y.1.2 X.2 (Subtype.coe_ne_coe.mpr hYX)) hρY hρ
-    left
-    exact Finset.mem_coe.mpr (Finset.mem_image.mpr ⟨Y, hY, by rw [hYX]⟩)
-  · right
-    have hX : X.1 = ∅ := Set.not_nonempty_iff_eq_empty.mp hne
-    have hmem : ∅ ∈ bfpsp.atoms := hX ▸ X.2
-    simp only [Set.mem_singleton_iff, hmem, ↓reduceDIte]
-    exact congrArg bfpsp.boundmap (Subtype.ext hX)
-
 noncomputable def toTree {α : Type}
   (bfpsp : BoundedFootprintPsp)
   (programs : bfpsp.atoms → BernoulliM α) : ProbTree α :=
@@ -823,7 +607,7 @@ where
         rw [List.getElem_take]
         exact h.symm
       have hle : (bfpsp.prefixes X).length ≤ ⨆ X : bfpsp.atoms, bfpsp.boundmap X :=
-        le_ciSup (bddAbove_boundmap bfpsp) X
+        le_ciSup bfpsp.bddAbove_boundmap X
       simp only [List.length_append, List.length_singleton]
       omega
 
@@ -890,13 +674,13 @@ lemma toTree_ms_le {α : Type} (bfpsp : BoundedFootprintPsp) (programs : bfpsp.a
 instance {α : Type} (bfpsp : BoundedFootprintPsp)
   (valid : ✓bfpsp.psp) (programs : bfpsp.atoms → BernoulliM α) :
     IsProbabilityMeasure
-      ((ValidPSpΩ.toPSpace ⟨bfpsp.psp, valid⟩).μ.cast (toTree bfpsp programs).ms) where
+      ((ProbSpace.ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).μ.cast (toTree bfpsp programs).ms) where
   measure_univ := by
-    have hle : (toTree bfpsp programs).ms ≤ (ValidPSpΩ.toPSpace ⟨bfpsp.psp, valid⟩).ms := by
+    have hle : (toTree bfpsp programs).ms ≤ (ProbSpace.ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).ms := by
       rw [bfpsp.sigmaAgrees valid]
       exact toTree_ms_le bfpsp programs
     rw [Measure.le_preserves_measure (h := hle) (hu := MeasurableSet.univ)]
-    exact (ValidPSpΩ.toPSpace ⟨bfpsp.psp, valid⟩).2.measure_univ
+    exact (ProbSpace.ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).2.measure_univ
 
 noncomputable def ofTree {α : Type} (tree : TreeWithMeasure α) [φ : IsProbabilityMeasure tree.2] : BoundedFootprintPsp :=
   {
@@ -963,14 +747,20 @@ noncomputable def bigStep {α} [Inhabited α] (bfpsp : BoundedFootprintPsp)
   then
     let tree := toTree bfpsp programs
     -- `(ValidPSpΩ.toPSpace ⟨bfpsp.psp, valid⟩).ms = tree.ms`
-    let tree' := fixpoint ⟨tree, (ValidPSpΩ.toPSpace ⟨bfpsp.psp, valid⟩).μ.cast tree.ms⟩
+    let tree' := fixpoint ⟨tree, (ProbSpace.ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).μ.cast tree.ms⟩
     Sigma.mk
       (ofTree tree')
       (fun X ↦ (tree'.1.followTape X.2.choose).get (followTape_isSome fixpoint_done X.2.choose_spec.1))
   else
     Sigma.mk bfpsp (fun _ ↦ default)
 
--- end Interpretation
+noncomputable def interp_psp {α : Type} [Inhabited α] (m : BernoulliM α) : (Σ bfpsp : BoundedFootprintPsp, bfpsp.atoms → α) :=
+  bigStep 1 (fun _ ↦ m)
+
+/-- The space of outputs: push the footprint's space forward along the value the interpretation
+gives to the atom each tape lands in. -/
+noncomputable def outputPSp {α : Type} (input : Σ bfpsp : BoundedFootprintPsp, bfpsp.atoms → α) : PSp α :=
+  PSp.map (input.2 ∘ input.1.atomOf) input.1.psp
 
 end Interp
 

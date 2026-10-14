@@ -1,6 +1,7 @@
 module
 
 public import Mathlib.Probability.Distributions.Uniform
+public import Mathlib.Data.Set.Finite.List
 public import Foxglove.OURA
 
 /-! ## Independent product of probability measures -/
@@ -1445,6 +1446,30 @@ lemma PSpace.bernoulli_apply (p : I) (s : Set Bool) [DecidablePred (· ∈ s)] :
 
 end Examples
 
+/-! ## Valid probability spaces
+
+`⊤` is the undefined element of `PSp Ω`; everything else is a genuine `PSpace Ω`. -/
+
+/-- The defined elements of `PSp Ω`. -/
+abbrev ValidPSp (Ω : Type*) [Inhabited Ω] : Type _ := {psp : PSp Ω // ✓psp}
+
+@[grind =]
+lemma PSp.valid_def [Inhabited Ω] {psp : PSp Ω} : ✓psp ↔ psp ≠ (⊤ : PSp Ω) := by rfl
+
+@[grind norm]
+lemma PSp.top_def : (⊤ : PSp Ω) = .none := rfl
+
+/-- The space underlying a valid `PSp`. -/
+def ValidPSp.toPSpace [Inhabited Ω] (vpsp : ValidPSp Ω) : PSpace Ω :=
+  vpsp.1.get (by
+    rcases vpsp with ⟨val, h⟩
+    have : val ≠ .none := by grind
+    erw [Option.ne_none_iff_isSome] at this
+    exact this)
+
+lemma ValidPSp.toPSpace_eq [Inhabited Ω] {psp : PSp Ω} (h : ✓psp) {p : PSpace Ω}
+    (hp : psp = .some p) : ValidPSp.toPSpace ⟨psp, h⟩ = p := by subst hp; rfl
+
 end PSp
 
 section WeightedSum
@@ -1637,6 +1662,349 @@ lemma PSpace.measurableSet_wsum₂ {r : NNReal} {hr : r ≤ 1} {p₀ p₁ : PSpa
     MeasurableSpace.measurableSet_iInf.mpr (fun _ => by cases v <;> simpa))
 
 end WeightedSum
+
+section BoundedFootprint
+
+abbrev Tape (α : Type*) := ℕ → α
+
+abbrev TapeEvent (α : Type*) := Set (Tape α)
+
+structure BoundedFootprintPsp (α : Type*) [Inhabited α] where
+  psp : PSp (Tape α)
+  atoms : Set (TapeEvent α)
+
+  measurable : ∀ X ∈ atoms, ∀ (h : ✓psp), MeasurableSet[(ValidPSp.toPSpace ⟨psp, h⟩).ms] X
+  sigmaAgrees : (h : ✓psp) →
+    (ValidPSp.toPSpace ⟨psp, h⟩).ms = MeasurableSpace.generateFrom atoms
+  disjoint : atoms.PairwiseDisjoint id
+
+  prefixes : atoms → List α
+  agreeOnPrefix : ∀ X : atoms, ∀ ρ ∈ X.1, ∀ i : Fin (prefixes X).length, ρ i.1 = (prefixes X)[i]
+  determinedByPrefix : ∀ X : atoms, ∀ ρ ∈ X.1, ∀ ρ' : Tape α,
+    (∀ i < (prefixes X).length, ρ i = ρ' i) → ρ' ∈ X.1
+
+  pathInTreeValid : ∀ X Y : atoms, X ≠ Y → ¬ prefixes X <+: prefixes Y
+  complete : ∀ ρ : Tape α, ∃ X ∈ atoms, ρ ∈ X
+
+namespace BoundedFootprintPsp
+
+variable {α : Type*} [Inhabited α]
+
+/-- Distinct atoms have prefix-incomparable prefixes, so in particular distinct ones. -/
+lemma prefixes_injective (b : BoundedFootprintPsp α) : Function.Injective b.prefixes := by
+  intro X Y h
+  by_contra hne
+  exact b.pathInTreeValid X Y hne (h ▸ List.prefix_refl _)
+
+/-- The atom a tape lands in: `complete` says there is one, `disjoint` says there is only one. -/
+noncomputable def atomOf (b : BoundedFootprintPsp α) (ρ : Tape α) : b.atoms :=
+  ⟨(b.complete ρ).choose, (b.complete ρ).choose_spec.1⟩
+
+lemma mem_atomOf (b : BoundedFootprintPsp α) (ρ : Tape α) : ρ ∈ (b.atomOf ρ).1 :=
+  (b.complete ρ).choose_spec.2
+
+/-- `atomOf` picks out *the* atom containing the tape: any atom containing it is that one. -/
+lemma atomOf_eq (b : BoundedFootprintPsp α) {ρ : Tape α} {X : b.atoms} (hρ : ρ ∈ X.1) :
+    b.atomOf ρ = X := by
+  by_contra hne
+  exact Set.disjoint_left.mp (b.disjoint (b.atomOf ρ).2 X.2 (Subtype.coe_ne_coe.mpr hne))
+    (b.mem_atomOf ρ) hρ
+
+/-- The atoms are exactly the fibres of `atomOf`, so it is measurable for the footprint's
+σ-algebra. -/
+lemma preimage_atomOf (b : BoundedFootprintPsp α) (X : b.atoms) : b.atomOf ⁻¹' {X} = X.1 := by
+  ext ρ
+  simp only [Set.mem_preimage, Set.mem_singleton_iff]
+  exact ⟨fun h ↦ h ▸ b.mem_atomOf ρ, fun h ↦ b.atomOf_eq h⟩
+
+omit [Inhabited α] in
+/-- Prefix-freeness is automatic for a disjoint family of nonempty, prefix-determined atoms:
+if one atom's prefix extended another's, the first atom's tapes would already lie in the
+second. This is what discharges `pathInTreeValid` when a footprint is built. -/
+lemma pathInTreeValid_of_disjoint {atoms : Set (TapeEvent α)} {prefixes : atoms → List α}
+    (hdisj : atoms.PairwiseDisjoint id)
+    (hne : ∀ X : atoms, X.1.Nonempty)
+    (hagree : ∀ X : atoms, ∀ ρ ∈ X.1, ∀ i : Fin (prefixes X).length, ρ i.1 = (prefixes X)[i])
+    (hdet : ∀ X : atoms, ∀ ρ ∈ X.1, ∀ ρ' : Tape α,
+      (∀ i < (prefixes X).length, ρ i = ρ' i) → ρ' ∈ X.1) :
+    ∀ X Y : atoms, X ≠ Y → ¬ prefixes X <+: prefixes Y := by
+  rintro X Y hXY hpre
+  obtain ⟨ρ, hρ⟩ := hne X
+  obtain ⟨ρ', hρ'⟩ := hne Y
+  have hlen : (prefixes X).length ≤ (prefixes Y).length := hpre.length_le
+  have hmem : ρ' ∈ X.1 := hdet X ρ hρ ρ' fun i hi ↦ by
+    rw [hagree X ρ hρ ⟨i, hi⟩, hagree Y ρ' hρ' ⟨i, by omega⟩]
+    simpa using hpre.getElem hi
+  exact Set.disjoint_left.mp (hdisj X.2 Y.2 (Subtype.coe_ne_coe.mpr hXY)) hmem hρ'
+
+/-- A space that reads nothing has the trivial footprint: a single atom, the whole space.
+This is the footprint of the unit, and of the undefined space `⊤`, whose σ-algebra is never
+observed. -/
+def ofMsBot (psp : PSp (Tape α))
+    (hms : ∀ h : ✓psp, (ValidPSp.toPSpace ⟨psp, h⟩).ms = ⊥) : BoundedFootprintPsp α where
+  psp := psp
+  atoms := {Set.univ}
+  measurable := fun X hX h ↦ by
+    rw [hms h, Set.mem_singleton_iff.mp hX]; exact MeasurableSet.univ
+  sigmaAgrees := fun h ↦ by rw [hms h, MeasurableSpace.generateFrom_singleton_univ]
+  disjoint := Set.pairwiseDisjoint_singleton _ _
+  prefixes := fun _ ↦ []
+  agreeOnPrefix := fun _ _ _ i ↦ i.elim0
+  determinedByPrefix := fun X _ _ ρ' _ ↦ by
+    rw [Set.mem_singleton_iff.mp X.2]; trivial
+  pathInTreeValid := fun X Y hXY _ ↦ hXY (Subtype.ext
+    ((Set.mem_singleton_iff.mp X.2).trans (Set.mem_singleton_iff.mp Y.2).symm))
+  complete := fun _ ↦ ⟨Set.univ, rfl, trivial⟩
+
+/-- How far into the tape each atom reads. -/
+def boundmap (bfpsp : BoundedFootprintPsp α) : bfpsp.atoms → ℕ :=
+  List.length ∘ bfpsp.prefixes
+
+/-- The prefixes of a footprint have bounded length: its nonempty atoms are cylinders, hence open,
+and they cover the compact space `Tape α`, so finitely many of them already do. By disjointness
+these are all the nonempty atoms; the empty atom, if any, contributes one more value. -/
+lemma bddAbove_boundmap [Finite α] (bfpsp : BoundedFootprintPsp α) :
+    BddAbove (Set.range bfpsp.boundmap) := by
+  classical
+  -- a finite alphabet makes `Tape α` a compact space, which is what bounds the prefixes
+  let _ : TopologicalSpace α := ⊥
+  have : DiscreteTopology α := ⟨rfl⟩
+  have hopen : ∀ X : {X : bfpsp.atoms // X.1.Nonempty}, IsOpen X.1.1 := by
+    rintro ⟨X, ρ, hρ⟩
+    have hX : X.1 = ⋂ i : Fin (bfpsp.prefixes X).length, (fun ω : Tape α ↦ ω i) ⁻¹' {ρ i} := by
+      ext ρ'
+      simp only [Set.mem_iInter, Set.mem_preimage, Set.mem_singleton_iff]
+      exact ⟨fun h' i ↦ by rw [bfpsp.agreeOnPrefix X ρ' h' i, bfpsp.agreeOnPrefix X ρ hρ i],
+        fun h' ↦ bfpsp.determinedByPrefix X ρ hρ ρ' fun i hi ↦ (h' ⟨i, hi⟩).symm⟩
+    rw [hX]
+    exact isOpen_iInter_of_finite fun i ↦ (isOpen_discrete _).preimage (continuous_apply _)
+  obtain ⟨t, ht⟩ := isCompact_univ.elim_finite_subcover
+    (fun X : {X : bfpsp.atoms // X.1.Nonempty} ↦ X.1.1) hopen fun ρ _ ↦ by
+      obtain ⟨X, hX, hρ⟩ := bfpsp.complete ρ
+      exact Set.mem_iUnion.mpr ⟨⟨⟨X, hX⟩, ρ, hρ⟩, hρ⟩
+  refine ((t.image fun X ↦ bfpsp.boundmap X.1).finite_toSet.union (Set.finite_singleton
+    (if h : ∅ ∈ bfpsp.atoms then bfpsp.boundmap ⟨∅, h⟩ else 0))).bddAbove.mono ?_
+  rintro _ ⟨X, rfl⟩
+  by_cases hne : X.1.Nonempty
+  · obtain ⟨ρ, hρ⟩ := hne
+    obtain ⟨Y, hY, hρY⟩ := Set.mem_iUnion₂.mp (ht (Set.mem_univ ρ))
+    have hYX : Y.1 = X := by
+      by_contra hYX
+      exact Set.disjoint_left.mp (bfpsp.disjoint Y.1.2 X.2 (Subtype.coe_ne_coe.mpr hYX)) hρY hρ
+    left
+    exact Finset.mem_coe.mpr (Finset.mem_image.mpr ⟨Y, hY, by rw [hYX]⟩)
+  · right
+    have hX : X.1 = ∅ := Set.not_nonempty_iff_eq_empty.mp hne
+    have hmem : ∅ ∈ bfpsp.atoms := hX ▸ X.2
+    simp only [Set.mem_singleton_iff, hmem, ↓reduceDIte]
+    exact congrArg bfpsp.boundmap (Subtype.ext hX)
+
+/-- A footprint has finitely many atoms: they are distinguished by their prefixes, which are
+boundedly long words over a finite alphabet. -/
+lemma finite_atoms [Finite α] (b : BoundedFootprintPsp α) : b.atoms.Finite := by
+  classical
+  have hle : ∀ X : b.atoms, (b.prefixes X).length ≤ ⨆ X : b.atoms, b.boundmap X := fun X ↦
+    le_ciSup b.bddAbove_boundmap X
+  have : Finite {l : List α // l.length ≤ ⨆ X : b.atoms, b.boundmap X} :=
+    (List.finite_length_le α _).to_subtype
+  refine Set.finite_coe_iff.mp (Finite.of_injective
+    (fun X : b.atoms ↦ (⟨b.prefixes X, hle X⟩ : {l : List α // l.length ≤ _})) ?_)
+  intro X Y h
+  exact b.prefixes_injective (congrArg Subtype.val h)
+
+/-! ### The product of two footprints
+
+Independent spaces compose, and so do their footprints: the atoms of the product are the
+nonempty intersections `X ∩ Y` of the two families, read as far as the deeper of the two
+halves.  This is what makes `HasBoundedFootprint` closed under `*`, and hence the
+bounded-footprint spaces a resource algebra of their own. -/
+
+section Inter
+
+variable (b₁ b₂ : BoundedFootprintPsp α)
+
+/-- The atoms of a product: the nonempty intersections of the two atom families. -/
+def interAtoms : Set (TapeEvent α) :=
+  {Z | Z.Nonempty ∧ ∃ X ∈ b₁.atoms, ∃ Y ∈ b₂.atoms, Z = X ∩ Y}
+
+variable {b₁ b₂}
+
+/-- The left half of an atom of a product. -/
+def interLeft (Z : interAtoms b₁ b₂) : b₁.atoms :=
+  ⟨Z.2.2.choose, Z.2.2.choose_spec.1⟩
+
+/-- The right half of an atom of a product. -/
+def interRight (Z : interAtoms b₁ b₂) : b₂.atoms :=
+  ⟨Z.2.2.choose_spec.2.choose, Z.2.2.choose_spec.2.choose_spec.1⟩
+
+lemma interEq (Z : interAtoms b₁ b₂) : Z.1 = (interLeft Z).1 ∩ (interRight Z).1 :=
+  Z.2.2.choose_spec.2.choose_spec.2
+
+lemma interComplete (ρ : Tape α) : ∃ Z ∈ interAtoms b₁ b₂, ρ ∈ Z := by
+  obtain ⟨X, hX, hρX⟩ := b₁.complete ρ
+  obtain ⟨Y, hY, hρY⟩ := b₂.complete ρ
+  exact ⟨X ∩ Y, ⟨⟨ρ, hρX, hρY⟩, X, hX, Y, hY, rfl⟩, hρX, hρY⟩
+
+lemma interDisjoint : (interAtoms b₁ b₂).PairwiseDisjoint id := by
+  rintro _ ⟨-, X, hX, Y, hY, rfl⟩ _ ⟨-, X', hX', Y', hY', rfl⟩ hne
+  refine Set.disjoint_left.mpr fun ρ hρ hρ' ↦ ?_
+  by_cases hXX : X = X'
+  · subst hXX
+    exact Set.disjoint_left.mp (b₂.disjoint hY hY' (fun h ↦ hne (by rw [h]))) hρ.2 hρ'.2
+  · exact Set.disjoint_left.mp (b₁.disjoint hX hX' hXX) hρ.1 hρ'.1
+
+/-- The longer of two prefixes. -/
+def maxPrefix (p q : List α) : List α := if p.length ≤ q.length then q else p
+
+omit [Inhabited α] in
+lemma length_le_maxPrefix_left (p q : List α) : p.length ≤ (maxPrefix p q).length := by
+  unfold maxPrefix; split <;> omega
+
+omit [Inhabited α] in
+lemma length_le_maxPrefix_right (p q : List α) : q.length ≤ (maxPrefix p q).length := by
+  unfold maxPrefix; split <;> omega
+
+/-- An atom of a product is decided by the longer of its two halves' prefixes. -/
+def interPrefixes (Z : interAtoms b₁ b₂) : List α :=
+  maxPrefix (b₁.prefixes (interLeft Z)) (b₂.prefixes (interRight Z))
+
+lemma interAgreeOnPrefix (Z : interAtoms b₁ b₂) (ρ : Tape α) (hρ : ρ ∈ Z.1)
+    (i : Fin (interPrefixes Z).length) : ρ i.1 = (interPrefixes Z)[i] := by
+  have hmem : ρ ∈ (interLeft Z).1 ∩ (interRight Z).1 := interEq Z ▸ hρ
+  obtain ⟨i, hi⟩ := i
+  simp only [interPrefixes, maxPrefix] at hi ⊢
+  split_ifs at hi ⊢ with h
+  · simpa using b₂.agreeOnPrefix (interRight Z) ρ hmem.2 ⟨i, hi⟩
+  · simpa using b₁.agreeOnPrefix (interLeft Z) ρ hmem.1 ⟨i, hi⟩
+
+lemma interDeterminedByPrefix (Z : interAtoms b₁ b₂) (ρ : Tape α) (hρ : ρ ∈ Z.1) (ρ' : Tape α)
+    (h : ∀ i < (interPrefixes Z).length, ρ i = ρ' i) : ρ' ∈ Z.1 := by
+  have hmem : ρ ∈ (interLeft Z).1 ∩ (interRight Z).1 := interEq Z ▸ hρ
+  rw [interEq Z]
+  exact ⟨b₁.determinedByPrefix _ ρ hmem.1 ρ' fun i hi ↦
+      h i (lt_of_lt_of_le hi (length_le_maxPrefix_left ..)),
+    b₂.determinedByPrefix _ ρ hmem.2 ρ' fun i hi ↦
+      h i (lt_of_lt_of_le hi (length_le_maxPrefix_right ..))⟩
+
+lemma measurableSet_inter_interAtoms {X Y : TapeEvent α} (hX : X ∈ b₁.atoms) (hY : Y ∈ b₂.atoms) :
+    MeasurableSet[MeasurableSpace.generateFrom (interAtoms b₁ b₂)] (X ∩ Y) := by
+  rcases Set.eq_empty_or_nonempty (X ∩ Y) with he | hne
+  · rw [he]; exact MeasurableSpace.measurableSet_empty _
+  · exact MeasurableSpace.measurableSet_generateFrom ⟨hne, X, hX, Y, hY, rfl⟩
+
+/-- The σ-algebra of a product is generated by the intersections: each atom of one family is
+the -- necessarily finite -- union of its intersections with the other's. -/
+lemma generateFrom_interAtoms [Finite α] :
+    MeasurableSpace.generateFrom b₁.atoms ⊔ MeasurableSpace.generateFrom b₂.atoms
+      = MeasurableSpace.generateFrom (interAtoms b₁ b₂) := by
+  refine le_antisymm (sup_le ?_ ?_) (MeasurableSpace.generateFrom_le ?_)
+  · refine MeasurableSpace.generateFrom_le fun X hX ↦ ?_
+    rw [show X = ⋃ Y ∈ b₂.atoms, X ∩ Y by
+      ext ρ
+      simp only [Set.mem_iUnion, Set.mem_inter_iff, exists_prop]
+      exact ⟨fun h ↦ (b₂.complete ρ).imp fun Y hY ↦ ⟨hY.1, h, hY.2⟩, fun ⟨_, _, h, _⟩ ↦ h⟩]
+    exact b₂.finite_atoms.measurableSet_biUnion fun Y hY ↦ measurableSet_inter_interAtoms hX hY
+  · refine MeasurableSpace.generateFrom_le fun Y hY ↦ ?_
+    rw [show Y = ⋃ X ∈ b₁.atoms, X ∩ Y by
+      ext ρ
+      simp only [Set.mem_iUnion, Set.mem_inter_iff, exists_prop]
+      exact ⟨fun h ↦ (b₁.complete ρ).imp fun X hX ↦ ⟨hX.1, hX.2, h⟩, fun ⟨_, _, _, h⟩ ↦ h⟩]
+    exact b₁.finite_atoms.measurableSet_biUnion fun X hX ↦ measurableSet_inter_interAtoms hX hY
+  · rintro _ ⟨-, X, hX, Y, hY, rfl⟩
+    exact mem_sup_inter _ _ (MeasurableSpace.measurableSet_generateFrom hX)
+      (MeasurableSpace.measurableSet_generateFrom hY)
+
+/-- The σ-algebra of a product space, read off the two footprints. -/
+lemma ms_mul_eq [Finite α] (h : ✓(b₁.psp * b₂.psp)) :
+    (ValidPSp.toPSpace ⟨b₁.psp * b₂.psp, h⟩).ms
+      = MeasurableSpace.generateFrom (interAtoms b₁ b₂) := by
+  have hxy : b₁.psp * b₂.psp ≠ (⊤ : PSp (Tape α)) := PSp.valid_def.mp h
+  have hx : ✓b₁.psp := PSp.valid_def.mpr (PSp.mul_defined_imp_defined hxy)
+  have hy : ✓b₂.psp := PSp.valid_def.mpr
+    (PSp.mul_defined_imp_defined (by rwa [mul_comm] at hxy))
+  obtain ⟨p, hp⟩ : ∃ p, b₁.psp = .some p := Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hx)
+  obtain ⟨q, hq⟩ : ∃ q, b₂.psp = .some q := Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hy)
+  obtain ⟨s, hs⟩ : ∃ s, b₁.psp * b₂.psp = .some s := Option.ne_none_iff_exists'.mp hxy
+  have hms : s.ms = p.ms ⊔ q.ms := by
+    rw [hp, hq] at hs
+    exact (PSp.mul_inversion hs).1
+  have h₁ : p.ms = MeasurableSpace.generateFrom b₁.atoms := by
+    rw [← ValidPSp.toPSpace_eq hx hp]; exact b₁.sigmaAgrees hx
+  have h₂ : q.ms = MeasurableSpace.generateFrom b₂.atoms := by
+    rw [← ValidPSp.toPSpace_eq hy hq]; exact b₂.sigmaAgrees hy
+  rw [ValidPSp.toPSpace_eq h hs, hms, h₁, h₂, generateFrom_interAtoms]
+
+/-- The footprint of an independent product. -/
+def inter [Finite α] (b₁ b₂ : BoundedFootprintPsp α) : BoundedFootprintPsp α where
+  psp := b₁.psp * b₂.psp
+  atoms := interAtoms b₁ b₂
+  measurable := fun _ hX h ↦ by
+    rw [ms_mul_eq h]; exact MeasurableSpace.measurableSet_generateFrom hX
+  sigmaAgrees := fun h ↦ ms_mul_eq h
+  disjoint := interDisjoint
+  prefixes := interPrefixes
+  agreeOnPrefix := interAgreeOnPrefix
+  determinedByPrefix := interDeterminedByPrefix
+  pathInTreeValid := pathInTreeValid_of_disjoint interDisjoint (fun Z ↦ Z.2.1)
+    interAgreeOnPrefix interDeterminedByPrefix
+  complete := interComplete
+
+end Inter
+
+end BoundedFootprintPsp
+
+/-! ### Bounded-footprint spaces as a resource algebra -/
+
+variable {α : Type*} [Inhabited α]
+
+/-- `psp` reads only a bounded part of the tape: some `BoundedFootprintPsp` sits over it. -/
+def HasBoundedFootprint (psp : PSp (Tape α)) : Prop :=
+  ∃ b : BoundedFootprintPsp α, b.psp = psp
+
+lemma hasBoundedFootprint_one : HasBoundedFootprint (1 : PSp (Tape α)) :=
+  ⟨BoundedFootprintPsp.ofMsBot 1 fun _ ↦ rfl, rfl⟩
+
+/-- The undefined space reads nothing, vacuously. -/
+lemma hasBoundedFootprint_top : HasBoundedFootprint (⊤ : PSp (Tape α)) :=
+  ⟨BoundedFootprintPsp.ofMsBot ⊤ fun h ↦ absurd rfl (PSp.valid_def.mp h), rfl⟩
+
+lemma hasBoundedFootprint_mul [Finite α] {x y : PSp (Tape α)}
+    (hx : HasBoundedFootprint x) (hy : HasBoundedFootprint y) : HasBoundedFootprint (x * y) := by
+  obtain ⟨b₁, rfl⟩ := hx
+  obtain ⟨b₂, rfl⟩ := hy
+  exact ⟨b₁.inter b₂, rfl⟩
+
+/-- The probability spaces over `Tape α` that read only a bounded part of the tape. -/
+abbrev BoundedFootprintSpace (α : Type*) [Inhabited α] : Type _ :=
+  {psp : PSp (Tape α) // HasBoundedFootprint psp}
+
+/-- Bounded-footprint spaces contain the unit and are closed under independent products, so
+they are a resource algebra in their own right -- a subalgebra of `PSp (Tape α)`. -/
+instance [Finite α] : Iris.OrderedUnitalResourceAlgebra (BoundedFootprintSpace α) :=
+  Iris.OrderedUnitalResourceAlgebra.subalgebra
+    (inferInstance : Iris.OrderedUnitalResourceAlgebra (PSp (Tape α)))
+    hasBoundedFootprint_one fun _ _ ↦ hasBoundedFootprint_mul
+
+example {α : Type} {x : α} : x ∈ (∅ : Set α) ↔ False := by
+  simp only [Set.mem_empty_iff_false]
+
+instance {α : Type} [Inhabited α] : One (BoundedFootprintPsp α) where
+  one := {
+    psp := 1
+    atoms := {Set.univ}
+    measurable := by simp
+    sigmaAgrees := fun h ↦ by
+      simp only [ms, ValidPSp.toPSpace, generateFrom_singleton, Set.mem_univ, comap_const]
+      rfl
+    disjoint := by simp
+    prefixes := fun _ ↦ []
+    agreeOnPrefix := by simp
+    determinedByPrefix := by simp
+    pathInTreeValid := by simp
+    complete := by simp
+  }
+
+end BoundedFootprint
 
 end
 

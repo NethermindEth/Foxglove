@@ -15,25 +15,11 @@ abbrev Ω : Type := RId → Bool
 
 abbrev PSpΩ := PSp Ω
 
-abbrev ValidPSpΩ : Type := {psp : PSpΩ // ✓psp}
+/-- `Ω` is the tapes of coin flips; `ValidPSp`, `BoundedFootprintPsp` and friends are the
+general constructions of `MeasureOnSpace`, instantiated at `α := Bool`. -/
+abbrev ValidPSpΩ : Type := ValidPSp Ω
 
-@[grind =]
-lemma valid_def {psp : PSpΩ} : ✓psp ↔ psp ≠ (⊤ : PSpΩ) := by rfl
-
-@[grind norm]
-lemma top_def : (⊤ : PSpΩ) = .none := rfl
-
-abbrev FProp := Iris.UpperSetBI.OURAProp PSpΩ
-
-namespace ValidPSpΩ
-
-def toPSpace (vpsp : ValidPSpΩ) : PSpace Ω :=
-  vpsp.1.get (by rcases vpsp with ⟨val, h⟩
-                 have : val ≠ .none := by grind
-                 erw [Option.ne_none_iff_isSome] at this
-                 exact this)
-
-end ValidPSpΩ
+abbrev FProp := Iris.UpperSetBI.OURAProp (BoundedFootprintSpace Bool)
 
 abbrev RV (α : Type) := Ω → α
 
@@ -83,33 +69,33 @@ def _root_.PMF.toMeasureWithMs {A : Type} (μ : PMF A) (ms : MeasurableSpace A) 
 
 def own {M} [OrderedUnitalResourceAlgebra M] (b : M) : OURAProp M := UpperSetBI.own b
 
-def jointConditioning {A : Type} (μ : PMF A) (K : A → FProp) : FProp :=
-  iprop(
-    ∃ m : PSpace Ω,
-    ∃ κ : TrivialMarkovKernel A m,
-      own m ∗
-      ⌜m.μ = (μ.toMeasureWithMs ⊤).bind κ⌝ ∗
-      ∀ v : μ.support, own (κ v) -∗ K v
-  )
+-- def jointConditioning {A : Type} (μ : PMF A) (K : A → FProp) : FProp :=
+--   iprop(
+--     ∃ m : PSpace Ω,
+--     ∃ κ : TrivialMarkovKernel A m,
+--       own m ∗
+--       ⌜m.μ = (μ.toMeasureWithMs ⊤).bind κ⌝ ∗
+--       ∀ v : μ.support, own (κ v) -∗ K v
+--   )
 
-notation "𝒞" "⟨" μ "⟩" v ";" K => jointConditioning μ (fun v => iprop(K))
+-- notation "𝒞" "⟨" μ "⟩" v ";" K => jointConditioning μ (fun v => iprop(K))
 
-def almostMeasurable {A Ω : Type} (E : Ω → A) (P : PSp Ω) : Prop :=
-  match P with
-  | none => False
-  | some p => @AEMeasurable Ω A ⊤ _ E p.1.μ
+-- def almostMeasurable {A Ω : Type} (E : Ω → A) (P : PSp Ω) : Prop :=
+--   match P with
+--   | none => False
+--   | some p => @AEMeasurable Ω A ⊤ _ E p.1.μ
 
-def hasDistribution {A : Type} (E : Ω → A) (μ : PMF A) : FProp :=
-  iprop(
-    ∃ P : PSpace Ω,
-      own P ∗
-      ⌜
-        have Eμ := @P.μ.map Ω A P.ms ⊤ E
-        almostMeasurable E P ∧ Eμ = μ.toMeasureWithMs ⊤
-      ⌝
-  )
+-- def hasDistribution {A : Type} (E : Ω → A) (μ : PMF A) : FProp :=
+--   iprop(
+--     ∃ P : PSpace Ω,
+--       own P ∗
+--       ⌜
+--         have Eμ := @P.μ.map Ω A P.ms ⊤ E
+--         almostMeasurable E P ∧ Eμ = μ.toMeasureWithMs ⊤
+--       ⌝
+--   )
 
-notation:100 E:100 "⟨" i:100 "⟩" " ~ " p:100 => hasDistribution E i p
+-- notation:100 E:100 "⟨" i:100 "⟩" " ~ " p:100 => hasDistribution E i p
 
 def liftPred (a : Ω → Prop) : FProp := sorry
   -- set of probability spaces, where the prob of prop = true ≃ 1
