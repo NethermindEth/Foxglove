@@ -422,13 +422,11 @@ structure BoundedFootprintPsp where
   determinedByPrefix : ∀ X : atoms, ∀ ρ ∈ X.1, ∀ ρ' : Ω, (∀ i < (prefixes X).length, ρ i = ρ' i) → ρ' ∈ X.1
 
   pathInTreeValid : ∀ X Y : atoms, X ≠ Y → ¬ prefixes X <+: prefixes Y
+  complete : ∀ ρ : Ω, ∃ X ∈ atoms, ρ ∈ X
 
 section scratch
 
-end scratch
-
-structure CompleteBoundedFootprintPsp extends BoundedFootprintPsp where
-  complete : ∀ ρ : Ω, ∃ X ∈ atoms, ρ ∈ X
+end scratch  
 
 namespace BoundedFootprintPsp
 
@@ -436,22 +434,34 @@ def boundmap (bpsp : BoundedFootprintPsp) : bpsp.atoms → ℕ :=
   List.length ∘ bpsp.prefixes
 
 noncomputable def toTree {α : Type}
-  (cbfpsp : CompleteBoundedFootprintPsp)
-  (programs : cbfpsp.atoms → BernoulliM α) : ProbTree α :=
+  (bfpsp : BoundedFootprintPsp)
+  (programs : bfpsp.atoms → BernoulliM α) : ProbTree α :=
   go []
 where
   go (path : BoolSeq) : ProbTree α :=
-  if leafy : ∃ X : cbfpsp.atoms, cbfpsp.prefixes X <+: path then
+  if leafy : ∃ X : bfpsp.atoms, bfpsp.prefixes X <+: path then
     .leaf (programs leafy.choose)
   else
     -- `complete` will be needed to reach the base case
     .node (go (path ++ [true])) (go (path ++ [false]))
-  termination_by (⨆ X : cbfpsp.atoms, cbfpsp.boundmap X) - path.length
+  termination_by (⨆ X : bfpsp.atoms, bfpsp.boundmap X) - path.length
   decreasing_by all_goals sorry
 
 end BoundedFootprintPsp
 
 end ProbTree
+
+open ProbTree BoundedFootprintPsp
+
+noncomputable def bigStep (bfpsp : BoundedFootprintPsp)
+            (programs : bfpsp.atoms → BernoulliM α) :
+            Σ bfpsp : BoundedFootprintPsp, bfpsp.atoms → α :=
+  let tree := toTree bfpsp programs
+  let tree' := fixpoint tree -- cbfpsp.psp.measure
+  -- measure is defined by breaking down input event into atoms,
+  -- for each one of those atoms, identify the prefix from the pref. function
+  -- pass the pref 
+  sorry
 
 end Interpretation
 
