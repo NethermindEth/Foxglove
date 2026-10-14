@@ -11,9 +11,7 @@ namespace Foxglove
 
 namespace Interp
 
-open ProbSpace
-
-open unitInterval
+open ProbSpace MeasureTheory unitInterval ENNReal NNReal Classical
 
 inductive BernoulliOps
 | Flip : I → BernoulliOps
@@ -80,174 +78,171 @@ lemma shift_consCoin (b : Bool) (ω : Ω) : (fun n => consFlip b ω (n + 1)) = �
 
 def shift (ω : Ω) : Ω := fun n => ω (n + 1)
 
-noncomputable def interp_psp {α : Type} (m : BernoulliM α) : PSp Ω × RV α :=
-  match m with
-  | PFunctor.FreeM.pure a => (1, fun _ ↦ a)
-  | PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f =>
-    let (p₀, rv₀) := interp_psp (f false)
-    let (p₁, rv₁) := interp_psp (f true)
-    let rv' (ω : Ω) : α :=
-      if ω 0
-      then rv₁ (shift ω)
-      else rv₀ (shift ω)
-    ( PSp.wsum₂ (unitInterval.toNNReal r) (toNNReal_le_one r)
-        (PSp.map (consFlip false) p₀) (PSp.map (consFlip true) p₁)
-    , rv' )
+-- noncomputable def interp_psp {α : Type} (m : BernoulliM α) : PSp Ω × RV α :=
+--   match m with
+--   | PFunctor.FreeM.pure a => (1, fun _ ↦ a)
+--   | PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f =>
+--     let (p₀, rv₀) := interp_psp (f false)
+--     let (p₁, rv₁) := interp_psp (f true)
+--     let rv' (ω : Ω) : α :=
+--       if ω 0
+--       then rv₁ (shift ω)
+--       else rv₀ (shift ω)
+--     ( PSp.wsum₂ (unitInterval.toNNReal r) (toNNReal_le_one r)
+--         (PSp.map (consFlip false) p₀) (PSp.map (consFlip true) p₁)
+--     , rv' )
 
-noncomputable def outputPSp {α : Type} (out : PSp Ω × RV α) : PSp α := PSp.map out.2 out.1
+-- noncomputable def outputPSp {α : Type} (out : PSp Ω × RV α) : PSp α := PSp.map out.2 out.1
 
-/-! ## The `PSpace`-level interpretation
+-- /-! ## The `PSpace`-level interpretation
 
-`interp_psp` never produces `↯`, so its space can be given at the `PSpace` level
-(`interpSpace`); the output of a program is then `outSpace`, and `outputPSp_eq` relates
-the two levels. -/
+-- `interp_psp` never produces `↯`, so its space can be given at the `PSpace` level
+-- (`interpSpace`); the output of a program is then `outSpace`, and `outputPSp_eq` relates
+-- the two levels. -/
 
-/-- `interp_psp` never yields `↯`; this is the same space at the `PSpace` level. -/
-noncomputable def interpSpace {α : Type} (m : BernoulliM α) : PSpace Ω :=
-  match m with
-  | PFunctor.FreeM.pure _ => 1
-  | PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f =>
-      PSpace.wsum₂ (unitInterval.toNNReal r) (toNNReal_le_one r)
-        (PSpace.map (consFlip false) (interpSpace (f false)))
-        (PSpace.map (consFlip true) (interpSpace (f true)))
+-- /-- `interp_psp` never yields `↯`; this is the same space at the `PSpace` level. -/
+-- noncomputable def interpSpace {α : Type} (m : BernoulliM α) : PSpace Ω :=
+--   match m with
+--   | PFunctor.FreeM.pure _ => 1
+--   | PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f =>
+--       PSpace.wsum₂ (unitInterval.toNNReal r) (toNNReal_le_one r)
+--         (PSpace.map (consFlip false) (interpSpace (f false)))
+--         (PSpace.map (consFlip true) (interpSpace (f true)))
 
-lemma interp_psp_fst {α : Type} (m : BernoulliM α) :
-    (interp_psp m).1 = .some (interpSpace m) := by
-  induction m with
-  | pure a => rfl
-  | liftBind op f ih =>
-      cases op with
-      | Flip r =>
-          show PSp.wsum₂ (unitInterval.toNNReal r) (toNNReal_le_one r)
-                 (PSp.map (consFlip false) (interp_psp (f false)).1)
-                 (PSp.map (consFlip true) (interp_psp (f true)).1)
-             = .some (PSpace.wsum₂ (unitInterval.toNNReal r) (toNNReal_le_one r)
-                 (PSpace.map (consFlip false) (interpSpace (f false)))
-                 (PSpace.map (consFlip true) (interpSpace (f true))))
-          rw [ih false, ih true]
-          rfl
+-- lemma interp_psp_fst {α : Type} (m : BernoulliM α) :
+--     (interp_psp m).1 = .some (interpSpace m) := by
+--   induction m with
+--   | pure a => rfl
+--   | liftBind op f ih =>
+--       cases op with
+--       | Flip r =>
+--           show PSp.wsum₂ (unitInterval.toNNReal r) (toNNReal_le_one r)
+--                  (PSp.map (consFlip false) (interp_psp (f false)).1)
+--                  (PSp.map (consFlip true) (interp_psp (f true)).1)
+--              = .some (PSpace.wsum₂ (unitInterval.toNNReal r) (toNNReal_le_one r)
+--                  (PSpace.map (consFlip false) (interpSpace (f false)))
+--                  (PSpace.map (consFlip true) (interpSpace (f true))))
+--           rw [ih false, ih true]
+--           rfl
 
-/-- The output space of an interpreted program. -/
-noncomputable def outSpace {α : Type} (m : BernoulliM α) : PSpace α :=
-  PSpace.map (interp_psp m).2 (interpSpace m)
+-- /-- The output space of an interpreted program. -/
+-- noncomputable def outSpace {α : Type} (m : BernoulliM α) : PSpace α :=
+--   PSpace.map (interp_psp m).2 (interpSpace m)
 
-lemma outputPSp_eq {α : Type} (m : BernoulliM α) :
-    outputPSp (interp_psp m) = .some (outSpace m) := by
-  show PSp.map (interp_psp m).2 (interp_psp m).1 = _
-  rw [interp_psp_fst]
-  rfl
+-- lemma outputPSp_eq {α : Type} (m : BernoulliM α) :
+--     outputPSp (interp_psp m) = .some (outSpace m) := by
+--   show PSp.map (interp_psp m).2 (interp_psp m).1 = _
+--   rw [interp_psp_fst]
+--   rfl
 
-section Interpretation
+-- section Interpretation
 
-open MeasureTheory
-open scoped ENNReal NNReal Classical
+-- /-! ## Evaluating an interpreted program
 
-/-! ## Evaluating an interpreted program
+-- The two laws that matter are `outSpace_pure_apply` and `outSpace_liftBind_apply`: the
+-- output of `pure a` is the point mass at `a`, and the output of a flip is the *mixture* of
+-- the two branch outputs.  Together they let any program be evaluated by structural
+-- recursion, and `outSpace_ms` says the result is always discrete. -/
 
-The two laws that matter are `outSpace_pure_apply` and `outSpace_liftBind_apply`: the
-output of `pure a` is the point mass at `a`, and the output of a flip is the *mixture* of
-the two branch outputs.  Together they let any program be evaluated by structural
-recursion, and `outSpace_ms` says the result is always discrete. -/
+-- variable {α : Type}
 
-variable {α : Type}
+-- lemma interpSpace_liftBind (r : I) (f : Bool → BernoulliM α) :
+--     interpSpace (PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f)
+--       = PSpace.wsum₂ (unitInterval.toNNReal r) (toNNReal_le_one r)
+--           (PSpace.map (consFlip false) (interpSpace (f false)))
+--           (PSpace.map (consFlip true) (interpSpace (f true))) := rfl
 
-lemma interpSpace_liftBind (r : I) (f : Bool → BernoulliM α) :
-    interpSpace (PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f)
-      = PSpace.wsum₂ (unitInterval.toNNReal r) (toNNReal_le_one r)
-          (PSpace.map (consFlip false) (interpSpace (f false)))
-          (PSpace.map (consFlip true) (interpSpace (f true))) := rfl
+-- lemma rv_liftBind (r : I) (f : Bool → BernoulliM α) :
+--     (interp_psp (PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f)).2
+--       = fun ω : Ω => if ω 0 = true then (interp_psp (f true)).2 (fun n => ω (n + 1))
+--                      else (interp_psp (f false)).2 (fun n => ω (n + 1)) := rfl
 
-lemma rv_liftBind (r : I) (f : Bool → BernoulliM α) :
-    (interp_psp (PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f)).2
-      = fun ω : Ω => if ω 0 = true then (interp_psp (f true)).2 (fun n => ω (n + 1))
-                     else (interp_psp (f false)).2 (fun n => ω (n + 1)) := rfl
+-- /-- Prepending the bit `c` makes the outer random variable agree with branch `c`'s. -/
+-- lemma preimage_consFlip_rv (r : I) (f : Bool → BernoulliM α)
+--     (c : Bool) (S : Set α) :
+--     consFlip c ⁻¹' ((interp_psp (PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f)).2 ⁻¹' S)
+--       = (interp_psp (f c)).2 ⁻¹' S := by
+--   ext ω; cases c <;> simp [Set.mem_preimage, rv_liftBind]
 
-/-- Prepending the bit `c` makes the outer random variable agree with branch `c`'s. -/
-lemma preimage_consFlip_rv (r : I) (f : Bool → BernoulliM α)
-    (c : Bool) (S : Set α) :
-    consFlip c ⁻¹' ((interp_psp (PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f)).2 ⁻¹' S)
-      = (interp_psp (f c)).2 ⁻¹' S := by
-  ext ω; cases c <;> simp [Set.mem_preimage, rv_liftBind]
+-- /-! ### `pure` -/
 
-/-! ### `pure` -/
+-- lemma outSpace_pure (a : α) : outSpace (PFunctor.FreeM.pure a) = PSpace.map (fun _ : Ω => a) 1 :=
+--   rfl
 
-lemma outSpace_pure (a : α) : outSpace (PFunctor.FreeM.pure a) = PSpace.map (fun _ : Ω => a) 1 :=
-  rfl
+-- @[simp] lemma outSpace_pure_ms (a : α) :
+--     (outSpace (PFunctor.FreeM.pure a)).ms = (⊤ : MeasurableSpace α) :=
+--   MeasurableSpace.map_const a
 
-@[simp] lemma outSpace_pure_ms (a : α) :
-    (outSpace (PFunctor.FreeM.pure a)).ms = (⊤ : MeasurableSpace α) :=
-  MeasurableSpace.map_const a
+-- lemma measurableSet_outSpace_pure (a : α) (S : Set α) :
+--     MeasurableSet[(outSpace (PFunctor.FreeM.pure a)).ms] S := by
+--   rw [outSpace_pure_ms]; trivial
 
-lemma measurableSet_outSpace_pure (a : α) (S : Set α) :
-    MeasurableSet[(outSpace (PFunctor.FreeM.pure a)).ms] S := by
-  rw [outSpace_pure_ms]; trivial
+-- lemma outSpace_pure_apply (a : α) (S : Set α) :
+--     (outSpace (PFunctor.FreeM.pure a)).μ S = if a ∈ S then 1 else 0 := by
+--   rw [outSpace, PSpace.map_apply _ _ (measurableSet_outSpace_pure a S)]
+--   show (1 : PSpace Ω).μ ((fun _ : Ω => a) ⁻¹' S) = _
+--   by_cases h : a ∈ S
+--   · have he : (fun _ : Ω => a) ⁻¹' S = Set.univ := by ext ω; simp [h]
+--     rw [he]; simp [h]
+--   · have he : (fun _ : Ω => a) ⁻¹' S = ∅ := by ext ω; simp [h]
+--     rw [he]; simp [h]
 
-lemma outSpace_pure_apply (a : α) (S : Set α) :
-    (outSpace (PFunctor.FreeM.pure a)).μ S = if a ∈ S then 1 else 0 := by
-  rw [outSpace, PSpace.map_apply _ _ (measurableSet_outSpace_pure a S)]
-  show (1 : PSpace Ω).μ ((fun _ : Ω => a) ⁻¹' S) = _
-  by_cases h : a ∈ S
-  · have he : (fun _ : Ω => a) ⁻¹' S = Set.univ := by ext ω; simp [h]
-    rw [he]; simp [h]
-  · have he : (fun _ : Ω => a) ⁻¹' S = ∅ := by ext ω; simp [h]
-    rw [he]; simp [h]
+-- /-! ### `flip` -/
 
-/-! ### `flip` -/
+-- lemma measurableSet_outSpace_liftBind (r : I) (f : Bool → BernoulliM α)
+--     {S : Set α}
+--     (h₀ : MeasurableSet[(outSpace (f false)).ms] S)
+--     (h₁ : MeasurableSet[(outSpace (f true)).ms] S) :
+--     MeasurableSet[(outSpace (PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f)).ms] S := by
+--   rw [outSpace, PSpace.measurableSet_map, interpSpace_liftBind]
+--   refine PSpace.measurableSet_wsum₂ ?_ ?_ <;>
+--     rw [PSpace.measurableSet_map, preimage_consFlip_rv]
+--   · exact h₀
+--   · exact h₁
 
-lemma measurableSet_outSpace_liftBind (r : I) (f : Bool → BernoulliM α)
-    {S : Set α}
-    (h₀ : MeasurableSet[(outSpace (f false)).ms] S)
-    (h₁ : MeasurableSet[(outSpace (f true)).ms] S) :
-    MeasurableSet[(outSpace (PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f)).ms] S := by
-  rw [outSpace, PSpace.measurableSet_map, interpSpace_liftBind]
-  refine PSpace.measurableSet_wsum₂ ?_ ?_ <;>
-    rw [PSpace.measurableSet_map, preimage_consFlip_rv]
-  · exact h₀
-  · exact h₁
+-- /-- The output measure of a flip is the mixture of the branch output measures. -/
+-- lemma outSpace_liftBind_apply (r : I) (f : Bool → BernoulliM α)
+--     {S : Set α}
+--     (h₀ : MeasurableSet[(outSpace (f false)).ms] S)
+--     (h₁ : MeasurableSet[(outSpace (f true)).ms] S) :
+--     (outSpace (PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f)).μ S
+--       = (1 - (unitInterval.toNNReal r : ℝ≥0∞)) * (outSpace (f false)).μ S
+--         + (unitInterval.toNNReal r : ℝ≥0∞) * (outSpace (f true)).μ S := by
+--   rw [outSpace, PSpace.map_apply _ _ (by
+--         rw [← outSpace]; exact measurableSet_outSpace_liftBind r f h₀ h₁),
+--       interpSpace_liftBind,
+--       PSpace.wsum₂_map_apply _ _ (consFlip false) (consFlip true) _ _
+--         (by rw [← interpSpace_liftBind, ← PSpace.measurableSet_map, ← outSpace]
+--             exact measurableSet_outSpace_liftBind r f h₀ h₁),
+--       preimage_consFlip_rv, preimage_consFlip_rv,
+--       ← PSpace.map_apply _ _ h₀, ← PSpace.map_apply _ _ h₁]
+--   rfl
 
-/-- The output measure of a flip is the mixture of the branch output measures. -/
-lemma outSpace_liftBind_apply (r : I) (f : Bool → BernoulliM α)
-    {S : Set α}
-    (h₀ : MeasurableSet[(outSpace (f false)).ms] S)
-    (h₁ : MeasurableSet[(outSpace (f true)).ms] S) :
-    (outSpace (PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f)).μ S
-      = (1 - (unitInterval.toNNReal r : ℝ≥0∞)) * (outSpace (f false)).μ S
-        + (unitInterval.toNNReal r : ℝ≥0∞) * (outSpace (f true)).μ S := by
-  rw [outSpace, PSpace.map_apply _ _ (by
-        rw [← outSpace]; exact measurableSet_outSpace_liftBind r f h₀ h₁),
-      interpSpace_liftBind,
-      PSpace.wsum₂_map_apply _ _ (consFlip false) (consFlip true) _ _
-        (by rw [← interpSpace_liftBind, ← PSpace.measurableSet_map, ← outSpace]
-            exact measurableSet_outSpace_liftBind r f h₀ h₁),
-      preimage_consFlip_rv, preimage_consFlip_rv,
-      ← PSpace.map_apply _ _ h₀, ← PSpace.map_apply _ _ h₁]
-  rfl
+-- /-- The output space of *any* interpreted program is discrete: a program only ever
+-- produces finitely many values, through finitely many coin flips. -/
+-- lemma outSpace_ms (m : BernoulliM α) :
+--     (outSpace m).ms = (⊤ : MeasurableSpace α) := by
+--   induction m with
+--   | pure a => exact outSpace_pure_ms a
+--   | liftBind op f ih =>
+--       cases op with
+--       | Flip r =>
+--           refine PSpace.ms_eq_top_of_all (fun S =>
+--             measurableSet_outSpace_liftBind r f ?_ ?_)
+--           · rw [ih false]; trivial
+--           · rw [ih true]; trivial
 
-/-- The output space of *any* interpreted program is discrete: a program only ever
-produces finitely many values, through finitely many coin flips. -/
-lemma outSpace_ms (m : BernoulliM α) :
-    (outSpace m).ms = (⊤ : MeasurableSpace α) := by
-  induction m with
-  | pure a => exact outSpace_pure_ms a
-  | liftBind op f ih =>
-      cases op with
-      | Flip r =>
-          refine PSpace.ms_eq_top_of_all (fun S =>
-            measurableSet_outSpace_liftBind r f ?_ ?_)
-          · rw [ih false]; trivial
-          · rw [ih true]; trivial
+-- lemma measurableSet_outSpace (m : BernoulliM α) (S : Set α) :
+--     MeasurableSet[(outSpace m).ms] S := by rw [outSpace_ms]; trivial
 
-lemma measurableSet_outSpace (m : BernoulliM α) (S : Set α) :
-    MeasurableSet[(outSpace m).ms] S := by rw [outSpace_ms]; trivial
-
-/-- `outSpace_liftBind_apply` with its side conditions discharged by `outSpace_ms`.  This
-is the workhorse: it evaluates a program one flip at a time. -/
-lemma outSpace_liftBind_μ (r : I) (f : Bool → BernoulliM α)
-    (S : Set α) :
-    (outSpace (PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f)).μ S
-      = (1 - (unitInterval.toNNReal r : ℝ≥0∞)) * (outSpace (f false)).μ S
-        + (unitInterval.toNNReal r : ℝ≥0∞) * (outSpace (f true)).μ S :=
-  outSpace_liftBind_apply r f (measurableSet_outSpace _ S) (measurableSet_outSpace _ S)
+-- /-- `outSpace_liftBind_apply` with its side conditions discharged by `outSpace_ms`.  This
+-- is the workhorse: it evaluates a program one flip at a time. -/
+-- lemma outSpace_liftBind_μ (r : I) (f : Bool → BernoulliM α)
+--     (S : Set α) :
+--     (outSpace (PFunctor.FreeM.liftBind (BernoulliOps.Flip r) f)).μ S
+--       = (1 - (unitInterval.toNNReal r : ℝ≥0∞)) * (outSpace (f false)).μ S
+--         + (unitInterval.toNNReal r : ℝ≥0∞) * (outSpace (f true)).μ S :=
+--   outSpace_liftBind_apply r f (measurableSet_outSpace _ S) (measurableSet_outSpace _ S)
 
 inductive ProbTree (α : Type) where
   | leaf (m : BernoulliM α)
@@ -345,6 +340,65 @@ lemma mem_prefixEqEvent_singleton (ω : Ω) (b : Bool) :
     ω ∈ prefixEqEvent [b] ↔ ω 0 = b := by
   simp [prefixEqEvent]
 
+lemma mem_prefixEqEvent_cons (b : Bool) (p : BoolSeq) (ρ : Ω) :
+    ρ ∈ prefixEqEvent (b :: p) ↔ ρ 0 = b ∧ (fun n ↦ ρ (n + 1)) ∈ prefixEqEvent p := by
+  simp [prefixEqEvent, Fin.forall_fin_succ]
+
+/-- Every tape follows some root-to-leaf path. -/
+lemma exists_prefix_mem (tree : ProbTree α) (ρ : Ω) :
+    ∃ p ∈ tree.prefixes, ρ ∈ prefixEqEvent p := by
+  induction tree generalizing ρ with
+  | leaf m => exact ⟨[], by simp [prefixes], fun i ↦ i.elim0⟩
+  | node l r ihl ihr =>
+    cases h : ρ 0
+    · obtain ⟨q, hq, hρ⟩ := ihr fun n ↦ ρ (n + 1)
+      exact ⟨false :: q, by simp [prefixes, hq], (mem_prefixEqEvent_cons ..).mpr ⟨h, hρ⟩⟩
+    · obtain ⟨q, hq, hρ⟩ := ihl fun n ↦ ρ (n + 1)
+      exact ⟨true :: q, by simp [prefixes, hq], (mem_prefixEqEvent_cons ..).mpr ⟨h, hρ⟩⟩
+
+/-- Every root-to-leaf prefix of a tree gives a measurable set in its σ-algebra: the events
+are its generators. -/
+lemma measurableSet_prefixEqEvent {tree : ProbTree α} {p : BoolSeq} (hp : p ∈ tree.prefixes) :
+    MeasurableSet[tree.ms] (prefixEqEvent p) :=
+  MeasurableSpace.measurableSet_generateFrom ⟨p, hp, rfl⟩
+
+/-- A path of the `b`-subtree, prefixed by `b`, is a path of the node. -/
+lemma mem_prefixes_node {l r : ProbTree α} (b : Bool) {p : BoolSeq}
+    (hp : p ∈ (if b then l else r).prefixes) : b :: p ∈ (ProbTree.node l r).prefixes := by
+  simp only [prefixes, Finset.mem_union, Finset.mem_map, Function.Embedding.coeFn_mk]
+  cases b
+  · exact Or.inr ⟨p, by simpa using hp, rfl⟩
+  · exact Or.inl ⟨p, by simpa using hp, rfl⟩
+
+/-- `prefixEqEvent [b]` is the union of the events of the subtree's prefixes: every tape
+starting with `b` follows one of the subtree's root-to-leaf paths. -/
+lemma prefixEqEvent_singleton_eq_biUnion (tree : ProbTree α) (b : Bool) :
+    prefixEqEvent [b] = ⋃ p ∈ tree.prefixes, prefixEqEvent (b :: p) := by
+  ext ρ
+  simp only [Set.mem_iUnion, mem_prefixEqEvent_cons, prefixEqEvent_nil, Set.mem_univ, and_true,
+    exists_prop]
+  refine ⟨fun h ↦ ?_, fun ⟨_, _, h, _⟩ ↦ h⟩
+  obtain ⟨p, hp, hρ⟩ := exists_prefix_mem tree (fun n ↦ ρ (n + 1))
+  exact ⟨p, hp, h, hρ⟩
+
+/-- A node has read its first flip, so each of its two halves is measurable. -/
+lemma measurableSet_prefixEqEvent_singleton {l r : ProbTree α} (b : Bool) :
+    MeasurableSet[(ProbTree.node l r).ms] (prefixEqEvent [b]) := by
+  cases b
+  · rw [prefixEqEvent_singleton_eq_biUnion r false]
+    exact Finset.measurableSet_biUnion _ fun p hp ↦
+      measurableSet_prefixEqEvent (mem_prefixes_node false (by simpa using hp))
+  · rw [prefixEqEvent_singleton_eq_biUnion l true]
+    exact Finset.measurableSet_biUnion _ fun p hp ↦
+      measurableSet_prefixEqEvent (mem_prefixes_node true (by simpa using hp))
+
+/-- The two halves of a node partition the tapes, so their masses add up to the total. -/
+lemma measure_prefixEqEvent_add {l r : ProbTree α} (μ : Measure[(ProbTree.node l r).ms] Ω) :
+    μ (prefixEqEvent [true]) + μ (prefixEqEvent [false]) = μ Set.univ := by
+  rw [show prefixEqEvent ([false] : BoolSeq) = (prefixEqEvent ([true] : BoolSeq))ᶜ by
+    ext ρ; simp [mem_prefixEqEvent_singleton]]
+  exact measure_add_measure_compl (measurableSet_prefixEqEvent_singleton true)
+
 /-- The two events of a split leaf: the tapes starting with `true`, resp. with `false`. -/
 @[simp]
 lemma events_node_leaf (ml mr : BernoulliM α) :
@@ -376,15 +430,82 @@ instance flipMeasure_isProbabilityMeasure {m : MeasurableSpace Ω} {p : I} :
 
 def descend (b : Bool) (ω : Ω) : Ω := if ω 0 = b then shift ω else fun _ ↦ b
 
+/-- Descending into the `b` branch is measurable from the node into the `b`-subtree.  On the
+tapes starting with `b` it is the shift, so the preimage of the subtree's event for `p` is the
+node's event for `b :: p`; the remaining tapes all go to the constant tape `b`, which
+contributes the other half `prefixEqEvent [!b]` exactly when that tape lies in the event. -/
+lemma measurable_descend {l r : ProbTree α} (b : Bool) :
+    Measurable[(ProbTree.node l r).ms, (if b then l else r).ms] (descend b) := by
+  refine @measurable_generateFrom Ω Ω (ProbTree.node l r).ms _ _ ?_
+  rintro _ ⟨p, hp, rfl⟩
+  have hb : b :: p ∈ (ProbTree.node l r).prefixes := mem_prefixes_node b hp
+  by_cases hc : (fun _ ↦ b) ∈ prefixEqEvent p
+  · rw [show descend b ⁻¹' prefixEqEvent p = prefixEqEvent (b :: p) ∪ prefixEqEvent [!b] by
+      ext ρ
+      by_cases h : ρ 0 = b
+      · simp only [Set.mem_preimage, descend, h, mem_prefixEqEvent_cons, Set.mem_union,
+          Bool.eq_not_iff, ne_eq, not_true_eq_false, false_and, or_false, true_and]
+        rfl
+      · simp [Set.mem_preimage, descend, h, hc, mem_prefixEqEvent_cons, Bool.eq_not_iff]]
+    exact (measurableSet_prefixEqEvent hb).union (measurableSet_prefixEqEvent_singleton _)
+  · rw [show descend b ⁻¹' prefixEqEvent p = prefixEqEvent (b :: p) by
+      ext ρ
+      by_cases h : ρ 0 = b
+      · simp only [Set.mem_preimage, descend, h, mem_prefixEqEvent_cons, true_and]
+        rfl
+      · simp [Set.mem_preimage, descend, h, hc, mem_prefixEqEvent_cons]]
+    exact measurableSet_prefixEqEvent hb
+
+/-- Pushing a measure forward along a measurable map keeps its total mass. -/
+lemma map!_univ {m₁ m₂ : MeasurableSpace Ω} {f : Ω → Ω} (hf : Measurable[m₁, m₂] f)
+    (ν : Measure[m₁] Ω) : (Measure.map! m₁ m₂ f ν) Set.univ = ν Set.univ := by
+  rw [show Measure.map! m₁ m₂ f ν = @Measure.map Ω Ω m₁ m₂ f ν from rfl,
+    @Measure.map_apply Ω Ω m₁ m₂ ν f hf Set.univ (@MeasurableSet.univ Ω m₂), Set.preimage_univ]
+
 noncomputable def branchMeasure (b : Bool) {l r : ProbTree α}
     (μ : Measure[(ProbTree.node l r).ms] Ω) : Measure[(if b then l else r).ms] Ω :=
   Measure.map! (ProbTree.node l r).ms (if b then l else r).ms (descend b)
     (μ.restrict (prefixEqEvent [b]))
 
+/-- Descending into the `b` branch keeps exactly the mass of the tapes starting with `b`. -/
+lemma branchMeasure_univ {l r : ProbTree α} (b : Bool)
+    (μ : Measure[(ProbTree.node l r).ms] Ω) :
+    branchMeasure b μ Set.univ = μ (prefixEqEvent [b]) := by
+  rw [branchMeasure, map!_univ (measurable_descend b), Measure.restrict_apply_univ]
+
+/-- Prepending the bit `b` is measurable from the `b`-subtree into the node: the preimage of
+the node's event for `b :: p` is the subtree's event for `p`, and the events of the other
+branch pull back to `∅`. -/
+lemma measurable_consFlip {l r : ProbTree α} (b : Bool) :
+    Measurable[(if b then l else r).ms, (ProbTree.node l r).ms] (consFlip b) := by
+  refine @measurable_generateFrom Ω Ω (if b then l else r).ms _ _ ?_
+  rintro _ ⟨q, hq, rfl⟩
+  simp only [Set.mem_ofPred_eq, prefixes, Finset.mem_union, Finset.mem_map,
+    Function.Embedding.coeFn_mk] at hq
+  rcases hq with ⟨p, hp, rfl⟩ | ⟨p, hp, rfl⟩ <;> cases b
+  · rw [show consFlip false ⁻¹' prefixEqEvent (true :: p) = ∅ by
+      ext ρ; simp [mem_prefixEqEvent_cons]]
+    exact MeasurableSpace.measurableSet_empty _
+  · rw [show consFlip true ⁻¹' prefixEqEvent (true :: p) = prefixEqEvent p by
+      ext ρ; simp [mem_prefixEqEvent_cons]]
+    exact measurableSet_prefixEqEvent (by simpa using hp)
+  · rw [show consFlip false ⁻¹' prefixEqEvent (false :: p) = prefixEqEvent p by
+      ext ρ; simp [mem_prefixEqEvent_cons]]
+    exact measurableSet_prefixEqEvent (by simpa using hp)
+  · rw [show consFlip true ⁻¹' prefixEqEvent (false :: p) = ∅ by
+      ext ρ; simp [mem_prefixEqEvent_cons]]
+    exact MeasurableSpace.measurableSet_empty _
+
 noncomputable def joinMeasure {l r : ProbTree α}
     (μₗ : Measure[l.ms] Ω) (μᵣ : Measure[r.ms] Ω) : Measure[(ProbTree.node l r).ms] Ω :=
   Measure.map! l.ms (ProbTree.node l r).ms (consFlip true) μₗ
     + Measure.map! r.ms (ProbTree.node l r).ms (consFlip false) μᵣ
+
+/-- Joining adds the masses of the two branches. -/
+lemma joinMeasure_univ {l r : ProbTree α} (μₗ : Measure[l.ms] Ω) (μᵣ : Measure[r.ms] Ω) :
+    joinMeasure μₗ μᵣ Set.univ = μₗ Set.univ + μᵣ Set.univ := by
+  rw [joinMeasure, Measure.add_apply, map!_univ (measurable_consFlip (l := l) (r := r) true),
+    map!_univ (measurable_consFlip (l := l) (r := r) false)]
 
 abbrev TreeWithMeasure (α : Type) := Σ tree : ProbTree α, Measure[tree.ms] Ω
 
@@ -396,7 +517,7 @@ noncomputable def step'
     | .pure _ => Sigma.mk (.leaf m) μ
     | .liftBind a c =>
       let tree' : ProbTree α := .node (.leaf (c true)) (.leaf (c false))
-      let μ' : Measure[tree'.ms] Ω := flipMeasure tree'.ms a.1
+      let μ' : Measure[tree'.ms] Ω := μ Set.univ • flipMeasure tree'.ms a.1
       Sigma.mk tree' μ'
   | .node l r =>
     let μₗ : Measure[l.ms] Ω := branchMeasure true μ
@@ -433,12 +554,42 @@ lemma step'_fst (tree : ProbTree α) (path : BoolSeq) (μ : Measure[tree.ms] Ω)
 lemma step_fst (tree : ProbTree α) (μ : Measure[tree.ms] Ω) : (step tree μ).1 = tree.split :=
   step'_fst tree [] μ
 
+/-- `step'` only redistributes mass: a leaf keeps its own, a flip splits it between the two
+new branches, and a node hands each branch the mass of its half and adds the two back up. -/
+lemma step'_univ (tree : ProbTree α) (path : BoolSeq) (μ : Measure[tree.ms] Ω) :
+    (step' tree path μ).2 Set.univ = μ Set.univ := by
+  induction tree generalizing path with
+  | leaf m =>
+    cases m with
+    | pure a => rfl
+    | liftBind a c =>
+      show (μ Set.univ • flipMeasure _ a.1) Set.univ = μ Set.univ
+      rw [Measure.smul_apply, smul_eq_mul]
+      simp
+  | node l r ihl ihr =>
+    have hl := ihl (path ++ [true]) (branchMeasure true μ)
+    have hr := ihr (path ++ [false]) (branchMeasure false μ)
+    rw [step']
+    revert hl hr
+    generalize step' l (path ++ [true]) (branchMeasure true μ) = sl
+    generalize step' r (path ++ [false]) (branchMeasure false μ) = sr
+    obtain ⟨l', μl'⟩ := sl
+    obtain ⟨r', μr'⟩ := sr
+    intro hl hr
+    show joinMeasure μl' μr' Set.univ = μ Set.univ
+    rw [joinMeasure_univ, hl, hr, branchMeasure_univ, branchMeasure_univ,
+      measure_prefixEqEvent_add]
+
+lemma step_univ (tree : ProbTree α) (μ : Measure[tree.ms] Ω) :
+    (step tree μ).2 Set.univ = μ Set.univ :=
+  step'_univ tree [] μ
+
 @[instance_reducible]
 def msAfterSplit {α : Type} (tree : ProbTree α) : MeasurableSpace Ω := tree.split.ms
 
 end
 
-def done (tree : ProbTree α) : Bool :=
+def done {α : Type} (tree : ProbTree α) : Bool :=
   match tree with
   | .leaf m =>
     match m with
@@ -446,12 +597,12 @@ def done (tree : ProbTree α) : Bool :=
     | .liftBind .. => false
   | .node l r => done l && done r
 
-def leafDepth (m : BernoulliM α) : ℕ :=
+def leafDepth {α : Type} (m : BernoulliM α) : ℕ :=
   match m with
   | .pure _ => 0
   | .liftBind _ c => 1 + max (leafDepth (c true)) (leafDepth (c false))
 
-def depth (tree : ProbTree α) : ℕ :=
+def depth {α : Type} (tree : ProbTree α) : ℕ :=
   match tree with
   | .leaf m   => leafDepth m
   | .node l r => max l.depth r.depth
@@ -462,7 +613,7 @@ def depth (tree : ProbTree α) : ℕ :=
 the tree is already `done` — and a `done` tree has depth `0`. -/
 
 /-- A finished tree has nothing left to split. -/
-lemma depth_eq_zero_of_done {tree : ProbTree α} (h : tree.done = true) : tree.depth = 0 := by
+lemma depth_eq_zero_of_done {α : Type} {tree : ProbTree α} (h : tree.done = true) : tree.depth = 0 := by
   induction tree with
   | leaf m =>
       cases m with
@@ -474,7 +625,7 @@ lemma depth_eq_zero_of_done {tree : ProbTree α} (h : tree.done = true) : tree.d
       simp [depth, ihl h.1, ihr h.2]
 
 /-- `split` never deepens a tree. -/
-lemma depth_split_le (tree : ProbTree α) : tree.split.depth ≤ tree.depth := by
+lemma depth_split_le {α : Type} (tree : ProbTree α) : tree.split.depth ≤ tree.depth := by
   induction tree with
   | leaf m =>
       cases m with
@@ -483,7 +634,7 @@ lemma depth_split_le (tree : ProbTree α) : tree.split.depth ≤ tree.depth := b
   | node l r ihl ihr => simp only [split, depth]; omega
 
 /-- As long as there is a flip left somewhere, `split` strictly decreases the depth. -/
-lemma depth_split_lt (tree : ProbTree α) (h : tree.done = false) :
+lemma depth_split_lt {α : Type} (tree : ProbTree α) (h : tree.done = false) :
     tree.split.depth < tree.depth := by
   induction tree with
   | leaf m =>
@@ -507,11 +658,14 @@ lemma depth_split_lt (tree : ProbTree α) (h : tree.done = false) :
           have h₂ := depth_eq_zero_of_done hdl
           omega
 
-instance isProbabilityMeasure_step {tree : ProbTree α}
+/-- A round of `step` is again a probability measure: by `step_univ` it has the same total
+mass as the measure it started from. -/
+instance isProbabilityMeasure_step {α : Type} {tree : ProbTree α}
   {μ : Measure[tree.ms] Ω} [IsProbabilityMeasure μ] :
-  IsProbabilityMeasure (tree.step μ).2 := sorry
+  IsProbabilityMeasure (tree.step μ).2 :=
+  ⟨(step_univ tree μ).trans measure_univ⟩
 
-noncomputable def fixpoint (tree : TreeWithMeasure α) : TreeWithMeasure α :=
+noncomputable def fixpoint {α : Type} (tree : TreeWithMeasure α) : TreeWithMeasure α :=
   if done tree.1
   then tree
   else fixpoint (step tree.1 tree.2)
@@ -572,22 +726,6 @@ lemma prefixFree (tree : ProbTree α) {p q : BoolSeq}
         false_and] at hpq
     · rw [ihl ha hb hpq]
     · rw [ihr ha hb hpq]
-
-lemma mem_prefixEqEvent_cons (b : Bool) (p : BoolSeq) (ρ : Ω) :
-    ρ ∈ prefixEqEvent (b :: p) ↔ ρ 0 = b ∧ (fun n ↦ ρ (n + 1)) ∈ prefixEqEvent p := by
-  simp [prefixEqEvent, Fin.forall_fin_succ]
-
-/-- Every tape follows some root-to-leaf path. -/
-lemma exists_prefix_mem (tree : ProbTree α) (ρ : Ω) :
-    ∃ p ∈ tree.prefixes, ρ ∈ prefixEqEvent p := by
-  induction tree generalizing ρ with
-  | leaf m => exact ⟨[], by simp [prefixes], fun i ↦ i.elim0⟩
-  | node l r ihl ihr =>
-    cases h : ρ 0
-    · obtain ⟨q, hq, hρ⟩ := ihr fun n ↦ ρ (n + 1)
-      exact ⟨false :: q, by simp [prefixes, hq], (mem_prefixEqEvent_cons ..).mpr ⟨h, hρ⟩⟩
-    · obtain ⟨q, hq, hρ⟩ := ihl fun n ↦ ρ (n + 1)
-      exact ⟨true :: q, by simp [prefixes, hq], (mem_prefixEqEvent_cons ..).mpr ⟨h, hρ⟩⟩
 
 end
 
@@ -705,7 +843,7 @@ noncomputable def bigStep (bfpsp : BoundedFootprintPsp)
   then
     let tree := toTree bfpsp programs
     -- `(ValidPSpΩ.toPSpace ⟨bfpsp.psp, valid⟩).ms = tree.ms`
-    let ⟨tree', μ⟩ := fixpoint ⟨tree, (ValidPSpΩ.toPSpace ⟨bfpsp.psp, valid⟩).μ.cast tree.ms⟩ 
+    let ⟨tree', μ⟩ := fixpoint ⟨tree, (ValidPSpΩ.toPSpace ⟨bfpsp.psp, valid⟩).μ.cast tree.ms⟩
     sorry
   else
     sorry
@@ -713,7 +851,7 @@ noncomputable def bigStep (bfpsp : BoundedFootprintPsp)
   -- for each one of those atoms, identify the prefix from the pref. function
   -- pass the pref
 
-end Interpretation
+-- end Interpretation
 
 end Interp
 
