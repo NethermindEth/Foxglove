@@ -97,7 +97,8 @@ def hasDistribution {A : Type} (E : Ω → A) (μ : PMF A) : FProp :=
 
 notation:100 E:100 "⟨" i:100 "⟩" " ~ " p:100 => hasDistribution E i p
 
-def liftPred (a : Ω → Prop) : FProp := sorry
+def liftPred (a : Ω → Prop) : FProp :=
+  iprop(∃ P : PSpace Ω, ownP P ∗ ⌜P.μ {ρ | ¬ a ρ} = 0⌝)
 
 open Interp Interp.ProbTree Iris.BI OURAProp in
 def wp {α : Type} [Inhabited α] {m : Type → Type} [Interp.BernoulliInterpretable m]
@@ -134,9 +135,6 @@ logic is affine: resources may always be thrown away.  Through iris-lean's gener
 this also makes every `FProp` `Absorbing`. -/
 instance : BIAffine FProp where
   affine P := ⟨by induction P using Quotient.ind; exact fun _ _ _ ↦ PSp.one_le⟩
-
-/-- `later` is the identity on this model, so every proposition is timeless. -/
-instance (P : FProp) : Timeless P := ⟨or_intro_r⟩
 
 /-- `<pers> P` holds either of everything or of nothing, according to whether `P` already
 holds of the unit resource, so `Persistent P` says exactly that owning nothing suffices for
