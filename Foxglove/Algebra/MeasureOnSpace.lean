@@ -2,6 +2,7 @@ module
 
 public import Mathlib.Probability.Distributions.Uniform
 public import Mathlib.Data.Set.Finite.List
+public import Mathlib.MeasureTheory.Measure.Decomposition.RadonNikodym
 public import Foxglove.Algebra.OURA
 
 /-! ## Independent product of probability measures -/
@@ -1009,16 +1010,21 @@ lemma PSpace.le_of_isIndependentProduct_right
     rw [h3, h4, one_mul] at h2
     exact h2.symm
 
-/-- A null set of a sub-space is null in the big space, so an a.e. equality survives going
-up: a version of `E` measurable on the small space is still a version on the big one. -/
-lemma PSpace.ae_eq_of_le {A : Type*} {E : Ω → A} {y z : PSpace Ω} (hzy : z ≤ y)
-    {g : Ω → A} (hg : g =ᵐ[z.μ] E) : g =ᵐ[y.μ] E := by
-  rw [Filter.EventuallyEq, ae_iff] at hg
-  rcases @exists_measurable_superset_of_null _ z.ms z.μ _ hg with ⟨N, hN_sub, hN_meas, hN_null⟩
+/-- A null set of a sub-space is null in the big space: cover it by a measurable null set
+downstairs, which keeps its measure upstairs. -/
+lemma PSpace.null_of_le {y z : PSpace Ω} (hzy : z ≤ y) {s : Set Ω} (hs : z.μ s = 0) :
+    y.μ s = 0 := by
+  rcases @exists_measurable_superset_of_null _ z.ms z.μ _ hs with ⟨N, hN_sub, hN_meas, hN_null⟩
   have hN_y : y.μ N = 0 := by
     rw [← hN_null]
     exact (MeasureOnSpace.le_preserves_measure hzy hN_meas).symm
   exact measure_mono_null hN_sub hN_y
+
+/-- An a.e. equality survives going up: a version of `E` measurable on the small space is
+still a version on the big one. -/
+lemma PSpace.ae_eq_of_le {A : Type*} {E : Ω → A} {y z : PSpace Ω} (hzy : z ≤ y)
+    {g : Ω → A} (hg : g =ᵐ[z.μ] E) : g =ᵐ[y.μ] E :=
+  PSpace.null_of_le hzy hg
 
 set_option linter.style.haveILetI false in
 /-- Two sub-spaces of one space push the same a.e.-measurable `E` forward to the same
@@ -1048,6 +1054,126 @@ lemma PSpace.map_eq_of_le {A : Type} {E : Ω → A} {y p p' : PSpace Ω}
     (PSpace.ae_eq_of_le hp hf_ae).trans (PSpace.ae_eq_of_le hp' hf'_ae).symm
   have h5 : y.μ (f ⁻¹' u) = y.μ (f' ⁻¹' u) := measure_congr (hff'.preimage u)
   rw [h1, h2, h5, ← h4, ← h3]
+
+/-- Integrating an `m`-measurable function over a rectangle of an independent product
+factorises: the `c`-side contributes its measure, the `m`-side its integral. -/
+theorem PSpace.lintegral_rect [Inhabited Ω] {c m s : PSpace Ω} (hs : s =ᵢ c ⊕ᵢ m)
+    {g : Ω → ENNReal} (hg : Measurable[m.ms] g)
+    {E : Set Ω} (hE : MeasurableSet[c.ms] E) {F : Set Ω} (hF : MeasurableSet[m.ms] F) :
+    ∫⁻ x in E ∩ F, g x ∂s.μ = c.μ E * ∫⁻ x in F, g x ∂m.μ := by
+  have hprod := hs.2
+  have hmle : m.ms ≤ s.ms := (PSpace.le_of_isIndependentProduct_right hs).1
+  have hcle : c.ms ≤ s.ms := (PSpace.le_of_isIndependentProduct_left hs).1
+  revert hF F hE E
+  refine @Measurable.ennreal_induction Ω m.ms
+    (fun g ↦ ∀ E, MeasurableSet[c.ms] E → ∀ F, MeasurableSet[m.ms] F →
+      ∫⁻ x in E ∩ F, g x ∂s.μ = c.μ E * ∫⁻ x in F, g x ∂m.μ) ?_ ?_ ?_ g hg
+  · intro a G hG E hE F hF
+    have hGs : MeasurableSet[s.ms] G := hmle _ hG
+    rw [lintegral_indicator_const hGs, lintegral_indicator_const hG,
+      Measure.restrict_apply hGs, Measure.restrict_apply hG,
+      show G ∩ (E ∩ F) = E ∩ (F ∩ G) by ext x; simp only [Set.mem_inter_iff]; tauto,
+      hprod E hE (F ∩ G) (hF.inter hG), Set.inter_comm G F]
+    ring
+  · intro f₁ f₂ _ hf₁ hf₂ ih₁ ih₂ E hE F hF
+    have hf₁s : Measurable[s.ms] f₁ := hf₁.mono hmle le_rfl
+    simp only [Pi.add_apply]
+    rw [lintegral_add_left hf₁s, lintegral_add_left hf₁, ih₁ E hE F hF, ih₂ E hE F hF, mul_add]
+  · intro fs hfs hmono ih E hE F hF
+    have hfss : ∀ n, Measurable[s.ms] (fs n) := fun n ↦ (hfs n).mono hmle le_rfl
+    rw [lintegral_iSup hfss hmono, lintegral_iSup hfs hmono]
+    have hall : ∀ n, ∫⁻ x in E ∩ F, fs n x ∂s.μ = c.μ E * ∫⁻ x in F, fs n x ∂m.μ :=
+      fun n ↦ ih n E hE F hF
+    simp_rw [hall]
+    rw [ENNReal.mul_iSup]
+
+/-- **Reweighting one factor of an independent product.**  If `s` is the independent product
+of `c` and `m`, then `c` is also independent of `m` carrying any other probability measure
+`ν ≪ m.μ` on the same σ-algebra: tilt `s` by `dν/dm.μ`.  This is what lets a conditioning
+kernel's fibre be owned alongside a frame that was independent of the mixture. -/
+theorem PSpace.isIndependentProduct_reweight [Inhabited Ω] {c m s : PSpace Ω}
+    (hs : s =ᵢ c ⊕ᵢ m) (ν : Measure[m.ms] Ω) [IsProbabilityMeasure ν] (hac : ν ≪ m.μ) :
+    ∃ s' : PSpace Ω, s' =ᵢ c ⊕ᵢ (⟨⟨m.ms, ν⟩, inferInstance⟩ : PSpace Ω) := by
+  have hms := hs.1
+  have hmle : m.ms ≤ s.ms := (PSpace.le_of_isIndependentProduct_right hs).1
+  have hcle : c.ms ≤ s.ms := (PSpace.le_of_isIndependentProduct_left hs).1
+  have hcp := c.2
+  have hmp := m.2
+  have : SigmaFinite (m.μ) := inferInstance
+  have : ν.HaveLebesgueDecomposition (m.μ) := inferInstance
+  set f := ν.rnDeriv m.μ with hfdef
+  have hfmeas : Measurable[m.ms] f := Measure.measurable_rnDeriv ν m.μ
+  have hrect : ∀ E, MeasurableSet[c.ms] E → ∀ F, MeasurableSet[m.ms] F →
+      (s.μ.withDensity f) (E ∩ F) = c.μ E * ν F := by
+    intro E hE F hF
+    rw [withDensity_apply _ ((hcle _ hE).inter (hmle _ hF)),
+      PSpace.lintegral_rect hs hfmeas hE hF, ← withDensity_apply _ hF, hfdef,
+      Measure.withDensity_rnDeriv_eq ν m.μ hac]
+  have hprob : IsProbabilityMeasure (s.μ.withDensity f) := by
+    constructor
+    have h := hrect Set.univ MeasurableSet.univ Set.univ MeasurableSet.univ
+    rw [Set.inter_univ] at h
+    rw [h, measure_univ, measure_univ, one_mul]
+  exact ⟨⟨⟨s.ms, s.μ.withDensity f⟩, hprob⟩, hms, hrect⟩
+
+/-- A space on which every measurable set has measure `0` or `1` is independent of itself. -/
+theorem PSpace.isIndependentProduct_self {p : PSpace Ω}
+    (h01 : ∀ t, MeasurableSet[p.ms] t → p.μ t = 0 ∨ p.μ t = 1) : p =ᵢ p ⊕ᵢ p := by
+  have hp := p.2
+  refine ⟨(sup_idem _).symm, fun E hE F hF ↦ ?_⟩
+  rcases h01 E hE with h | h
+  · rw [h, zero_mul]
+    exact measure_mono_null Set.inter_subset_left h
+  · rw [h, one_mul]
+    refine le_antisymm (measure_mono Set.inter_subset_right) ?_
+    have hc : p.μ Eᶜ = 0 := by rw [PSpace.measure_compl hE, h]; simp
+    calc p.μ F ≤ p.μ ((E ∩ F) ∪ Eᶜ) := by
+          refine measure_mono fun x hx ↦ ?_
+          by_cases hxe : x ∈ E
+          · exact Or.inl ⟨hxe, hx⟩
+          · exact Or.inr hxe
+      _ ≤ p.μ (E ∩ F) + p.μ Eᶜ := measure_union_le _ _
+      _ = p.μ (E ∩ F) := by rw [hc, add_zero]
+
+/-- A measure that vanishes on `N` is 0-1 on the σ-algebra `N` generates. -/
+theorem PSpace.zero_or_one_generateFrom {p : PSpace Ω} {N : Set Ω}
+    (hle : MeasurableSpace.generateFrom {N} ≤ p.ms) (hnull : p.μ N = 0) :
+    ∀ t, MeasurableSet[MeasurableSpace.generateFrom {N}] t → p.μ t = 0 ∨ p.μ t = 1 := by
+  have hp := p.2
+  intro t ht
+  induction t, ht using MeasurableSpace.generateFrom_induction with
+  | hC t htC _ =>
+      rw [Set.mem_singleton_iff] at htC
+      subst htC
+      exact Or.inl hnull
+  | empty => exact Or.inl measure_empty
+  | compl t ht ih =>
+      rcases ih with h | h
+      · right; rw [PSpace.measure_compl (hle _ ht), h, tsub_zero]
+      · left; rw [PSpace.measure_compl (hle _ ht), h, tsub_self]
+  | iUnion s hs ih =>
+      by_cases hone : ∃ n, p.μ (s n) = 1
+      · obtain ⟨n, hn⟩ := hone
+        right
+        refine le_antisymm prob_le_one ?_
+        rw [← hn]
+        exact measure_mono (Set.subset_iUnion s n)
+      · left
+        refine measure_iUnion_null fun n ↦ ?_
+        rcases ih n with h | h
+        · exact h
+        · exact absurd ⟨n, h⟩ hone
+
+/-- Trimming lands below the space trimmed. -/
+theorem PSpace.trim_le {p : PSpace Ω} {f : MeasurableSpace Ω} (h : f ≤ p.ms) :
+    (@PSpace.trim Ω p f h) ≤ p := by
+  refine ⟨h, ?_⟩
+  apply @Measure.ext Ω f
+  intro u hu
+  show (p.μ.trim h) u = (p.μ.cast f) u
+  have ht : (p.μ.trim h) u = p.μ u := MeasureOnSpace.trim_eq (p := p.1) h hu
+  rw [ht]
+  exact (Measure.le_preserves_measure (h := h) (μ := p.μ) (hu := hu)).symm
 
 end PSpace.Auxiliary
 
@@ -1096,6 +1222,19 @@ private lemma PSp.mul_of_exists [Inhabited Ω] {x y : PSpace Ω} (h : ∃ s, s =
   : PSp.mul (some x) (some y) = some h.choose := by
   simp [h]
   rfl
+
+/-- An idempotent space: one independent of itself multiplies to itself. -/
+lemma PSp.mul_self_eq [Inhabited Ω] {p : PSpace Ω} (h : p =ᵢ p ⊕ᵢ p) :
+    PSp.mul (some p) (some p) = (some p : PSp Ω) := by
+  have hex : ∃ s : PSpace Ω, s =ᵢ p ⊕ᵢ p := ⟨p, h⟩
+  rw [PSp.mul_of_exists hex]
+  exact congrArg some (PSpace.uniqueness hex.choose_spec h)
+
+/-- An independent product that exists makes the product defined. -/
+lemma PSp.mul_ne_top_of_exists [Inhabited Ω] {x y : PSpace Ω} (h : ∃ s, s =ᵢ x ⊕ᵢ y) :
+    PSp.mul (some x) (some y) ≠ (⊤ : PSp Ω) := by
+  rw [PSp.mul_of_exists h]
+  exact Option.some_ne_none _
 
 private lemma PSp.mul_of_dependent [Inhabited Ω] {x y : PSpace Ω} (h : x.dependent y)
   : PSp.mul (some x) (some y) = none := by
@@ -2015,22 +2154,72 @@ end BoundedFootprintPsp
 
 variable {α : Type*} [Inhabited α]
 
-/-- `psp` reads only a bounded part of the tape: some `BoundedFootprintPsp` sits over it. -/
+/-- `psp` reads only a bounded part of the tape: its σ-algebra sits inside the one some
+footprint tree generates.  Two things about this shape matter.  Only the σ-algebra appears,
+so re-measuring a space -- as a conditioning kernel's fibres do -- keeps it bounded; and the
+bound is `≤`, not `=`, so the predicate is closed downward under the resource order, which
+is exactly coarsening.  At the undefined space `⊤` the condition is vacuous. -/
 def HasBoundedFootprint (psp : PSp (Tape α)) : Prop :=
-  ∃ b : BoundedFootprintPsp α, b.psp = psp
+  ∃ b : BoundedFootprintPsp α, ∀ h : ✓psp,
+    (ValidPSp.toPSpace ⟨psp, h⟩).ms ≤ MeasurableSpace.generateFrom b.atoms
+
+/-- A footprint tree's own space is bounded. -/
+lemma hasBoundedFootprint_of_tree (b : BoundedFootprintPsp α) : HasBoundedFootprint b.psp :=
+  ⟨b, fun h ↦ le_of_eq (b.sigmaAgrees h)⟩
+
+/-- Coarsening keeps a footprint bounded: a smaller space reads no more of the tape. -/
+lemma hasBoundedFootprint_mono {p q : PSp (Tape α)} (hq : ✓q) (hpq : p ≤ q)
+    (h : HasBoundedFootprint q) : HasBoundedFootprint p := by
+  obtain ⟨b, hb⟩ := h
+  refine ⟨b, fun hp ↦ ?_⟩
+  refine le_trans ?_ (hb hq)
+  obtain ⟨p', hp'⟩ := Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hp)
+  obtain ⟨q', hq'⟩ := Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hq)
+  subst hp'; subst hq'
+  rw [ValidPSp.toPSpace_eq hp rfl, ValidPSp.toPSpace_eq hq rfl]
+  exact (WithTop.coe_le_coe.1 hpq).1
 
 lemma hasBoundedFootprint_one : HasBoundedFootprint (1 : PSp (Tape α)) :=
-  ⟨BoundedFootprintPsp.ofMsBot 1 fun _ ↦ rfl, rfl⟩
+  hasBoundedFootprint_of_tree (BoundedFootprintPsp.ofMsBot 1 fun _ ↦ rfl)
 
 /-- The undefined space reads nothing, vacuously. -/
 lemma hasBoundedFootprint_top : HasBoundedFootprint (⊤ : PSp (Tape α)) :=
-  ⟨BoundedFootprintPsp.ofMsBot ⊤ fun h ↦ absurd rfl (PSp.valid_def.mp h), rfl⟩
+  ⟨BoundedFootprintPsp.ofMsBot 1 fun _ ↦ rfl, fun h ↦ absurd rfl (PSp.valid_def.mp h)⟩
 
 lemma hasBoundedFootprint_mul [Finite α] {x y : PSp (Tape α)}
     (hx : HasBoundedFootprint x) (hy : HasBoundedFootprint y) : HasBoundedFootprint (x * y) := by
-  obtain ⟨b₁, rfl⟩ := hx
-  obtain ⟨b₂, rfl⟩ := hy
-  exact ⟨b₁.inter b₂, rfl⟩
+  obtain ⟨b₁, h₁⟩ := hx
+  obtain ⟨b₂, h₂⟩ := hy
+  refine ⟨b₁.inter b₂, fun h ↦ ?_⟩
+  have hxv : ✓x := PSp.valid_def.mpr (PSp.mul_defined_imp_defined (PSp.valid_def.mp h))
+  have hyv : ✓y := PSp.valid_def.mpr
+    (PSp.mul_defined_imp_defined (by rw [PSp.mul_comm]; exact PSp.valid_def.mp h))
+  obtain ⟨x', hx'⟩ := Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hxv)
+  obtain ⟨y', hy'⟩ := Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hyv)
+  obtain ⟨s, hs⟩ := Option.ne_none_iff_exists'.mp (PSp.valid_def.mp h)
+  have hsi : s =ᵢ x' ⊕ᵢ y' := by
+    apply PSp.mul_inversion
+    rw [← hx', ← hy']
+    exact hs
+  have hms : (ValidPSp.toPSpace ⟨x * y, h⟩).ms = x'.ms ⊔ y'.ms := by
+    rw [ValidPSp.toPSpace_eq h hs]
+    exact hsi.1
+  rw [hms]
+  show _ ≤ MeasurableSpace.generateFrom (BoundedFootprintPsp.interAtoms b₁ b₂)
+  rw [← BoundedFootprintPsp.generateFrom_interAtoms]
+  refine sup_le_sup ?_ ?_
+  · have := h₁ hxv
+    rwa [ValidPSp.toPSpace_eq hxv hx'] at this
+  · have := h₂ hyv
+    rwa [ValidPSp.toPSpace_eq hyv hy'] at this
+
+/-- Bounded footprint is a property of the σ-algebra alone, so a space may be re-measured
+and stays bounded. -/
+lemma hasBoundedFootprint_congr {p q : PSp (Tape α)} (hvp : ✓p) (hvq : ✓q)
+    (hms : (ValidPSp.toPSpace ⟨p, hvp⟩).ms = (ValidPSp.toPSpace ⟨q, hvq⟩).ms)
+    (h : HasBoundedFootprint p) : HasBoundedFootprint q := by
+  obtain ⟨b, hb⟩ := h
+  exact ⟨b, fun h' ↦ hms ▸ hb hvp⟩
 
 /-- The probability spaces over `Tape α` that read only a bounded part of the tape. -/
 abbrev BoundedFootprintSpace (α : Type*) [Inhabited α] : Type _ :=
@@ -2039,7 +2228,7 @@ abbrev BoundedFootprintSpace (α : Type*) [Inhabited α] : Type _ :=
 /-- The resource a footprint carries: a `BoundedFootprintPsp` is exactly a witness for the
 side condition `HasBoundedFootprint`, so it names an element of the resource algebra. -/
 def BoundedFootprintPsp.toSpace (b : BoundedFootprintPsp α) : BoundedFootprintSpace α :=
-  ⟨b.psp, ⟨b, rfl⟩⟩
+  ⟨b.psp, hasBoundedFootprint_of_tree b⟩
 
 @[simp]
 lemma BoundedFootprintPsp.toSpace_val (b : BoundedFootprintPsp α) : b.toSpace.val = b.psp := rfl
