@@ -1403,6 +1403,24 @@ lemma PSpace.eq_uniform {n : ℕ} {p : PSpace (Fin (n + 1))}
   rw [hμ]
   rfl
 
+set_option linter.style.haveILetI false in
+/-- Two *discrete* spaces on a countable carrier that agree on singletons are equal.  Like
+`PSpace.eq_uniform`, but with the target distribution left open: this is how a program's
+output space gets identified once its σ-algebra is known to be discrete. -/
+lemma PSpace.ext_of_ms_top {β : Type*} [Countable β] {p q : PSpace β}
+    (hp : p.ms = (⊤ : MeasurableSpace β)) (hq : q.ms = (⊤ : MeasurableSpace β))
+    (h : ∀ a, p.μ {a} = q.μ {a}) : p = q := by
+  obtain ⟨⟨mp, μp⟩, hpp⟩ := p
+  obtain ⟨⟨mq, μq⟩, hqq⟩ := q
+  simp only [PSpace.ms] at hp hq
+  subst hp
+  subst hq
+  letI : MeasurableSpace β := ⊤
+  haveI : MeasurableSingletonClass β := ⟨fun _ ↦ trivial⟩
+  have hμ : μp = μq := (MeasureTheory.Measure.ext_iff_singleton (μ := μp) (ν := μq)).mpr h
+  subst hμ
+  rfl
+
 open ProbabilityTheory in
 /-- The Bernoulli space on `Bool`: mass `p` on `true`, `1 - p` on `false`. -/
 noncomputable def PSpace.bernoulli (p : I) : PSpace Bool :=
@@ -2003,6 +2021,12 @@ instance {α : Type} [Inhabited α] : One (BoundedFootprintPsp α) where
     pathInTreeValid := by simp
     complete := by simp
   }
+
+/-- The unit footprint is a defined space: it carries the unit `PSp`, which is never `⊤`. -/
+lemma BoundedFootprintPsp.valid_one {α : Type} [Inhabited α] :
+    ✓(1 : BoundedFootprintPsp α).psp := by
+  rw [PSp.valid_def]
+  exact Option.some_ne_none _
 
 end BoundedFootprint
 

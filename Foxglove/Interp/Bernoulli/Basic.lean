@@ -16,6 +16,10 @@ open ProbSpace MeasureTheory unitInterval ENNReal NNReal Classical
 inductive BernoulliOps
 | Flip : I → BernoulliOps
 
+/-- Reducible so that `BernoulliPFunctor.A` and `BernoulliPFunctor.B a` unfold to
+`BernoulliOps` and `Bool` without delta: `rw` checks motives at `instances` transparency, and
+would otherwise reject terms that mix the two spellings. -/
+@[reducible]
 def BernoulliPFunctor : PFunctor where
   A := BernoulliOps
   B _ := Bool
@@ -761,6 +765,768 @@ noncomputable def interp_psp {α : Type} [Inhabited α] (m : BernoulliM α) : (�
 gives to the atom each tape lands in. -/
 noncomputable def outputPSp {α : Type} (input : Σ bfpsp : BoundedFootprintPsp, bfpsp.atoms → α) : PSp α :=
   PSp.map (input.2 ∘ input.1.atomOf) input.1.psp
+
+/-! ## Reading off the distribution of a program
+
+Everything below turns `outputPSp (interp_psp m) = ...` into three separable obligations:
+
+* run `m`: exhibit the finished tree and measure `fixpoint` takes it to (`outputPSp_interp`);
+* say what each root-to-leaf path reports (`ProbTree.Reports`);
+* compute the mass of each atom, and compare point masses (`map_eq_of_singletons`).
+
+`step'_leaf_liftBind`/`step'_node`/`fixpoint_of_done` do the running, `joinMeasure_apply_cons`
+and `flipMeasure_apply_singleton` do the masses, and `oneFlipTree`/`twoFlipTree` package the
+two shapes that come up in practice. -/
+
+namespace ProbTree
+
+section Reading
+
+variable {α : Type}
+
+/-! ### Equations for `step'` and `fixpoint` -/
+
+/-- A finished leaf is left alone. -/
+lemma step'_leaf_pure (path : BoolSeq) (a : α)
+    (μ : Measure[(ProbTree.leaf (PFunctor.FreeM.pure a : BernoulliM α)).ms] Ω) :
+    step' path ⟨.leaf (.pure a), μ⟩ = ⟨.leaf (.pure a), μ⟩ := by
+  rw [step']
+
+/-- A leaf that is about to flip becomes a node, and its mass is split between the two
+branches by `flipMeasure`. -/
+lemma step'_leaf_liftBind (path : BoolSeq) (a : BernoulliPFunctor.A)
+    (c : BernoulliPFunctor.B a → BernoulliM α)
+    (μ : Measure[(ProbTree.leaf (PFunctor.FreeM.liftBind a c)).ms] Ω) :
+    step' path ⟨.leaf (.liftBind a c), μ⟩
+      = ⟨.node (.leaf (c true)) (.leaf (c false)), μ Set.univ • flipMeasure _ a.1⟩ := by
+  rw [step']
+
+/-- A node hands each branch the mass of its half, steps both, and adds the two back up. -/
+lemma step'_node (path : BoolSeq) {l r : ProbTree α} (μ : Measure[(ProbTree.node l r).ms] Ω) :
+    step' path ⟨.node l r, μ⟩
+      = ⟨.node (step' (path ++ [true]) ⟨l, branchMeasure true μ⟩).1
+               (step' (path ++ [false]) ⟨r, branchMeasure false μ⟩).1,
+         joinMeasure (step' (path ++ [true]) ⟨l, branchMeasure true μ⟩).2
+                     (step' (path ++ [false]) ⟨r, branchMeasure false μ⟩).2⟩ := by
+  rw [step']
+
+lemma fixpoint_of_done {t : TreeWithMeasure α} (h : t.1.done = true) : fixpoint t = t := by
+  rw [fixpoint, ite_eq_left h]
+
+lemma fixpoint_of_not_done {t : TreeWithMeasure α} (h : t.1.done = false) :
+    fixpoint t = fixpoint (step t) := by
+  rw [fixpoint, ite_eq_right (by rw [h]; exact Bool.false_ne_true)]
+
+/-! ### Root-to-leaf paths -/
+
+@[simp]
+lemma mem_prefixes_leaf {m : BernoulliM α} {q : BoolSeq} :
+    q ∈ (ProbTree.leaf m).prefixes ↔ q = [] := by
+  simp [ProbTree.prefixes]
+
+lemma mem_prefixes_node_iff {l r : ProbTree α} {q : BoolSeq} :
+    q ∈ (ProbTree.node l r).prefixes ↔
+      (∃ q' ∈ l.prefixes, q = true :: q') ∨ (∃ q' ∈ r.prefixes, q = false :: q') := by
+  simp [ProbTree.prefixes, eq_comm]
+
+/-- The two root-to-leaf paths of a split leaf. -/
+lemma mem_prefixes_node_leaf {ml mr : BernoulliM α} {q : BoolSeq} :
+    q ∈ (ProbTree.node (.leaf ml) (.leaf mr)).prefixes ↔ q = [true] ∨ q = [false] := by
+  simp [ProbTree.prefixes]
+
+lemma mem_prefixEqEvent_pair (ρ : Ω) (b₀ b₁ : Bool) :
+    ρ ∈ prefixEqEvent [b₀, b₁] ↔ ρ 0 = b₀ ∧ ρ 1 = b₁ := by
+  simp [prefixEqEvent, Fin.forall_fin_succ]
+
+/-- Distinct root-to-leaf paths describe disjoint sets of tapes. -/
+lemma disjoint_prefixEqEvent {t : ProbTree α} {q q' : BoolSeq} (hq : q ∈ t.prefixes)
+    (hq' : q' ∈ t.prefixes) (hne : q ≠ q') :
+    Disjoint (prefixEqEvent q) (prefixEqEvent q') := by
+  refine Set.disjoint_left.mpr fun ρ h h' ↦ hne ?_
+  rcases prefix_or_prefix_of_mem h h' with hp | hp
+  · exact prefixFree t hq hq' hp
+  · exact (prefixFree t hq' hq hp).symm
+
+/-- Two atoms are disjoint, so their masses add. -/
+lemma measure_union_atoms {t : ProbTree α} (μ : Measure[t.ms] Ω) {q q' : BoolSeq}
+    (hq : q ∈ t.prefixes) (hq' : q' ∈ t.prefixes) (hne : q ≠ q') :
+    μ (prefixEqEvent q ∪ prefixEqEvent q') = μ (prefixEqEvent q) + μ (prefixEqEvent q') :=
+  measure_union (disjoint_prefixEqEvent hq hq' hne) (measurableSet_prefixEqEvent hq')
+
+/-! ### What a finished tree reports -/
+
+/-- `t` *reports* `g` if the value at the end of each root-to-leaf path is `g`'s value on the
+tapes that follow it.  This is the shape the output of a finished tree always has, and it is
+all `outputPSp_interp` needs to know about it. -/
+def Reports (t : ProbTree α) (g : Ω → α) : Prop :=
+  ∀ q ∈ t.prefixes, ∀ ρ ∈ prefixEqEvent q, t.followTape q = some (g ρ)
+
+/-- A reported value depends only on which atom the tape lands in. -/
+lemma Reports.const {t : ProbTree α} {g : Ω → α} (hg : Reports t g) {q : BoolSeq}
+    (hq : q ∈ t.prefixes) {ρ ρ' : Ω} (hρ : ρ ∈ prefixEqEvent q) (hρ' : ρ' ∈ prefixEqEvent q) :
+    g ρ = g ρ' :=
+  Option.some_injective _ ((hg q hq ρ hρ).symm.trans (hg q hq ρ' hρ'))
+
+/-- A reported value pulls every set back to a measurable one: the preimage is the union of
+the finitely many atoms whose value lies in it. -/
+lemma Reports.measurableSet_preimage {t : ProbTree α} {g : Ω → α} (hg : Reports t g)
+    (S : Set α) : MeasurableSet[t.ms] (g ⁻¹' S) := by
+  classical
+  have hEq : g ⁻¹' S
+      = ⋃ q ∈ t.prefixes.filter (fun q ↦ ∃ ρ ∈ prefixEqEvent q, g ρ ∈ S), prefixEqEvent q := by
+    ext ρ
+    simp only [Set.mem_preimage, Set.mem_iUnion, Finset.mem_filter, exists_prop]
+    refine ⟨fun hρ ↦ ?_, ?_⟩
+    · obtain ⟨q, hq, hρq⟩ := exists_prefix_mem t ρ
+      exact ⟨q, ⟨hq, ρ, hρq, hρ⟩, hρq⟩
+    · rintro ⟨q, ⟨hq, ρ', hρ'q, hρ'S⟩, hρq⟩
+      rwa [hg.const hq hρq hρ'q]
+  rw [hEq]
+  exact Finset.measurableSet_biUnion _ fun q hq ↦
+    measurableSet_prefixEqEvent (Finset.mem_filter.mp hq).1
+
+/-! ### The mass of an atom -/
+
+lemma map!_apply {m₁ m₂ : MeasurableSpace Ω} {f : Ω → Ω} (hf : Measurable[m₁, m₂] f)
+    (ν : Measure[m₁] Ω) {S : Set Ω} (hS : MeasurableSet[m₂] S) :
+    (Measure.map! m₁ m₂ f ν) S = ν (f ⁻¹' S) :=
+  @Measure.map_apply Ω Ω m₁ m₂ ν f hf S hS
+
+lemma preimage_consFlip_cons (b b' : Bool) (q : BoolSeq) :
+    consFlip b ⁻¹' prefixEqEvent (b' :: q) = if b = b' then prefixEqEvent q else ∅ := by
+  ext ρ
+  by_cases h : b = b' <;> simp [h, mem_prefixEqEvent_cons]
+
+/-- Joining puts each branch's atoms back where they came from, mass unchanged. -/
+lemma joinMeasure_apply_cons {l r : ProbTree α} (μₗ : Measure[l.ms] Ω) (μᵣ : Measure[r.ms] Ω)
+    (b : Bool) {q : BoolSeq} (hq : q ∈ (if b then l else r).prefixes) :
+    joinMeasure μₗ μᵣ (prefixEqEvent (b :: q))
+      = if b then μₗ (prefixEqEvent q) else μᵣ (prefixEqEvent q) := by
+  have hm : MeasurableSet[(ProbTree.node l r).ms] (prefixEqEvent (b :: q)) :=
+    measurableSet_prefixEqEvent (mem_prefixes_node b hq)
+  rw [joinMeasure, Measure.add_apply,
+    map!_apply (measurable_consFlip (l := l) (r := r) true) _ hm,
+    map!_apply (measurable_consFlip (l := l) (r := r) false) _ hm,
+    preimage_consFlip_cons, preimage_consFlip_cons]
+  cases b <;> simp
+
+/-- The weight a flip of bias `p` gives the outcome `b`. -/
+noncomputable def flipWeight (p : I) (b : Bool) : ℝ≥0∞ :=
+  if b then (unitInterval.toNNReal p : ℝ≥0∞) else 1 - (unitInterval.toNNReal p : ℝ≥0∞)
+
+lemma flipWeight_add (p : I) : flipWeight p true + flipWeight p false = 1 := by
+  rw [flipWeight, flipWeight]
+  simp only [Bool.false_eq_true, ↓reduceIte]
+  exact add_tsub_cancel_of_le (by exact_mod_cast toNNReal_le_one p)
+
+lemma flipMeasure_apply_singleton {m : MeasurableSpace Ω} (p : I) (b : Bool)
+    (hm : MeasurableSet[m] (prefixEqEvent [b])) :
+    flipMeasure m p (prefixEqEvent [b]) = flipWeight p b := by
+  rw [flipMeasure_apply p hm, flipWeight]
+  cases b <;> simp
+
+/-! ### Tapes: `consFlip`, `shift`, `descend` -/
+
+lemma descend_of_eq {b : Bool} {ρ : Ω} (h : ρ 0 = b) : descend b ρ = shift ρ := ite_eq_left h
+
+lemma consFlip_shift {b : Bool} {ρ : Ω} (h : ρ 0 = b) : consFlip b (shift ρ) = ρ := by
+  funext n
+  cases n with
+  | zero => exact h.symm
+  | succ k => rfl
+
+@[simp]
+lemma shift_consFlip (b : Bool) (ρ : Ω) : shift (consFlip b ρ) = ρ := rfl
+
+@[simp]
+lemma mem_prefixEqEvent_consFlip (b : Bool) (ρ : Ω) : consFlip b ρ ∈ prefixEqEvent [b] := by
+  rw [mem_prefixEqEvent_singleton]; rfl
+
+/-- `MeasureTheory.Measure.ext` at an explicitly given σ-algebra: the ambient instance on
+`Ω` is the product one, which is never the one a tree carries. -/
+lemma measure_ext {m : MeasurableSpace Ω} {μ ν : Measure[m] Ω}
+    (h : ∀ E, MeasurableSet[m] E → μ E = ν E) : μ = ν :=
+  @MeasureTheory.Measure.ext Ω m μ ν h
+
+/-! ### `branchMeasure` and `joinMeasure`, applied -/
+
+lemma branchMeasure_apply' {l r : ProbTree α} (b : Bool) (ν : Measure[(ProbTree.node l r).ms] Ω)
+    {S : Set Ω} (hS : MeasurableSet[(if b then l else r).ms] S) :
+    branchMeasure b ν S = ν (descend b ⁻¹' S ∩ prefixEqEvent [b]) := by
+  rw [branchMeasure, map!_apply (measurable_descend b) _ hS,
+    Measure.restrict_apply (measurable_descend b hS)]
+
+lemma joinMeasure_apply {l r : ProbTree α} (μₗ : Measure[l.ms] Ω) (μᵣ : Measure[r.ms] Ω)
+    {E : Set Ω} (hE : MeasurableSet[(ProbTree.node l r).ms] E) :
+    joinMeasure μₗ μᵣ E = μₗ (consFlip true ⁻¹' E) + μᵣ (consFlip false ⁻¹' E) := by
+  rw [joinMeasure, Measure.add_apply,
+    map!_apply (measurable_consFlip (l := l) (r := r) true) _ hE,
+    map!_apply (measurable_consFlip (l := l) (r := r) false) _ hE]
+
+lemma preimage_descend_consFlip (b : Bool) (E : Set Ω) :
+    descend b ⁻¹' (consFlip b ⁻¹' E) ∩ prefixEqEvent [b] = E ∩ prefixEqEvent [b] := by
+  ext ρ
+  simp only [Set.mem_inter_iff, Set.mem_preimage, mem_prefixEqEvent_singleton]
+  constructor
+  · rintro ⟨h1, h2⟩
+    rw [descend_of_eq h2, consFlip_shift h2] at h1
+    exact ⟨h1, h2⟩
+  · rintro ⟨h1, h2⟩
+    refine ⟨?_, h2⟩
+    rw [descend_of_eq h2, consFlip_shift h2]
+    exact h1
+
+lemma preimage_consFlip_descend (b b' : Bool) (S : Set Ω) :
+    consFlip b ⁻¹' (descend b' ⁻¹' S ∩ prefixEqEvent [b']) = if b = b' then S else ∅ := by
+  ext ρ
+  by_cases h : b = b'
+  · subst h
+    simp only [Set.mem_preimage, Set.mem_inter_iff, mem_prefixEqEvent_consFlip, and_true,
+      ↓reduceIte]
+    rw [descend_of_eq (show consFlip b ρ 0 = b from rfl), shift_consFlip]
+  · simp only [Set.mem_preimage, Set.mem_inter_iff, mem_prefixEqEvent_singleton, h, ↓reduceIte,
+      Set.mem_empty_iff_false, iff_false, not_and]
+    intro _
+    rw [show consFlip b ρ 0 = b from rfl]
+    exact h
+
+/-- Splitting a measure into its two halves and joining them back gives it back. -/
+lemma joinMeasure_branchMeasure {l r : ProbTree α} (ν : Measure[(ProbTree.node l r).ms] Ω) :
+    joinMeasure (branchMeasure true ν) (branchMeasure false ν) = ν := by
+  refine measure_ext (fun E hE ↦ ?_)
+  rw [joinMeasure_apply _ _ hE,
+    branchMeasure_apply' true ν (measurable_consFlip (l := l) (r := r) true hE),
+    branchMeasure_apply' false ν (measurable_consFlip (l := l) (r := r) false hE),
+    preimage_descend_consFlip, preimage_descend_consFlip,
+    show prefixEqEvent ([false] : BoolSeq) = (prefixEqEvent ([true] : BoolSeq))ᶜ by
+      ext ρ; simp [mem_prefixEqEvent_singleton],
+    ← Set.sdiff_eq]
+  exact measure_inter_add_sdiff (μ := ν) E (measurableSet_prefixEqEvent_singleton true)
+
+/-- Joining two measures and then taking the `true` half gives the first one back. -/
+lemma branchMeasure_joinMeasure_true {l r : ProbTree α}
+    (μₗ : Measure[l.ms] Ω) (μᵣ : Measure[r.ms] Ω) :
+    branchMeasure (l := l) (r := r) true (joinMeasure μₗ μᵣ) = μₗ := by
+  refine measure_ext (fun S hS ↦ ?_)
+  rw [branchMeasure_apply' true _ hS,
+    joinMeasure_apply _ _ ((measurable_descend (l := l) (r := r) true hS).inter
+      (measurableSet_prefixEqEvent_singleton true)),
+    preimage_consFlip_descend, preimage_consFlip_descend]
+  simp
+
+lemma branchMeasure_joinMeasure_false {l r : ProbTree α}
+    (μₗ : Measure[l.ms] Ω) (μᵣ : Measure[r.ms] Ω) :
+    branchMeasure (l := l) (r := r) false (joinMeasure μₗ μᵣ) = μᵣ := by
+  refine measure_ext (fun S hS ↦ ?_)
+  rw [branchMeasure_apply' false _ hS,
+    joinMeasure_apply _ _ ((measurable_descend (l := l) (r := r) false hS).inter
+      (measurableSet_prefixEqEvent_singleton false)),
+    preimage_consFlip_descend, preimage_consFlip_descend]
+  simp
+
+
+/-! ### `step'` ignores its path, and fixes finished trees -/
+
+lemma step'_path_irrel : ∀ (t : ProbTree α) (μ : Measure[t.ms] Ω) (p p' : BoolSeq),
+    step' p ⟨t, μ⟩ = step' p' ⟨t, μ⟩ := by
+  intro t
+  induction t with
+  | leaf m =>
+    intro μ p p'
+    cases m <;> rw [step', step']
+  | node l r ihl ihr =>
+    intro μ p p'
+    rw [step', step', ihl _ (p ++ [true]) (p' ++ [true]), ihr _ (p ++ [false]) (p' ++ [false])]
+
+lemma step'_of_done : ∀ (t : ProbTree α) (μ : Measure[t.ms] Ω) (p : BoolSeq), t.done = true →
+    step' p ⟨t, μ⟩ = ⟨t, μ⟩ := by
+  intro t
+  induction t with
+  | leaf m =>
+    intro μ p h
+    cases m with
+    | pure a => rw [step']
+    | liftBind a c => simp [done] at h
+  | node l r ihl ihr =>
+    intro μ p h
+    simp only [done, Bool.and_eq_true] at h
+    rw [step', ihl _ _ h.1, ihr _ _ h.2]
+    simp only [joinMeasure_branchMeasure]
+
+lemma step_of_done {t : TreeWithMeasure α} (h : t.1.done = true) : step t = t := by
+  obtain ⟨t, μ⟩ := t
+  exact step'_of_done t μ [] h
+
+/-- `fixpoint` may always be unfolded by one `step`, finished or not. -/
+lemma fixpoint_step (t : TreeWithMeasure α) : fixpoint t = fixpoint (step t) := by
+  by_cases h : t.1.done = true
+  · rw [step_of_done h]
+  · exact fixpoint_of_not_done (by simpa using h)
+
+lemma step_node {l r : ProbTree α} (ν : Measure[(ProbTree.node l r).ms] Ω) :
+    step ⟨.node l r, ν⟩
+      = ⟨.node (step ⟨l, branchMeasure true ν⟩).1 (step ⟨r, branchMeasure false ν⟩).1,
+         joinMeasure (step ⟨l, branchMeasure true ν⟩).2
+                     (step ⟨r, branchMeasure false ν⟩).2⟩ := by
+  rw [step, step'_node, step'_path_irrel _ _ ([] ++ [true]) [],
+    step'_path_irrel _ _ ([] ++ [false]) []]
+  rfl
+
+/-! ### `fixpoint` on a node, and under scaling -/
+
+lemma done_of_depth_eq_zero : ∀ (t : ProbTree α), t.depth = 0 → t.done = true := by
+  intro t
+  induction t with
+  | leaf m =>
+    cases m with
+    | pure a => intro _; rfl
+    | liftBind a c => intro h; simp [depth, leafDepth] at h
+  | node l r ihl ihr =>
+    intro h
+    simp only [depth, Nat.max_eq_zero_iff] at h
+    simp [done, ihl h.1, ihr h.2]
+
+lemma fixpoint_node_aux : ∀ (d : ℕ) (l r : ProbTree α) (ν : Measure[(ProbTree.node l r).ms] Ω),
+    (ProbTree.node l r).depth ≤ d →
+    fixpoint ⟨.node l r, ν⟩
+      = ⟨.node (fixpoint ⟨l, branchMeasure true ν⟩).1 (fixpoint ⟨r, branchMeasure false ν⟩).1,
+         joinMeasure (fixpoint ⟨l, branchMeasure true ν⟩).2
+                     (fixpoint ⟨r, branchMeasure false ν⟩).2⟩ := by
+  have hdoneCase : ∀ (l r : ProbTree α) (ν : Measure[(ProbTree.node l r).ms] Ω),
+      (ProbTree.node l r).done = true →
+      fixpoint ⟨.node l r, ν⟩
+        = ⟨.node (fixpoint ⟨l, branchMeasure true ν⟩).1 (fixpoint ⟨r, branchMeasure false ν⟩).1,
+           joinMeasure (fixpoint ⟨l, branchMeasure true ν⟩).2
+                       (fixpoint ⟨r, branchMeasure false ν⟩).2⟩ := by
+    intro l r ν hdone
+    have h := hdone
+    simp only [done, Bool.and_eq_true] at h
+    rw [fixpoint_of_done hdone, fixpoint_of_done h.1, fixpoint_of_done h.2,
+      joinMeasure_branchMeasure]
+  intro d
+  induction d with
+  | zero =>
+    intro l r ν hd
+    exact hdoneCase l r ν (done_of_depth_eq_zero _ (Nat.le_zero.mp hd))
+  | succ d ih =>
+    intro l r ν hd
+    by_cases hdone : (ProbTree.node l r).done = true
+    · exact hdoneCase l r ν hdone
+    · have hlt : (ProbTree.node (step ⟨l, branchMeasure true ν⟩).1
+          (step ⟨r, branchMeasure false ν⟩).1).depth ≤ d := by
+        have h1 : (step ⟨l, branchMeasure true ν⟩).1 = l.split := step_fst
+        have h2 : (step ⟨r, branchMeasure false ν⟩).1 = r.split := step_fst
+        have h3 := depth_split_lt (ProbTree.node l r) (by simpa using hdone)
+        have h4 : ProbTree.node (step ⟨l, branchMeasure true ν⟩).1
+            (step ⟨r, branchMeasure false ν⟩).1 = (ProbTree.node l r).split := by
+          rw [h1, h2]; rfl
+        rw [h4]
+        omega
+      rw [fixpoint_step ⟨.node l r, ν⟩, step_node, ih _ _ _ hlt,
+        branchMeasure_joinMeasure_true, branchMeasure_joinMeasure_false,
+        ← fixpoint_step ⟨l, branchMeasure true ν⟩, ← fixpoint_step ⟨r, branchMeasure false ν⟩]
+
+/-- `fixpoint` on a node is the node of the `fixpoint`s of its two halves. -/
+lemma fixpoint_node {l r : ProbTree α} (ν : Measure[(ProbTree.node l r).ms] Ω) :
+    fixpoint ⟨.node l r, ν⟩
+      = ⟨.node (fixpoint ⟨l, branchMeasure true ν⟩).1 (fixpoint ⟨r, branchMeasure false ν⟩).1,
+         joinMeasure (fixpoint ⟨l, branchMeasure true ν⟩).2
+                     (fixpoint ⟨r, branchMeasure false ν⟩).2⟩ :=
+  fixpoint_node_aux _ l r ν le_rfl
+
+lemma map!_smul {m₁ m₂ : MeasurableSpace Ω} (k : ℝ≥0∞) {f : Ω → Ω}
+    (hf : Measurable[m₁, m₂] f) (μ : Measure[m₁] Ω) :
+    Measure.map! m₁ m₂ f (k • μ) = k • Measure.map! m₁ m₂ f μ := by
+  refine measure_ext (fun E hE ↦ ?_)
+  rw [map!_apply hf _ hE, Measure.smul_apply, Measure.smul_apply, map!_apply hf _ hE]
+
+lemma branchMeasure_smul {l r : ProbTree α} (b : Bool) (k : ℝ≥0∞)
+    (ν : Measure[(ProbTree.node l r).ms] Ω) :
+    branchMeasure b (k • ν) = k • branchMeasure b ν := by
+  rw [branchMeasure, branchMeasure, Measure.restrict_smul, map!_smul k (measurable_descend b)]
+
+lemma joinMeasure_smul {l r : ProbTree α} (k : ℝ≥0∞)
+    (μₗ : Measure[l.ms] Ω) (μᵣ : Measure[r.ms] Ω) :
+    joinMeasure (k • μₗ) (k • μᵣ) = k • joinMeasure μₗ μᵣ := by
+  rw [joinMeasure, joinMeasure, map!_smul k (measurable_consFlip (l := l) (r := r) true),
+    map!_smul k (measurable_consFlip (l := l) (r := r) false), smul_add]
+
+lemma step'_smul (k : ℝ≥0∞) : ∀ (t : ProbTree α) (μ : Measure[t.ms] Ω) (p : BoolSeq),
+    step' p ⟨t, k • μ⟩ = ⟨(step' p ⟨t, μ⟩).1, k • (step' p ⟨t, μ⟩).2⟩ := by
+  intro t
+  induction t with
+  | leaf m =>
+    intro μ p
+    cases m with
+    | pure a => rw [step', step']
+    | liftBind a c =>
+      rw [step', step']
+      simp only [Measure.smul_apply, smul_eq_mul, smul_smul]
+  | node l r ihl ihr =>
+    intro μ p
+    rw [step', step', branchMeasure_smul, branchMeasure_smul, ihl, ihr]
+    simp only [joinMeasure_smul]
+
+lemma step_smul (k : ℝ≥0∞) (t : ProbTree α) (μ : Measure[t.ms] Ω) :
+    step ⟨t, k • μ⟩ = ⟨(step ⟨t, μ⟩).1, k • (step ⟨t, μ⟩).2⟩ :=
+  step'_smul k t μ []
+
+lemma fixpoint_smul_aux (k : ℝ≥0∞) : ∀ (d : ℕ) (t : ProbTree α) (μ : Measure[t.ms] Ω),
+    t.depth ≤ d → fixpoint ⟨t, k • μ⟩ = ⟨(fixpoint ⟨t, μ⟩).1, k • (fixpoint ⟨t, μ⟩).2⟩ := by
+  intro d
+  induction d with
+  | zero =>
+    intro t μ hd
+    have hdone : t.done = true := done_of_depth_eq_zero _ (Nat.le_zero.mp hd)
+    rw [fixpoint_of_done hdone, fixpoint_of_done hdone]
+  | succ d ih =>
+    intro t μ hd
+    by_cases hdone : t.done = true
+    · rw [fixpoint_of_done hdone, fixpoint_of_done hdone]
+    · have hlt : (step ⟨t, μ⟩).1.depth ≤ d := by
+        have h1 : (step ⟨t, μ⟩).1 = t.split := step_fst
+        have := depth_split_lt t (by simpa using hdone)
+        rw [h1]; omega
+      rw [fixpoint_step ⟨t, k • μ⟩, fixpoint_step ⟨t, μ⟩, step_smul, ih _ _ hlt]
+
+/-- Scaling the measure a tree starts with scales the one it ends with. -/
+lemma fixpoint_smul (k : ℝ≥0∞) {t : ProbTree α} (μ : Measure[t.ms] Ω) :
+    fixpoint ⟨t, k • μ⟩ = ⟨(fixpoint ⟨t, μ⟩).1, k • (fixpoint ⟨t, μ⟩).2⟩ :=
+  fixpoint_smul_aux k _ t μ le_rfl
+
+/-- A leaf has read nothing, so a measure on it is pinned down by its total mass. -/
+lemma measure_leaf_ext {m : BernoulliM α} {μ ν : Measure[(ProbTree.leaf m).ms] Ω}
+    (h : μ Set.univ = ν Set.univ) : μ = ν := by
+  refine measure_ext (fun E hE ↦ ?_)
+  rw [ms_leaf] at hE
+  rcases MeasurableSpace.measurableSet_bot_iff.mp hE with rfl | rfl
+  · simp
+  · exact h
+
+/-! ### Composing `Reports` -/
+
+lemma reports_node {l r : ProbTree α} {gt gf : Ω → α} (hl : Reports l gt) (hr : Reports r gf) :
+    Reports (ProbTree.node l r) (fun ρ ↦ if ρ 0 then gt (shift ρ) else gf (shift ρ)) := by
+  intro q hq ρ hρ
+  rcases mem_prefixes_node_iff.mp hq with ⟨q', hq', rfl⟩ | ⟨q', hq', rfl⟩
+  · rw [mem_prefixEqEvent_cons] at hρ
+    simp only [hρ.1, ↓reduceIte]
+    exact hl q' hq' (shift ρ) hρ.2
+  · rw [mem_prefixEqEvent_cons] at hρ
+    simp only [hρ.1, Bool.false_eq_true, ↓reduceIte]
+    exact hr q' hq' (shift ρ) hρ.2
+
+lemma preimage_consFlip_ite (b : Bool) {β : Type} (gt gf : Ω → β) (S : Set β) :
+    consFlip b ⁻¹' ((fun ρ ↦ if ρ 0 then gt (shift ρ) else gf (shift ρ)) ⁻¹' S)
+      = (if b then gt else gf) ⁻¹' S := by
+  ext ρ
+  cases b <;> simp [Set.mem_preimage]
+
+lemma joinMeasure_smul_preimage {l r : ProbTree α} {β : Type} (kt kf : ℝ≥0∞)
+    (μₗ : Measure[l.ms] Ω) (μᵣ : Measure[r.ms] Ω) {g gt gf : Ω → β} {S : Set β}
+    (hT : consFlip true ⁻¹' (g ⁻¹' S) = gt ⁻¹' S)
+    (hF : consFlip false ⁻¹' (g ⁻¹' S) = gf ⁻¹' S)
+    (hE : MeasurableSet[(ProbTree.node l r).ms] (g ⁻¹' S)) :
+    joinMeasure (kt • μₗ) (kf • μᵣ) (g ⁻¹' S) = kt * μₗ (gt ⁻¹' S) + kf * μᵣ (gf ⁻¹' S) := by
+  rw [joinMeasure_apply _ _ hE, Measure.smul_apply, Measure.smul_apply, smul_eq_mul, smul_eq_mul,
+    hT, hF]
+
+end Reading
+
+end ProbTree
+
+section Reading
+
+open ProbTree
+
+variable {α : Type}
+
+/-- The atom a tape lands in is the event of the path it follows, so the path `ofTree` chose
+for it is that path. -/
+lemma choose_atomOf_eq {W : TreeWithMeasure α} [IsProbabilityMeasure W.2]
+    {q : BoolSeq} (hq : q ∈ W.1.prefixes) {ρ : Ω} (hρ : ρ ∈ prefixEqEvent q) :
+    ((ofTree W).atomOf ρ).2.choose = q := by
+  obtain ⟨q', hq0, hq1, hq2⟩ :
+      ∃ q', ((ofTree W).atomOf ρ).2.choose = q' ∧ q' ∈ W.1.prefixes
+        ∧ prefixEqEvent q' = ((ofTree W).atomOf ρ).1 :=
+    ⟨_, rfl, ((ofTree W).atomOf ρ).2.choose_spec.1, ((ofTree W).atomOf ρ).2.choose_spec.2⟩
+  rw [hq0]
+  have hρ' : ρ ∈ prefixEqEvent q' := by
+    rw [hq2]; exact ProbSpace.BoundedFootprintPsp.mem_atomOf _ ρ
+  rcases prefix_or_prefix_of_mem hρ hρ' with h | h
+  · exact (prefixFree W.1 hq hq1 h).symm
+  · exact prefixFree W.1 hq1 hq h
+
+/-- The unit footprint has a single atom, read to depth `0`, so `toTree` stops at the root:
+the whole program sits at a single leaf. -/
+lemma toTree_one (m : BernoulliM α) :
+    toTree (1 : BoundedFootprintPsp) (fun _ ↦ m) = ProbTree.leaf m := by
+  rw [toTree, toTree.go]
+  rw [dite_eq_left (⟨⟨Set.univ, rfl⟩, List.prefix_refl _⟩ :
+    ∃ X : (1 : BoundedFootprintPsp).atoms, (1 : BoundedFootprintPsp).prefixes X <+: [])]
+
+/-- The whole program at the root of a one-leaf tree, carrying the unit space's measure:
+where `bigStep` starts from when the footprint is the unit, which is what `interp_psp`
+passes it. -/
+@[reducible]
+noncomputable def rootTree (m : BernoulliM α) : TreeWithMeasure α :=
+  ⟨ProbTree.leaf m,
+    (ProbSpace.ValidPSp.toPSpace
+      ⟨(1 : BoundedFootprintPsp).psp, ProbSpace.BoundedFootprintPsp.valid_one⟩).μ.cast
+        (ProbTree.leaf m).ms⟩
+
+@[simp]
+lemma rootTree_fst (m : BernoulliM α) : (rootTree m).1 = ProbTree.leaf m := rfl
+
+/-- A leaf has read nothing, so its σ-algebra is trivial and the cast off the unit space
+keeps the total mass. -/
+lemma rootTree_univ (m : BernoulliM α) : (rootTree m).2 Set.univ = 1 := by
+  have hf : Measurable[⊥, (ProbTree.leaf m).ms] id := by
+    rw [ProbTree.ms_leaf]; exact measurable_id
+  exact (ProbTree.map!_univ hf _).trans (PSpace.unit : PSpace Ω).2.measure_univ
+
+instance rootTree_isProbabilityMeasure (m : BernoulliM α) :
+    IsProbabilityMeasure (rootTree m).2 :=
+  ⟨rootTree_univ m⟩
+
+/-- `outputPSp` on an explicit pair. -/
+lemma outputPSp_mk {b : BoundedFootprintPsp} (f : b.atoms → α) :
+    outputPSp ⟨b, f⟩ = PSp.map (fun ρ ↦ f (b.atomOf ρ)) b.psp := rfl
+
+/-- The body of `bigStep`, with the tree it ran to abstracted.  Stating it this way is what
+lets `outputPSp_interp` rewrite `toTree` away: the tree appears in the type of `ofTree`'s
+instance argument, so it cannot be rewritten in place. -/
+lemma outputPSp_bigStep_body (W : TreeWithMeasure α) (hW : IsProbabilityMeasure W.2)
+    (hd : W.1.done = true) {t : ProbTree α} {μ : Measure[t.ms] Ω} [hμ : IsProbabilityMeasure μ]
+    (hWt : W = ⟨t, μ⟩) {g : Ω → α} (hg : ProbTree.Reports t g) :
+    outputPSp (⟨@ofTree α W hW, fun X ↦ (W.1.followTape X.2.choose).get
+        (followTape_isSome hd X.2.choose_spec.1)⟩ : Σ b : BoundedFootprintPsp, b.atoms → α)
+      = .some (PSpace.map g (⟨⟨t.ms, μ⟩, hμ⟩ : PSpace Ω)) := by
+  subst hWt
+  have := hW
+  have hval : ∀ ρ : Ω, ∀ h : (t.followTape (((@ofTree α ⟨t, μ⟩ hW).atomOf ρ)).2.choose).isSome,
+      (t.followTape (((@ofTree α ⟨t, μ⟩ hW).atomOf ρ)).2.choose).get h = g ρ := by
+    intro ρ h
+    obtain ⟨q, hq, hρq⟩ := exists_prefix_mem t ρ
+    apply Option.some_injective
+    rw [Option.some_get, choose_atomOf_eq (W := ⟨t, μ⟩) hq hρq]
+    exact hg q hq ρ hρq
+  rw [outputPSp_mk]
+  simp only [hval]
+  rfl
+
+/-- **The interpretation of a program**, in terms of the finished tree it runs to: if
+`fixpoint` takes `m` to `t` carrying `μ`, and `t` reports `g`, then `m`'s output space is
+`μ` pushed forward along `g`. -/
+lemma outputPSp_interp [Inhabited α] (m : BernoulliM α)
+    {t : ProbTree α} {μ : Measure[t.ms] Ω} [hμ : IsProbabilityMeasure μ]
+    (hW : fixpoint (rootTree m) = ⟨t, μ⟩) {g : Ω → α} (hg : ProbTree.Reports t g) :
+    outputPSp (interp_psp m) = .some (PSpace.map g (⟨⟨t.ms, μ⟩, hμ⟩ : PSpace Ω)) := by
+  rw [interp_psp, bigStep, dite_eq_left ProbSpace.BoundedFootprintPsp.valid_one]
+  refine outputPSp_bigStep_body _ _ fixpoint_done ?_ hg
+  rw [toTree_one]
+  exact hW
+
+/-! ### Identifying the pushforward -/
+
+/-- A reported value's pushforward is pinned down by its point masses. -/
+lemma map_eq_of_singletons {β : Type} [Countable β] {t : ProbTree α} {μ : Measure[t.ms] Ω}
+    [hμ : IsProbabilityMeasure μ] {g : Ω → β}
+    (hmeas : ∀ S : Set β, MeasurableSet[t.ms] (g ⁻¹' S))
+    {P : PSpace β} (hP : P.ms = ⊤) (h : ∀ a, μ (g ⁻¹' {a}) = P.μ {a}) :
+    PSpace.map g (⟨⟨t.ms, μ⟩, hμ⟩ : PSpace Ω) = P := by
+  refine PSpace.ext_of_ms_top (PSpace.map_ms_eq_top hmeas) hP (fun a ↦ ?_)
+  rw [PSpace.map_apply g (⟨⟨t.ms, μ⟩, hμ⟩ : PSpace Ω) (hmeas {a})]
+  exact h a
+
+/-- Two programs are indistinguishable as soon as their point masses agree. -/
+lemma map_eq_map_of_singletons {α' β : Type} [Countable β]
+    {t : ProbTree α} {μ : Measure[t.ms] Ω} [hμ : IsProbabilityMeasure μ] {g : Ω → β}
+    {t' : ProbTree α'} {μ' : Measure[t'.ms] Ω} [hμ' : IsProbabilityMeasure μ'] {g' : Ω → β}
+    (hmeas : ∀ S : Set β, MeasurableSet[t.ms] (g ⁻¹' S))
+    (hmeas' : ∀ S : Set β, MeasurableSet[t'.ms] (g' ⁻¹' S))
+    (h : ∀ a, μ (g ⁻¹' {a}) = μ' (g' ⁻¹' {a})) :
+    PSpace.map g (⟨⟨t.ms, μ⟩, hμ⟩ : PSpace Ω)
+      = PSpace.map g' (⟨⟨t'.ms, μ'⟩, hμ'⟩ : PSpace Ω) := by
+  refine PSpace.ext_of_ms_top (PSpace.map_ms_eq_top hmeas) (PSpace.map_ms_eq_top hmeas')
+    (fun a ↦ ?_)
+  rw [PSpace.map_apply g (⟨⟨t.ms, μ⟩, hμ⟩ : PSpace Ω) (hmeas {a}),
+    PSpace.map_apply g' (⟨⟨t'.ms, μ'⟩, hμ'⟩ : PSpace Ω) (hmeas' {a})]
+  exact h a
+
+lemma bernoulli_μ_singleton (p : I) (b : Bool) :
+    (PSpace.bernoulli p).μ {b} = ProbTree.flipWeight p b := by
+  cases b
+  · exact PSpace.bernoulli_μ_false
+  · exact PSpace.bernoulli_μ_true
+
+lemma preimage_head (a : Bool) : (fun ρ : Ω ↦ ρ 0) ⁻¹' {a} = ProbTree.prefixEqEvent [a] := by
+  ext ρ; simp [ProbTree.mem_prefixEqEvent_singleton]
+
+lemma preimage_pair (x y : Bool) :
+    (fun ρ : Ω ↦ (ρ 0, ρ 1)) ⁻¹' {(x, y)} = ProbTree.prefixEqEvent [x, y] := by
+  ext ρ; simp [ProbTree.mem_prefixEqEvent_pair, Prod.ext_iff]
+
+/-! ### One flip -/
+
+/-- Peeling the first flip off the root. -/
+lemma step_rootTree_liftBind (a : BernoulliPFunctor.A)
+    (c : BernoulliPFunctor.B a → BernoulliM α) :
+    step (rootTree (PFunctor.FreeM.liftBind a c))
+      = ⟨.node (.leaf (c true)) (.leaf (c false)), flipMeasure _ a.1⟩ := by
+  have h : step (rootTree (PFunctor.FreeM.liftBind a c))
+      = ⟨.node (.leaf (c true)) (.leaf (c false)),
+         (rootTree (PFunctor.FreeM.liftBind a c)).2 Set.univ • flipMeasure _ a.1⟩ :=
+    ProbTree.step'_leaf_liftBind [] a c _
+  rw [h, measure_univ, one_smul]
+
+/-- The tree a single flip runs to, reporting `v b` on the `b` branch. -/
+abbrev oneFlipTree (v : Bool → α) : ProbTree α :=
+  .node (.leaf (.pure (v true))) (.leaf (.pure (v false)))
+
+lemma fixpoint_oneFlip (v : Bool → α) (p : I) :
+    fixpoint (rootTree (PFunctor.FreeM.liftBind (BernoulliOps.Flip p) (fun b ↦ .pure (v b))))
+      = ⟨oneFlipTree v, flipMeasure (oneFlipTree v).ms p⟩ := by
+  rw [ProbTree.fixpoint_of_not_done rfl, step_rootTree_liftBind, ProbTree.fixpoint_of_done rfl]
+
+lemma reports_oneFlipTree (v : Bool → α) :
+    ProbTree.Reports (oneFlipTree v) (fun ρ : Ω ↦ v (ρ 0)) := by
+  intro q hq ρ hρ
+  rcases ProbTree.mem_prefixes_node_leaf.mp hq with rfl | rfl <;>
+    rw [ProbTree.mem_prefixEqEvent_singleton] at hρ <;> simp only [hρ] <;> rfl
+
+/-! ### Two flips -/
+
+/-- The tree two flips run to, reporting `v b₀ b₁`. -/
+abbrev twoFlipTree (v : Bool → Bool → α) : ProbTree α :=
+  .node (oneFlipTree (v true)) (oneFlipTree (v false))
+
+/-- The measure two flips, of biases `p` then `q`, put on that tree. -/
+noncomputable def twoFlipMeasure (v : Bool → Bool → α) (p q : I) :
+    Measure[(twoFlipTree v).ms] Ω :=
+  joinMeasure (ProbTree.flipWeight p true • flipMeasure (oneFlipTree (v true)).ms q)
+              (ProbTree.flipWeight p false • flipMeasure (oneFlipTree (v false)).ms q)
+
+instance twoFlipMeasure_isProbabilityMeasure {v : Bool → Bool → α} {p q : I} :
+    IsProbabilityMeasure (twoFlipMeasure v p q) where
+  measure_univ := by
+    rw [twoFlipMeasure, joinMeasure_univ, Measure.smul_apply, Measure.smul_apply,
+      measure_univ, measure_univ, smul_eq_mul, smul_eq_mul, mul_one, mul_one,
+      ProbTree.flipWeight_add]
+
+lemma fixpoint_twoFlips (v : Bool → Bool → α) (p q : I) :
+    fixpoint (rootTree (PFunctor.FreeM.liftBind (BernoulliOps.Flip p)
+        (fun b₀ ↦ PFunctor.FreeM.liftBind (BernoulliOps.Flip q) (fun b₁ ↦ .pure (v b₀ b₁)))))
+      = ⟨twoFlipTree v, twoFlipMeasure v p q⟩ := by
+  rw [ProbTree.fixpoint_of_not_done rfl, step_rootTree_liftBind,
+    ProbTree.fixpoint_of_not_done rfl, step, ProbTree.step'_node,
+    ProbTree.step'_leaf_liftBind _ (BernoulliOps.Flip q) _ _,
+    ProbTree.step'_leaf_liftBind _ (BernoulliOps.Flip q) _ _, ProbTree.fixpoint_of_done rfl,
+    branchMeasure_univ, branchMeasure_univ,
+    ProbTree.flipMeasure_apply_singleton p true (measurableSet_prefixEqEvent_singleton true),
+    ProbTree.flipMeasure_apply_singleton p false (measurableSet_prefixEqEvent_singleton false)]
+  rfl
+
+lemma reports_twoFlipTree (v : Bool → Bool → α) :
+    ProbTree.Reports (twoFlipTree v) (fun ρ : Ω ↦ v (ρ 0) (ρ 1)) := by
+  intro s hs ρ hρ
+  rcases ProbTree.mem_prefixes_node_iff.mp hs with ⟨s', hs', rfl⟩ | ⟨s', hs', rfl⟩ <;>
+    rcases ProbTree.mem_prefixes_node_leaf.mp hs' with rfl | rfl <;>
+    rw [ProbTree.mem_prefixEqEvent_pair] at hρ <;> simp only [hρ.1, hρ.2] <;> rfl
+
+lemma mem_prefixes_twoFlipTree {v : Bool → Bool → α} {b₀ b₁ : Bool} :
+    [b₀, b₁] ∈ (twoFlipTree v).prefixes := by
+  rw [ProbTree.mem_prefixes_node_iff]
+  cases b₀ <;> cases b₁ <;> simp [ProbTree.prefixes]
+
+lemma twoFlipMeasure_apply (v : Bool → Bool → α) (p q : I) (b₀ b₁ : Bool) :
+    twoFlipMeasure v p q (ProbTree.prefixEqEvent [b₀, b₁])
+      = ProbTree.flipWeight p b₀ * ProbTree.flipWeight q b₁ := by
+  rw [twoFlipMeasure,
+    ProbTree.joinMeasure_apply_cons _ _ b₀ (q := [b₁])
+      (by cases b₀ <;> cases b₁ <;> simp [ProbTree.prefixes])]
+  cases b₀ <;>
+    simp only [Bool.false_eq_true, ↓reduceIte, Measure.smul_apply, smul_eq_mul] <;>
+    rw [ProbTree.flipMeasure_apply_singleton q b₁ (measurableSet_prefixEqEvent_singleton b₁)]
+
+/-! ### Peeling the first flip off a program
+
+The equations above run a program of *known* shape.  To run one given by a recursion, the
+tree has to be taken apart one flip at a time instead: `fixpoint_rootTree_liftBind` says the
+whole run is the node of the two continuations' runs, each scaled by that flip's weight. -/
+
+/-- The result of running a program is a probability measure. -/
+lemma isProbabilityMeasure_of_fixpoint {m : BernoulliM α} {t : ProbTree α} {μ : Measure[t.ms] Ω}
+    (h : fixpoint (rootTree m) = ⟨t, μ⟩) : IsProbabilityMeasure μ := by
+  have hinst : IsProbabilityMeasure (fixpoint (rootTree m)).2 := inferInstance
+  rw [h] at hinst
+  exact hinst
+
+lemma fixpoint_rootTree_pure (a : α) :
+    fixpoint (rootTree (PFunctor.FreeM.pure a : BernoulliM α))
+      = ⟨.leaf (.pure a), (rootTree (PFunctor.FreeM.pure a : BernoulliM α)).2⟩ :=
+  fixpoint_of_done rfl
+
+lemma reports_leaf_pure (a : α) :
+    ProbTree.Reports (ProbTree.leaf (PFunctor.FreeM.pure a : BernoulliM α)) (fun _ ↦ a) := by
+  intro q hq ρ _
+  rw [ProbTree.mem_prefixes_leaf.mp hq]
+  rfl
+
+/-- A node whose two halves carry scaled measures: `fixpoint` scales right through. -/
+lemma fixpoint_node_smul {lt rt : ProbTree α} (kt kf : ℝ≥0∞)
+    {νt : Measure[lt.ms] Ω} {νf : Measure[rt.ms] Ω}
+    (ν : Measure[(ProbTree.node lt rt).ms] Ω)
+    (hT : branchMeasure (l := lt) (r := rt) true ν = kt • νt)
+    (hF : branchMeasure (l := lt) (r := rt) false ν = kf • νf) :
+    fixpoint ⟨.node lt rt, ν⟩
+      = ⟨.node (fixpoint ⟨lt, νt⟩).1 (fixpoint ⟨rt, νf⟩).1,
+         joinMeasure (kt • (fixpoint ⟨lt, νt⟩).2) (kf • (fixpoint ⟨rt, νf⟩).2)⟩ := by
+  rw [fixpoint_node, hT, hF, fixpoint_smul, fixpoint_smul]
+
+/-- **Peeling the first flip.**  A program that starts with a flip runs to the node of what
+its two continuations run to, each branch scaled by that flip's weight. -/
+lemma fixpoint_rootTree_liftBind (a : BernoulliPFunctor.A)
+    (c : BernoulliPFunctor.B a → BernoulliM α) :
+    fixpoint (rootTree (PFunctor.FreeM.liftBind a c))
+      = ⟨.node (fixpoint (rootTree (c true))).1 (fixpoint (rootTree (c false))).1,
+         joinMeasure (ProbTree.flipWeight a.1 true • (fixpoint (rootTree (c true))).2)
+                     (ProbTree.flipWeight a.1 false • (fixpoint (rootTree (c false))).2)⟩ := by
+  have hb : ∀ b : Bool,
+      (ProbTree.flipWeight a.1 b • (rootTree (c b)).2) Set.univ = ProbTree.flipWeight a.1 b := by
+    intro b
+    rw [Measure.smul_apply, smul_eq_mul, measure_univ, mul_one]
+  have hT : branchMeasure (l := ProbTree.leaf (c true)) (r := ProbTree.leaf (c false)) true
+      (flipMeasure (ProbTree.node (ProbTree.leaf (c true)) (ProbTree.leaf (c false))).ms a.1)
+      = ProbTree.flipWeight a.1 true • (rootTree (c true)).2 := by
+    refine measure_leaf_ext ?_
+    rw [branchMeasure_univ, ProbTree.flipMeasure_apply_singleton a.1 true
+      (measurableSet_prefixEqEvent_singleton true)]
+    exact (hb true).symm
+  have hF : branchMeasure (l := ProbTree.leaf (c true)) (r := ProbTree.leaf (c false)) false
+      (flipMeasure (ProbTree.node (ProbTree.leaf (c true)) (ProbTree.leaf (c false))).ms a.1)
+      = ProbTree.flipWeight a.1 false • (rootTree (c false)).2 := by
+    refine measure_leaf_ext ?_
+    rw [branchMeasure_univ, ProbTree.flipMeasure_apply_singleton a.1 false
+      (measurableSet_prefixEqEvent_singleton false)]
+    exact (hb false).symm
+  refine (fixpoint_step (rootTree _)).trans ?_
+  rw [step_rootTree_liftBind]
+  exact fixpoint_node_smul _ _ _ hT hF
+
+/-- `fixpoint_rootTree_liftBind` with the two continuations named. -/
+lemma fixpoint_rootTree_liftBind₂ (a : BernoulliPFunctor.A)
+    (c : BernoulliPFunctor.B a → BernoulliM α) (ct cf : BernoulliM α)
+    (hct : c true = ct) (hcf : c false = cf) :
+    fixpoint (rootTree (PFunctor.FreeM.liftBind a c))
+      = ⟨.node (fixpoint (rootTree ct)).1 (fixpoint (rootTree cf)).1,
+         joinMeasure (ProbTree.flipWeight a.1 true • (fixpoint (rootTree ct)).2)
+                     (ProbTree.flipWeight a.1 false • (fixpoint (rootTree cf)).2)⟩ := by
+  subst hct
+  subst hcf
+  exact fixpoint_rootTree_liftBind a c
+
+end Reading
 
 end Interp
 

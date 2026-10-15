@@ -38,6 +38,16 @@ lemma commute_mix (A A' B B' p00 p01 p10 p11 : ℝ≥0∞) :
     A' * (B' * p00 + B * p01) + A * (B' * p10 + B * p11)
       = B' * (A' * p00 + A * p10) + B * (A' * p01 + A * p11) := by ring
 
+/-- `1/K` lies in the unit interval as soon as `K ≥ 1`. -/
+lemma mkRat_mem_I {K : ℕ} (hK : 1 ≤ K) : ((mkRat 1 K : ℚ) : ℝ) ∈ Set.Icc (0:ℝ) 1 := by
+  have hq : (mkRat 1 K : ℚ) = 1 / (K : ℚ) := by rw [Rat.mkRat_eq_div]; norm_num
+  rw [hq]
+  push_cast
+  have hK' : (1 : ℝ) ≤ (K : ℝ) := by exact_mod_cast hK
+  refine ⟨by positivity, ?_⟩
+  rw [div_le_one (by linarith)]
+  exact hK'
+
 lemma toNNReal_mkRat (K : ℕ) (hK : K ≠ 0)
     (h : (↑(mkRat 1 K) : ℝ) ∈ Set.Icc (0:ℝ) 1) :
     (unitInterval.toNNReal ⟨(↑(mkRat 1 K) : ℝ), h⟩ : ℝ≥0∞) = (K : ℝ≥0∞)⁻¹ := by
