@@ -99,10 +99,41 @@ def hasDistribution {A : Type} (E : RV A) (μ : PMF A) : FProp :=
 
 notation:100 E:100 " ~ " p:100 => hasDistribution E p
 
-def liftPred (a : Ω → Prop) : FProp :=
-  iprop(∃ P : PSpace Ω, ownP P ∗ ⌜P.μ {ρ | ¬ a ρ} = 0⌝)
+-- def liftPred (a : Ω → Prop) : FProp :=
+--   iprop(∃ P : PSpace Ω, ownP P ∗ ⌜P.μ {ρ | ¬ a ρ} = 0⌝)
 
-@[inherit_doc] notation:max "⌈" a "⌉" => liftPred a
+class LiftPred (α : Type) where
+  lift : (Ω → α) → FProp
+
+instance : LiftPred Prop where
+  lift a := iprop(∃ P : PSpace Ω, ownP P ∗ ⌜P.μ {ρ | ¬ a ρ} = 0⌝)
+
+instance : LiftPred Bool where
+  lift a := iprop(∃ P : PSpace Ω, ownP P ∗ ⌜P.μ {ρ | ¬ a ρ} = 0⌝)
+
+class LiftAny (β : Type) where
+  lift : β → Ω → Prop
+
+instance : LiftAny (Ω → Prop) := ⟨fun a ω ↦ a ω⟩
+
+instance : LiftAny (RV Bool) := ⟨fun E ω ↦ E ω = true⟩
+
+instance : LiftAny Prop := ⟨fun p _ ↦ p⟩
+
+syntax "lift(" term ", " term ")" : term
+
+macro_rules
+  | `(lift(¬$a, $ρ))     => `(¬lift($a, $ρ))
+  | `(lift($a ∧ $b, $ρ)) => `(lift($a, $ρ) ∧ lift($b, $ρ))
+  | `(lift($a ∨ $b, $ρ)) => `(lift($a, $ρ) ∨ lift($b, $ρ))
+  | `(lift($a → $b, $ρ)) => `(lift($a, $ρ) → lift($b, $ρ))
+  | `(lift(($x), $ρ))    => `(lift($x, $ρ))
+  | `(lift($x, $ρ))      => `(LiftAny.lift $x $ρ)
+
+syntax (name := liftStx) (priority := high) "⌈" term "⌉" : term  
+
+macro_rules (kind := liftStx)
+  | `(⌈$t⌉) => `(LiftPred.lift fun ω ↦ lift($t, ω))
 
 /-- Assertions of the shape `∃ P, ownP P ∗ ⌜φ P⌝` -- the shape `hasDistribution` and
 `liftPred` share -- with pointwise equivalent side conditions are the same assertion. -/
@@ -175,6 +206,218 @@ lemma entails_ftrue : P ⊢ ftrue := pure_intro True.intro
 lemma fals_entails : ffalse ⊢ P := by
   apply pure_elim'
   grind
+
+section DistributionOwnershipRules
+
+variable {P Q : FProp} {A : Type} {E : RV A} {μ μ' : PMF A} {E₁ E₂ : RV Bool}
+
+/--
+Not relevant for Foxglove.
+-/
+theorem AND_TO_STAR' (h : (⊢ P) ∨ (⊢ Q)) : P ∧ Q ⊢ P ∗ Q := by
+  rcases h with hP | hQ
+  · exact entails_trans and_elim_r (entails_trans emp_sep.2 (sep_mono_left hP))
+  · exact entails_trans and_elim_l (entails_trans sep_emp.2 (sep_mono_right hQ))
+
+open MeasureTheory in
+theorem DIST_INJ : E ~ μ ∧ E ~ μ' ⊢ ⌜μ = μ'⌝ := by
+  intro m hv h
+  obtain ⟨h₁, h₂⟩ := h
+  -- the ambient space the two claims share
+  obtain ⟨y, hy⟩ : ∃ y : PSpace Ω, m.val = some y :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hv)
+  -- the space witnessing `E ~ μ`, and its resource, sit below `m`
+  obtain ⟨q₁, ⟨P, hq₁P⟩, hq₁m⟩ := h₁
+  obtain ⟨b₁, b₂, hle₁, hown₁, hpure₁⟩ := (Quotient.exact hq₁P).2 m hv hq₁m
+  obtain ⟨r₁, ⟨hbf₁, hr₁⟩, hb₁⟩ := hown₁
+  have hb₁m : b₁ ≤ m := le_trans (le_mul_of_one_le PSp.one_le) hle₁
+  have hPb₁ := (Quotient.exact hr₁).2 b₁ (valid_mono hb₁m hv) hb₁
+  -- and the same for `E ~ μ'`
+  obtain ⟨q₂, ⟨P', hq₂P'⟩, hq₂m⟩ := h₂
+  obtain ⟨c₁, c₂, hle₂, hown₂, hpure₂⟩ := (Quotient.exact hq₂P').2 m hv hq₂m
+  obtain ⟨r₂, ⟨hbf₂, hr₂⟩, hc₁⟩ := hown₂
+  have hc₁m : c₁ ≤ m := le_trans (le_mul_of_one_le PSp.one_le) hle₂
+  have hP'c₁ := (Quotient.exact hr₂).2 c₁ (valid_mono hc₁m hv) hc₁
+  have hPy : P ≤ y := by
+    have hPm : (P : PSp Ω) ≤ (m : PSp Ω) := le_trans hPb₁ hb₁m
+    rw [hy] at hPm
+    exact WithTop.coe_le_coe.1 hPm
+  have hP'y : P' ≤ y := by
+    have hP'm : (P' : PSp Ω) ≤ (m : PSp Ω) := le_trans hP'c₁ hc₁m
+    rw [hy] at hP'm
+    exact WithTop.coe_le_coe.1 hP'm
+  -- both push `E` forward along the one ambient measure, so the two laws agree
+  obtain ⟨ham, hμ₁⟩ := hpure₁
+  obtain ⟨ham', hμ₂⟩ := hpure₂
+  show μ = μ'
+  apply @PMF.toMeasure_injective A ⊤
+  calc @PMF.toMeasure A ⊤ μ
+      = @Measure.map Ω A P.ms ⊤ E P.μ := hμ₁.symm
+    _ = @Measure.map Ω A P'.ms ⊤ E P'.μ := PSpace.map_eq_of_le hPy hP'y ham ham'
+    _ = @PMF.toMeasure A ⊤ μ' := hμ₂
+
+/-- Two sure facts held separately are both sure on the ambient space, so they merge. -/
+theorem liftPred_sep {a b : Ω → Prop} : ⌈a⌉ ∗ ⌈b⌉ ⊢ ⌈fun ω ↦ a ω ∧ b ω⌉ := by
+  intro m hv h
+  obtain ⟨d₁, d₂, hle, h₁, h₂⟩ := h
+  obtain ⟨y, hy⟩ : ∃ y : PSpace Ω, m.val = (y : PSp Ω) :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hv)
+  have hd₁ : d₁ ≤ m := le_trans (le_mul_of_one_le PSp.one_le) hle
+  have hd₂ : d₂ ≤ m := by
+    refine le_trans ?_ hle
+    rw [mul_comm]
+    exact le_mul_of_one_le PSp.one_le
+  -- the space behind the first conjunct sits below the ambient `y`
+  obtain ⟨q₁, ⟨P₁, hq₁⟩, hq₁m⟩ := h₁
+  obtain ⟨e₁, _, hlee₁, hown₁, hpure₁⟩ := (Quotient.exact hq₁).2 d₁ (valid_mono hd₁ hv) hq₁m
+  obtain ⟨r₁, ⟨hbf₁, hr₁⟩, he₁⟩ := hown₁
+  have he₁m : e₁ ≤ m := le_trans (le_trans (le_mul_of_one_le PSp.one_le) hlee₁) hd₁
+  have hP₁ := (Quotient.exact hr₁).2 e₁ (valid_mono he₁m hv) he₁
+  have hP₁y : P₁ ≤ y := by
+    have hP₁m : (P₁ : PSp Ω) ≤ (m : PSp Ω) := le_trans hP₁ he₁m
+    rw [hy] at hP₁m
+    exact WithTop.coe_le_coe.1 hP₁m
+  -- and the same for the second
+  obtain ⟨q₂, ⟨P₂, hq₂⟩, hq₂m⟩ := h₂
+  obtain ⟨e₂, _, hlee₂, hown₂, hpure₂⟩ := (Quotient.exact hq₂).2 d₂ (valid_mono hd₂ hv) hq₂m
+  obtain ⟨r₂, ⟨hbf₂, hr₂⟩, he₂⟩ := hown₂
+  have he₂m : e₂ ≤ m := le_trans (le_trans (le_mul_of_one_le PSp.one_le) hlee₂) hd₂
+  have hP₂ := (Quotient.exact hr₂).2 e₂ (valid_mono he₂m hv) he₂
+  have hP₂y : P₂ ≤ y := by
+    have hP₂m : (P₂ : PSp Ω) ≤ (m : PSp Ω) := le_trans hP₂ he₂m
+    rw [hy] at hP₂m
+    exact WithTop.coe_le_coe.1 hP₂m
+  -- both exceptional sets are null on `y`, hence so is their union
+  have hnull₁ : y.μ {ρ | ¬ a ρ} = 0 := PSpace.null_of_le hP₁y hpure₁
+  have hnull₂ : y.μ {ρ | ¬ b ρ} = 0 := PSpace.null_of_le hP₂y hpure₂
+  have hbfy : HasBoundedFootprint (y : PSp Ω) := hy ▸ m.property
+  have hmy : (⟨(y : PSp Ω), hbfy⟩ : BoundedFootprintSpace Bool) = m := Subtype.ext hy.symm
+  refine ⟨_, ⟨y, rfl⟩, m, 1, ?_, ⟨_, ⟨hbfy, rfl⟩, le_of_eq hmy⟩, ?_⟩
+  · rw [mul_one]
+  · have hsub : {ρ | ¬ (a ρ ∧ b ρ)} ⊆ {ρ | ¬ a ρ} ∪ {ρ | ¬ b ρ} := by
+      intro ρ hρ
+      by_cases ha : a ρ
+      · exact Or.inr fun hb ↦ hρ ⟨ha, hb⟩
+      · exact Or.inl ha
+    exact MeasureTheory.measure_mono_null hsub
+      (MeasureTheory.measure_union_null hnull₁ hnull₂)
+
+/-- A sure fact splits.  `∗` demands two resources whose independent product is defined, so
+splitting needs an idempotent witness, and one exists: trim the owned space to the σ-algebra
+generated by a null cover of the exceptional set.  That trim carries only the measures `0`
+and `1`, hence is independent of itself, and it is a resource because `HasBoundedFootprint`
+is closed under coarsening. -/
+theorem liftPred_split {a b : Ω → Prop} : ⌈fun ω ↦ a ω ∧ b ω⌉ ⊢ ⌈a⌉ ∗ ⌈b⌉ := by
+  intro m hv h
+  obtain ⟨q, ⟨P, hq⟩, hqm⟩ := h
+  obtain ⟨d₁, d₂, hle, hown, hpure⟩ := (Quotient.exact hq).2 m hv hqm
+  obtain ⟨r₁, ⟨hbfP, hr₁⟩, hd₁⟩ := hown
+  have hd₁m : d₁ ≤ m := le_trans (le_mul_of_one_le PSp.one_le) hle
+  have hPm : (⟨(P : PSp Ω), hbfP⟩ : BoundedFootprintSpace Bool) ≤ m :=
+    le_trans ((Quotient.exact hr₁).2 d₁ (valid_mono hd₁m hv) hd₁) hd₁m
+  -- a measurable null cover of the exceptional set
+  obtain ⟨N, hNsub, hNmeas, hNnull⟩ :=
+    @MeasureTheory.exists_measurable_superset_of_null Ω P.ms P.μ _ hpure
+  have hgen : MeasurableSpace.generateFrom {N} ≤ P.ms :=
+    MeasurableSpace.generateFrom_le (by rintro t rfl; exact hNmeas)
+  -- the 0-1 trim
+  set P₀ : PSpace Ω := @PSpace.trim Ω P _ hgen with hP₀
+  have hP₀P : P₀ ≤ P := PSpace.trim_le hgen
+  have hNmeas₀ : @MeasurableSet Ω P₀.ms N := MeasurableSpace.measurableSet_generateFrom rfl
+  have hN₀ : P₀.μ N = 0 := by
+    rw [MeasureOnSpace.le_preserves_measure hP₀P hNmeas₀]
+    exact hNnull
+  have hidem : P₀ =ᵢ P₀ ⊕ᵢ P₀ :=
+    PSpace.isIndependentProduct_self (PSpace.zero_or_one_generateFrom (le_refl _) hN₀)
+  have hbf₀ : HasBoundedFootprint ((P₀ : PSp Ω)) :=
+    hasBoundedFootprint_mono (PSp.valid_def.mpr (Option.some_ne_none _))
+      (WithTop.coe_le_coe.2 hP₀P) hbfP
+  have hb₀b₀ :
+      (⟨(P₀ : PSp Ω), hbf₀⟩ : BoundedFootprintSpace Bool) * ⟨(P₀ : PSp Ω), hbf₀⟩ ≤ m := by
+    refine le_trans ?_ hPm
+    show PSp.mul (some P₀) (some P₀) ≤ (some P : PSp Ω)
+    rw [PSp.mul_self_eq hidem]
+    exact WithTop.coe_le_coe.2 hP₀P
+  refine ⟨_, _, hb₀b₀, ⟨_, ⟨P₀, rfl⟩, ?_⟩, ⟨_, ⟨P₀, rfl⟩, ?_⟩⟩
+  · refine ⟨_, 1, le_of_eq (mul_one _),
+      ⟨_, ⟨hbf₀, rfl⟩, le_refl (⟨(P₀ : PSp Ω), hbf₀⟩ : BoundedFootprintSpace Bool)⟩, ?_⟩
+    exact MeasureTheory.measure_mono_null (fun ρ hρ ↦ hNsub fun hab ↦ hρ hab.1) hN₀
+  · refine ⟨_, 1, le_of_eq (mul_one _),
+      ⟨_, ⟨hbf₀, rfl⟩, le_refl (⟨(P₀ : PSp Ω), hbf₀⟩ : BoundedFootprintSpace Bool)⟩, ?_⟩
+    exact MeasureTheory.measure_mono_null (fun ρ hρ ↦ hNsub fun hab ↦ hρ hab.2) hN₀
+
+theorem SURE_MERGE : ⌈E₁⌉ ∗ ⌈E₂⌉ ⊣⊢ ⌈E₁ ∧ E₂⌉ :=
+  ⟨liftPred_sep, liftPred_split⟩
+
+open MeasureTheory in
+/-- A space carrying only the measures `0` and `1` and sitting below `y` is independent of
+`y`, with `y` itself as the product. -/
+theorem PSpace.isIndependentProduct_of_zero_one_le {p y : PSpace Ω} (hpy : p ≤ y)
+    (h01 : ∀ t, @MeasurableSet Ω p.ms t → p.μ t = 0 ∨ p.μ t = 1) : y =ᵢ p ⊕ᵢ y := by
+  have hy := y.2
+  refine ⟨(sup_eq_right.mpr hpy.1).symm, fun E hE F _ ↦ ?_⟩
+  have hEy : p.μ E = y.μ E := MeasureOnSpace.le_preserves_measure hpy hE
+  rcases h01 E hE with h | h
+  · rw [h, zero_mul]
+    exact measure_mono_null Set.inter_subset_left (hEy.symm.trans h)
+  · rw [h, one_mul]
+    refine le_antisymm (measure_mono Set.inter_subset_right) ?_
+    have hc : y.μ Eᶜ = 0 := by
+      rw [PSpace.measure_compl (hpy.1 _ hE), ← hEy, h]; simp
+    calc y.μ F ≤ y.μ ((E ∩ F) ∪ Eᶜ) := by
+          refine measure_mono fun x hx ↦ ?_
+          by_cases hxe : x ∈ E
+          · exact Or.inl ⟨hxe, hx⟩
+          · exact Or.inr hxe
+      _ ≤ y.μ (E ∩ F) + y.μ Eᶜ := measure_union_le _ _
+      _ = y.μ (E ∩ F) := by rw [hc, add_zero]
+
+/-- A sure fact can be split off any assertion it holds alongside: its 0-1 trim (as in
+`liftPred_split`) is independent of the whole resource and multiplies with it to itself. -/
+theorem Sure_And_Star : ⌈E₁⌉ ∧ P ⊢ ⌈E₁⌉ ∗ P := by
+  induction P using Quotient.ind
+  intro m hv ⟨hE, hP⟩
+  obtain ⟨q, ⟨W, hq⟩, hqm⟩ := hE
+  obtain ⟨d₁, d₂, hle, hown, hpure⟩ := (Quotient.exact hq).2 m hv hqm
+  obtain ⟨r₁, ⟨hbfW, hr₁⟩, hd₁⟩ := hown
+  have hd₁m : d₁ ≤ m := le_trans (le_mul_of_one_le PSp.one_le) hle
+  have hWm : (⟨(W : PSp Ω), hbfW⟩ : BoundedFootprintSpace Bool) ≤ m :=
+    le_trans ((Quotient.exact hr₁).2 d₁ (valid_mono hd₁m hv) hd₁) hd₁m
+  obtain ⟨y, hy⟩ : ∃ y : PSpace Ω, m.val = (y : PSp Ω) :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hv)
+  have hWy : W ≤ y := by
+    have h : (W : PSp Ω) ≤ (m : PSp Ω) := hWm
+    rw [hy] at h
+    exact WithTop.coe_le_coe.1 h
+  -- a measurable null cover of the exceptional set, and the 0-1 trim it generates
+  obtain ⟨N, hNsub, hNmeas, hNnull⟩ :=
+    @MeasureTheory.exists_measurable_superset_of_null Ω W.ms W.μ _ hpure
+  have hgen : MeasurableSpace.generateFrom {N} ≤ W.ms :=
+    MeasurableSpace.generateFrom_le (by rintro t rfl; exact hNmeas)
+  set W₀ : PSpace Ω := @PSpace.trim Ω W _ hgen with hW₀
+  have hW₀W : W₀ ≤ W := PSpace.trim_le hgen
+  have hNmeas₀ : @MeasurableSet Ω W₀.ms N := MeasurableSpace.measurableSet_generateFrom rfl
+  have hN₀ : W₀.μ N = 0 := by
+    rw [MeasureOnSpace.le_preserves_measure hW₀W hNmeas₀]
+    exact hNnull
+  have hbf₀ : HasBoundedFootprint ((W₀ : PSp Ω)) :=
+    hasBoundedFootprint_mono (PSp.valid_def.mpr (Option.some_ne_none _))
+      (WithTop.coe_le_coe.2 hW₀W) hbfW
+  -- the trim is independent of the whole space, so splitting it off costs nothing
+  have hind : y =ᵢ W₀ ⊕ᵢ y :=
+    PSpace.isIndependentProduct_of_zero_one_le (le_trans hW₀W hWy)
+      (PSpace.zero_or_one_generateFrom (le_refl _) hN₀)
+  have hb₀m : (⟨(W₀ : PSp Ω), hbf₀⟩ : BoundedFootprintSpace Bool) * m ≤ m := by
+    show PSp.mul (W₀ : PSp Ω) m.val ≤ m.val
+    rw [hy]
+    exact le_of_eq (mul_respect_independentProduct hind)
+  refine ⟨_, m, hb₀m, ⟨_, ⟨W₀, rfl⟩, ?_⟩, hP⟩
+  refine ⟨_, 1, le_of_eq (mul_one _),
+    ⟨_, ⟨hbf₀, rfl⟩, le_refl (⟨(W₀ : PSp Ω), hbf₀⟩ : BoundedFootprintSpace Bool)⟩, ?_⟩
+  exact MeasureTheory.measure_mono_null hNsub hN₀
+
+
+end DistributionOwnershipRules
 
 lemma C_True
   {A : Type} {μ : PMF A}
@@ -340,101 +583,12 @@ theorem ESureDirac {A : Type} {E : RV A} {v : A}
   rw [h]
   exact ⟨entails_rfl, entails_rfl⟩
 
-/-- Two sure facts held separately are both sure on the ambient space, so they merge. -/
-theorem liftPred_sep {a b : Ω → Prop} : ⌈a⌉ ∗ ⌈b⌉ ⊢ ⌈fun ω ↦ a ω ∧ b ω⌉ := by
-  intro m hv h
-  obtain ⟨d₁, d₂, hle, h₁, h₂⟩ := h
-  obtain ⟨y, hy⟩ : ∃ y : PSpace Ω, m.val = (y : PSp Ω) :=
-    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hv)
-  have hd₁ : d₁ ≤ m := le_trans (le_mul_of_one_le PSp.one_le) hle
-  have hd₂ : d₂ ≤ m := by
-    refine le_trans ?_ hle
-    rw [mul_comm]
-    exact le_mul_of_one_le PSp.one_le
-  -- the space behind the first conjunct sits below the ambient `y`
-  obtain ⟨q₁, ⟨P₁, hq₁⟩, hq₁m⟩ := h₁
-  obtain ⟨e₁, _, hlee₁, hown₁, hpure₁⟩ := (Quotient.exact hq₁).2 d₁ (valid_mono hd₁ hv) hq₁m
-  obtain ⟨r₁, ⟨hbf₁, hr₁⟩, he₁⟩ := hown₁
-  have he₁m : e₁ ≤ m := le_trans (le_trans (le_mul_of_one_le PSp.one_le) hlee₁) hd₁
-  have hP₁ := (Quotient.exact hr₁).2 e₁ (valid_mono he₁m hv) he₁
-  have hP₁y : P₁ ≤ y := by
-    have hP₁m : (P₁ : PSp Ω) ≤ (m : PSp Ω) := le_trans hP₁ he₁m
-    rw [hy] at hP₁m
-    exact WithTop.coe_le_coe.1 hP₁m
-  -- and the same for the second
-  obtain ⟨q₂, ⟨P₂, hq₂⟩, hq₂m⟩ := h₂
-  obtain ⟨e₂, _, hlee₂, hown₂, hpure₂⟩ := (Quotient.exact hq₂).2 d₂ (valid_mono hd₂ hv) hq₂m
-  obtain ⟨r₂, ⟨hbf₂, hr₂⟩, he₂⟩ := hown₂
-  have he₂m : e₂ ≤ m := le_trans (le_trans (le_mul_of_one_le PSp.one_le) hlee₂) hd₂
-  have hP₂ := (Quotient.exact hr₂).2 e₂ (valid_mono he₂m hv) he₂
-  have hP₂y : P₂ ≤ y := by
-    have hP₂m : (P₂ : PSp Ω) ≤ (m : PSp Ω) := le_trans hP₂ he₂m
-    rw [hy] at hP₂m
-    exact WithTop.coe_le_coe.1 hP₂m
-  -- both exceptional sets are null on `y`, hence so is their union
-  have hnull₁ : y.μ {ρ | ¬ a ρ} = 0 := PSpace.null_of_le hP₁y hpure₁
-  have hnull₂ : y.μ {ρ | ¬ b ρ} = 0 := PSpace.null_of_le hP₂y hpure₂
-  have hbfy : HasBoundedFootprint (y : PSp Ω) := hy ▸ m.property
-  have hmy : (⟨(y : PSp Ω), hbfy⟩ : BoundedFootprintSpace Bool) = m := Subtype.ext hy.symm
-  refine ⟨_, ⟨y, rfl⟩, m, 1, ?_, ⟨_, ⟨hbfy, rfl⟩, le_of_eq hmy⟩, ?_⟩
-  · rw [mul_one]
-  · have hsub : {ρ | ¬ (a ρ ∧ b ρ)} ⊆ {ρ | ¬ a ρ} ∪ {ρ | ¬ b ρ} := by
-      intro ρ hρ
-      by_cases ha : a ρ
-      · exact Or.inr fun hb ↦ hρ ⟨ha, hb⟩
-      · exact Or.inl ha
-    exact MeasureTheory.measure_mono_null hsub
-      (MeasureTheory.measure_union_null hnull₁ hnull₂)
-
-/-- A sure fact splits.  `∗` demands two resources whose independent product is defined, so
-splitting needs an idempotent witness, and one exists: trim the owned space to the σ-algebra
-generated by a null cover of the exceptional set.  That trim carries only the measures `0`
-and `1`, hence is independent of itself, and it is a resource because `HasBoundedFootprint`
-is closed under coarsening. -/
-theorem liftPred_split {a b : Ω → Prop} : ⌈fun ω ↦ a ω ∧ b ω⌉ ⊢ ⌈a⌉ ∗ ⌈b⌉ := by
-  intro m hv h
-  obtain ⟨q, ⟨P, hq⟩, hqm⟩ := h
-  obtain ⟨d₁, d₂, hle, hown, hpure⟩ := (Quotient.exact hq).2 m hv hqm
-  obtain ⟨r₁, ⟨hbfP, hr₁⟩, hd₁⟩ := hown
-  have hd₁m : d₁ ≤ m := le_trans (le_mul_of_one_le PSp.one_le) hle
-  have hPm : (⟨(P : PSp Ω), hbfP⟩ : BoundedFootprintSpace Bool) ≤ m :=
-    le_trans ((Quotient.exact hr₁).2 d₁ (valid_mono hd₁m hv) hd₁) hd₁m
-  -- a measurable null cover of the exceptional set
-  obtain ⟨N, hNsub, hNmeas, hNnull⟩ :=
-    @MeasureTheory.exists_measurable_superset_of_null Ω P.ms P.μ _ hpure
-  have hgen : MeasurableSpace.generateFrom {N} ≤ P.ms :=
-    MeasurableSpace.generateFrom_le (by rintro t rfl; exact hNmeas)
-  -- the 0-1 trim
-  set P₀ : PSpace Ω := @PSpace.trim Ω P _ hgen with hP₀
-  have hP₀P : P₀ ≤ P := PSpace.trim_le hgen
-  have hNmeas₀ : @MeasurableSet Ω P₀.ms N := MeasurableSpace.measurableSet_generateFrom rfl
-  have hN₀ : P₀.μ N = 0 := by
-    rw [MeasureOnSpace.le_preserves_measure hP₀P hNmeas₀]
-    exact hNnull
-  have hidem : P₀ =ᵢ P₀ ⊕ᵢ P₀ :=
-    PSpace.isIndependentProduct_self (PSpace.zero_or_one_generateFrom (le_refl _) hN₀)
-  have hbf₀ : HasBoundedFootprint ((P₀ : PSp Ω)) :=
-    hasBoundedFootprint_mono (PSp.valid_def.mpr (Option.some_ne_none _))
-      (WithTop.coe_le_coe.2 hP₀P) hbfP
-  have hb₀b₀ :
-      (⟨(P₀ : PSp Ω), hbf₀⟩ : BoundedFootprintSpace Bool) * ⟨(P₀ : PSp Ω), hbf₀⟩ ≤ m := by
-    refine le_trans ?_ hPm
-    show PSp.mul (some P₀) (some P₀) ≤ (some P : PSp Ω)
-    rw [PSp.mul_self_eq hidem]
-    exact WithTop.coe_le_coe.2 hP₀P
-  refine ⟨_, _, hb₀b₀, ⟨_, ⟨P₀, rfl⟩, ?_⟩, ⟨_, ⟨P₀, rfl⟩, ?_⟩⟩
-  · refine ⟨_, 1, le_of_eq (mul_one _),
-      ⟨_, ⟨hbf₀, rfl⟩, le_refl (⟨(P₀ : PSp Ω), hbf₀⟩ : BoundedFootprintSpace Bool)⟩, ?_⟩
-    exact MeasureTheory.measure_mono_null (fun ρ hρ ↦ hNsub fun hab ↦ hρ hab.1) hN₀
-  · refine ⟨_, 1, le_of_eq (mul_one _),
-      ⟨_, ⟨hbf₀, rfl⟩, le_refl (⟨(P₀ : PSp Ω), hbf₀⟩ : BoundedFootprintSpace Bool)⟩, ?_⟩
-    exact MeasureTheory.measure_mono_null (fun ρ hρ ↦ hNsub fun hab ↦ hρ hab.2) hN₀
-
 /-- A sure fact is duplicable. -/
 theorem liftPred_dup {p : Ω → Prop} : ⌈p⌉ ⊢ ⌈p⌉ ∗ ⌈p⌉ := by
   have h : (⌈p⌉ : FProp) = ⌈fun ω ↦ p ω ∧ p ω⌉ := by
     refine ownP_pure_congr (fun P ↦ ?_)
     have hs : {ρ | ¬ p ρ} = {ρ | ¬ (p ρ ∧ p ρ)} := by ext ρ; simp
+    show P.μ {ρ | ¬ p ρ} = 0 ↔ P.μ {ρ | ¬ (p ρ ∧ p ρ)} = 0
     rw [hs]
   nth_rewrite 1 [h]
   exact liftPred_split
@@ -476,12 +630,12 @@ lemma valuePost_const {α : Type} (x : α) (Q : α → FProp) : Q x ⊢ valuePos
       have hy : (y : α) = x := by simpa using y.2
       simp only [hy]
       isplitl []
-      · unfold liftPred
+      · dsimp only [LiftPred.lift]
         iexists (1 : PSpace Ω)
         isplitl []
         · exact ownP_one
         · ipureintro
-          simp
+          simp [LiftAny.lift]
       · iexact HQ
 
 open Interp in
