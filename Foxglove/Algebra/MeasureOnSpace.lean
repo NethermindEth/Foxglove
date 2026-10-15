@@ -1009,6 +1009,46 @@ lemma PSpace.le_of_isIndependentProduct_right
     rw [h3, h4, one_mul] at h2
     exact h2.symm
 
+/-- A null set of a sub-space is null in the big space, so an a.e. equality survives going
+up: a version of `E` measurable on the small space is still a version on the big one. -/
+lemma PSpace.ae_eq_of_le {A : Type*} {E : Ω → A} {y z : PSpace Ω} (hzy : z ≤ y)
+    {g : Ω → A} (hg : g =ᵐ[z.μ] E) : g =ᵐ[y.μ] E := by
+  rw [Filter.EventuallyEq, ae_iff] at hg
+  rcases @exists_measurable_superset_of_null _ z.ms z.μ _ hg with ⟨N, hN_sub, hN_meas, hN_null⟩
+  have hN_y : y.μ N = 0 := by
+    rw [← hN_null]
+    exact (MeasureOnSpace.le_preserves_measure hzy hN_meas).symm
+  exact measure_mono_null hN_sub hN_y
+
+set_option linter.style.haveILetI false in
+/-- Two sub-spaces of one space push the same a.e.-measurable `E` forward to the same
+measure: each pushforward is computed by a version of `E` measurable on that sub-space, the
+two versions agree a.e. on the big space, and the big space's measure restricts to both. -/
+lemma PSpace.map_eq_of_le {A : Type} {E : Ω → A} {y p p' : PSpace Ω}
+    (hp : p ≤ y) (hp' : p' ≤ y)
+    (ham : @AEMeasurable Ω A ⊤ p.ms E p.μ) (ham' : @AEMeasurable Ω A ⊤ p'.ms E p'.μ) :
+    @Measure.map Ω A p.ms ⊤ E p.μ = @Measure.map Ω A p'.ms ⊤ E p'.μ := by
+  apply @Measure.ext _ ⊤
+  intro u hu
+  rw [Measure.map_apply_of_aemeasurable ham hu, Measure.map_apply_of_aemeasurable ham' hu]
+  letI : MeasurableSpace A := ⊤
+  set f := AEMeasurable.mk E ham
+  set f' := AEMeasurable.mk E ham'
+  have hf_meas : @Measurable _ _ p.ms ⊤ f := ham.measurable_mk
+  have hf'_meas : @Measurable _ _ p'.ms ⊤ f' := ham'.measurable_mk
+  have hf_ae : f =ᵐ[p.μ] E := (AEMeasurable.ae_eq_mk ham).symm
+  have hf'_ae : f' =ᵐ[p'.μ] E := (AEMeasurable.ae_eq_mk ham').symm
+  have h1 : p.μ (E ⁻¹' u) = p.μ (f ⁻¹' u) := measure_congr (hf_ae.symm.preimage u)
+  have h3 : p'.μ (E ⁻¹' u) = p'.μ (f' ⁻¹' u) := measure_congr (hf'_ae.symm.preimage u)
+  have h2 : p.μ (f ⁻¹' u) = y.μ (f ⁻¹' u) :=
+    MeasureOnSpace.le_preserves_measure hp (hf_meas hu)
+  have h4 : p'.μ (f' ⁻¹' u) = y.μ (f' ⁻¹' u) :=
+    MeasureOnSpace.le_preserves_measure hp' (hf'_meas hu)
+  have hff' : f =ᵐ[y.μ] f' :=
+    (PSpace.ae_eq_of_le hp hf_ae).trans (PSpace.ae_eq_of_le hp' hf'_ae).symm
+  have h5 : y.μ (f ⁻¹' u) = y.μ (f' ⁻¹' u) := measure_congr (hff'.preimage u)
+  rw [h1, h2, h5, ← h4, ← h3]
+
 end PSpace.Auxiliary
 
 section PSp

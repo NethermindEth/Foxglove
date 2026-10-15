@@ -540,6 +540,11 @@ lemma mul_le_mul_left_le {a b : M} (h : a ≤ b) (c : M) : c * a ≤ c * b := by
   rw [mul_comm c a, mul_comm c b]
   exact mul_left_mono (a := c) h
 
+/-- A factor is below the product, as soon as the other factor is above `1`. -/
+lemma le_mul_of_one_le {a b : M} (h : (1 : M) ≤ b) : a ≤ a * b := by
+  calc a = a * 1 := (mul_one a).symm
+    _ ≤ a * b := mul_le_mul_left_le h a
+
 /-! ### The BI laws, stated on representatives -/
 
 lemma entail_pure_intro {φ : Prop} {P : UpperSet M} (h : φ) : entail P (pure φ) :=

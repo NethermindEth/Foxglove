@@ -54,6 +54,8 @@ def unitKernel (A : Type) : TrivialMarkovKernel A (1 : PSpace Ω) :=
 def _root_.PMF.toMeasureWithMs {A : Type} (μ : PMF A) (ms : MeasurableSpace A) : @MeasureTheory.Measure A ms :=
   @μ.toMeasure A ms
 
+abbrev δ {A : Type} (v : A) : PMF A := PMF.pure v
+
 def own {M} [OrderedUnitalResourceAlgebra M] (b : M) : OURAProp M := UpperSetBI.own b
 
 /-- Owning the unit costs nothing: `emp` and `own 1` are the same upper set. -/
@@ -80,12 +82,12 @@ def jointConditioning {A : Type} (μ : PMF A) (K : A → FProp) : FProp :=
 
 notation "𝒞" "⟨" μ "⟩" v ";" K => jointConditioning μ (fun v => iprop(K))
 
-def almostMeasurable {A Ω : Type} (E : Ω → A) (P : PSp Ω) : Prop :=
+def almostMeasurable {A : Type} (E : RV A) (P : PSp Ω) : Prop :=
   match P with
   | none => False
   | some p => @AEMeasurable Ω A ⊤ _ E p.1.μ
 
-def hasDistribution {A : Type} (E : Ω → A) (μ : PMF A) : FProp :=
+def hasDistribution {A : Type} (E : RV A) (μ : PMF A) : FProp :=
   iprop(
     ∃ P : PSpace Ω,
       ownP P ∗
@@ -95,10 +97,20 @@ def hasDistribution {A : Type} (E : Ω → A) (μ : PMF A) : FProp :=
       ⌝
   )
 
-notation:100 E:100 "⟨" i:100 "⟩" " ~ " p:100 => hasDistribution E i p
+notation:100 E:100 " ~ " p:100 => hasDistribution E p
 
 def liftPred (a : Ω → Prop) : FProp :=
   iprop(∃ P : PSpace Ω, ownP P ∗ ⌜P.μ {ρ | ¬ a ρ} = 0⌝)
+
+@[inherit_doc] notation:max "⌈" a "⌉" => liftPred a
+
+/-- Assertions of the shape `∃ P, ownP P ∗ ⌜φ P⌝` -- the shape `hasDistribution` and
+`liftPred` share -- with pointwise equivalent side conditions are the same assertion. -/
+theorem ownP_pure_congr {φ ψ : PSpace Ω → Prop} (h : ∀ P, φ P ↔ ψ P) :
+    (iprop(∃ P : PSpace Ω, ownP P ∗ ⌜φ P⌝) : FProp)
+      = iprop(∃ P : PSpace Ω, ownP P ∗ ⌜ψ P⌝) := by
+  have hfe : φ = ψ := funext fun P ↦ propext (h P)
+  rw [hfe]
 
 open Interp Interp.ProbTree Iris.BI OURAProp in
 def wp {α : Type} [Inhabited α] {m : Type → Type} [Interp.BernoulliInterpretable m]
@@ -173,6 +185,134 @@ lemma C_True
       simp [PMF.toMeasureWithMs]
     · iintro %v Hv
       exact entails_ftrue
+
+open MeasureTheory in
+theorem EDistInj
+  {A : Type} {E : RV A} {μ μ' : PMF A}
+  : E ~ μ ∧ E ~ μ' ⊢ ⌜μ = μ'⌝ := by
+  intro m hv h
+  obtain ⟨h₁, h₂⟩ := h
+  -- the ambient space the two claims share
+  obtain ⟨y, hy⟩ : ∃ y : PSpace Ω, m.val = some y :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hv)
+  -- the space witnessing `E ~ μ`, and its resource, sit below `m`
+  obtain ⟨q₁, ⟨P, hq₁P⟩, hq₁m⟩ := h₁
+  obtain ⟨b₁, b₂, hle₁, hown₁, hpure₁⟩ := (Quotient.exact hq₁P).2 m hv hq₁m
+  obtain ⟨r₁, ⟨hbf₁, hr₁⟩, hb₁⟩ := hown₁
+  have hb₁m : b₁ ≤ m := le_trans (le_mul_of_one_le PSp.one_le) hle₁
+  have hPb₁ := (Quotient.exact hr₁).2 b₁ (valid_mono hb₁m hv) hb₁
+  -- and the same for `E ~ μ'`
+  obtain ⟨q₂, ⟨P', hq₂P'⟩, hq₂m⟩ := h₂
+  obtain ⟨c₁, c₂, hle₂, hown₂, hpure₂⟩ := (Quotient.exact hq₂P').2 m hv hq₂m
+  obtain ⟨r₂, ⟨hbf₂, hr₂⟩, hc₁⟩ := hown₂
+  have hc₁m : c₁ ≤ m := le_trans (le_mul_of_one_le PSp.one_le) hle₂
+  have hP'c₁ := (Quotient.exact hr₂).2 c₁ (valid_mono hc₁m hv) hc₁
+  have hPy : P ≤ y := by
+    have hPm : (P : PSp Ω) ≤ (m : PSp Ω) := le_trans hPb₁ hb₁m
+    rw [hy] at hPm
+    exact WithTop.coe_le_coe.1 hPm
+  have hP'y : P' ≤ y := by
+    have hP'm : (P' : PSp Ω) ≤ (m : PSp Ω) := le_trans hP'c₁ hc₁m
+    rw [hy] at hP'm
+    exact WithTop.coe_le_coe.1 hP'm
+  -- both push `E` forward along the one ambient measure, so the two laws agree
+  obtain ⟨ham, hμ₁⟩ := hpure₁
+  obtain ⟨ham', hμ₂⟩ := hpure₂
+  show μ = μ'
+  apply @PMF.toMeasure_injective A ⊤
+  calc @PMF.toMeasure A ⊤ μ
+      = @Measure.map Ω A P.ms ⊤ E P.μ := hμ₁.symm
+    _ = @Measure.map Ω A P'.ms ⊤ E P'.μ := PSpace.map_eq_of_le hPy hP'y ham ham'
+    _ = @PMF.toMeasure A ⊤ μ' := hμ₂
+
+set_option linter.style.haveILetI false in
+open MeasureTheory in
+/-- On a fixed space, pushing `E` forward to `δ v` is the same as `E` being `v` off a null
+set: the two only differ in how they say "almost surely `v`". -/
+theorem law_dirac_iff {A : Type} {E : RV A} {v : A} (P : PSpace Ω) :
+    (almostMeasurable E (P : PSp Ω) ∧
+        @Measure.map Ω A P.ms ⊤ E P.μ = (δ v).toMeasureWithMs ⊤)
+      ↔ P.μ {ρ | ¬ E ρ = v} = 0 := by
+  have hP := P.isProbability
+  letI : MeasurableSpace A := ⊤
+  letI : MeasurableSpace Ω := P.ms
+  constructor
+  · rintro ⟨ham, hmap⟩
+    replace ham : @AEMeasurable Ω A ⊤ P.ms E P.μ := ham
+    have h := Measure.map_apply_of_aemeasurable ham
+      (s := {v}ᶜ) MeasurableSpace.measurableSet_top
+    rw [hmap] at h
+    show P.μ (E ⁻¹' {v}ᶜ) = 0
+    rw [← h]
+    simp [PMF.toMeasureWithMs, PMF.toMeasure_pure]
+  · intro h
+    -- `E` is a.e. the constant `v`, which is measurable, so it is a.e.-measurable
+    have hae : E =ᵐ[P.μ] (fun _ ↦ v) := h
+    refine ⟨⟨fun _ ↦ v, measurable_const, hae⟩, ?_⟩
+    rw [Measure.map_congr hae, Measure.map_const]
+    simp [PMF.toMeasureWithMs, PMF.toMeasure_pure]
+
+/-- Being Dirac-distributed is being almost surely equal to the value. -/
+theorem ESureDirac {A : Type} {E : RV A} {v : A}
+  : E ~ δ v ⊣⊢ ⌈fun ρ ↦ E ρ = v⌉ := by
+  have h : (E ~ δ v) = ⌈fun ρ ↦ E ρ = v⌉ :=
+    ownP_pure_congr (fun P ↦ law_dirac_iff P)
+  rw [h]
+  exact ⟨entails_rfl, entails_rfl⟩
+
+/-- Two sure facts held separately are both sure on the ambient space, so they merge. -/
+theorem liftPred_sep {a b : Ω → Prop} : ⌈a⌉ ∗ ⌈b⌉ ⊢ ⌈fun ω ↦ a ω ∧ b ω⌉ := by
+  intro m hv h
+  obtain ⟨d₁, d₂, hle, h₁, h₂⟩ := h
+  obtain ⟨y, hy⟩ : ∃ y : PSpace Ω, m.val = (y : PSp Ω) :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hv)
+  have hd₁ : d₁ ≤ m := le_trans (le_mul_of_one_le PSp.one_le) hle
+  have hd₂ : d₂ ≤ m := by
+    refine le_trans ?_ hle
+    rw [mul_comm]
+    exact le_mul_of_one_le PSp.one_le
+  -- the space behind the first conjunct sits below the ambient `y`
+  obtain ⟨q₁, ⟨P₁, hq₁⟩, hq₁m⟩ := h₁
+  obtain ⟨e₁, _, hlee₁, hown₁, hpure₁⟩ := (Quotient.exact hq₁).2 d₁ (valid_mono hd₁ hv) hq₁m
+  obtain ⟨r₁, ⟨hbf₁, hr₁⟩, he₁⟩ := hown₁
+  have he₁m : e₁ ≤ m := le_trans (le_trans (le_mul_of_one_le PSp.one_le) hlee₁) hd₁
+  have hP₁ := (Quotient.exact hr₁).2 e₁ (valid_mono he₁m hv) he₁
+  have hP₁y : P₁ ≤ y := by
+    have hP₁m : (P₁ : PSp Ω) ≤ (m : PSp Ω) := le_trans hP₁ he₁m
+    rw [hy] at hP₁m
+    exact WithTop.coe_le_coe.1 hP₁m
+  -- and the same for the second
+  obtain ⟨q₂, ⟨P₂, hq₂⟩, hq₂m⟩ := h₂
+  obtain ⟨e₂, _, hlee₂, hown₂, hpure₂⟩ := (Quotient.exact hq₂).2 d₂ (valid_mono hd₂ hv) hq₂m
+  obtain ⟨r₂, ⟨hbf₂, hr₂⟩, he₂⟩ := hown₂
+  have he₂m : e₂ ≤ m := le_trans (le_trans (le_mul_of_one_le PSp.one_le) hlee₂) hd₂
+  have hP₂ := (Quotient.exact hr₂).2 e₂ (valid_mono he₂m hv) he₂
+  have hP₂y : P₂ ≤ y := by
+    have hP₂m : (P₂ : PSp Ω) ≤ (m : PSp Ω) := le_trans hP₂ he₂m
+    rw [hy] at hP₂m
+    exact WithTop.coe_le_coe.1 hP₂m
+  -- both exceptional sets are null on `y`, hence so is their union
+  have hnull₁ : y.μ {ρ | ¬ a ρ} = 0 := PSpace.null_of_le hP₁y hpure₁
+  have hnull₂ : y.μ {ρ | ¬ b ρ} = 0 := PSpace.null_of_le hP₂y hpure₂
+  have hbfy : HasBoundedFootprint (y : PSp Ω) := hy ▸ m.property
+  have hmy : (⟨(y : PSp Ω), hbfy⟩ : BoundedFootprintSpace Bool) = m := Subtype.ext hy.symm
+  refine ⟨_, ⟨y, rfl⟩, m, 1, ?_, ⟨_, ⟨hbfy, rfl⟩, le_of_eq hmy⟩, ?_⟩
+  · rw [mul_one]
+  · have hsub : {ρ | ¬ (a ρ ∧ b ρ)} ⊆ {ρ | ¬ a ρ} ∪ {ρ | ¬ b ρ} := by
+      intro ρ hρ
+      by_cases ha : a ρ
+      · exact Or.inr fun hb ↦ hρ ⟨ha, hb⟩
+      · exact Or.inl ha
+    exact MeasureTheory.measure_mono_null hsub
+      (MeasureTheory.measure_union_null hnull₁ hnull₂)
+
+/-- Sure facts merge.  Only this direction holds in this model -- see the note above. -/
+theorem ESureMerge {E₁ E₂ : RV Bool}
+  : ⌈fun ω ↦ E₁ ω = true⌉ ∗ ⌈fun ω ↦ E₂ ω = true⌉ ⊢ ⌈fun ω ↦ E₁ ω ∧ E₂ ω = true⌉ :=
+  liftPred_sep
+
+-- Not provable as stated; see the note above.
+-- theorem EDiracDup {A : Type} {E : RV A} (v : A) : E ~ δ v ⊢ E ~ δ v ∗ E ~ δ v
 
 /-! ### Worked examples
 
