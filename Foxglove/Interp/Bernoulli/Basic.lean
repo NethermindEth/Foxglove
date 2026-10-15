@@ -38,6 +38,23 @@ instance : BernoulliInterpretable BernoulliM where
 lemma interp_bernoulliM {α : Type} (m : BernoulliM α) :
     BernoulliInterpretable.interp m = m := rfl
 
+/-- An interpretation that is a monad morphism.  Without these laws `interp (pure x)` and
+`interp (t >>= f)` are unconstrained, so `run (pure x)` need have nothing to do with
+returning `x`, and `run (t >>= f)` need have nothing to do with running `t` and then `f` --
+and no `wp` rule for `pure` or `>>=` can hold. -/
+class LawfulBernoulliInterpretable (m : Type → Type) [Monad m] extends
+    BernoulliInterpretable m where
+  interp_pure {α : Type} (a : α) :
+    BernoulliInterpretable.interp (pure a : m α) = PFunctor.FreeM.pure a
+  interp_bind {α β : Type} (t : m α) (f : α → m β) :
+    BernoulliInterpretable.interp (t >>= f)
+      = BernoulliInterpretable.interp t >>= fun a ↦ BernoulliInterpretable.interp (f a)
+
+/-- `BernoulliM` interprets itself, and does so lawfully. -/
+instance : LawfulBernoulliInterpretable BernoulliM where
+  interp_pure _ := rfl
+  interp_bind _ _ := rfl
+
 def flip (r : I) : BernoulliM Bool :=
   PFunctor.FreeM.liftBind (BernoulliOps.Flip r) PFunctor.FreeM.pure
 
@@ -1551,6 +1568,180 @@ lemma fixpoint_rootTree_liftBind₂ (a : BernoulliPFunctor.A)
   exact fixpoint_rootTree_liftBind a c
 
 end Reading
+
+/-! ## Running a program that reads nothing
+
+`toTree` turns the footprint into a tree with a leaf per atom, so it neither loses nor
+invents σ-algebra: `toTree_ms_eq`.  If on top of that the tree is already `done` -- which is
+exactly the case for the constant program `pure x` -- `fixpoint` is the identity, so the run
+hands the footprint's space straight back (`bigStep_psp_of_done`) and every atom reports `x`
+(`result_bigStep_of_done`).  Together these are what `CWPPure` needs. -/
+
+section Pure
+
+open ProbSpace MeasureTheory ProbTree BoundedFootprintPsp
+
+variable {α : Type}
+
+/-- Every atom's prefix really is a root-to-leaf path of the tree: `toTree.go` stops only
+once it has reached one, and it does reach every one. -/
+lemma toTree_go_mem_prefixes (bfpsp : BoundedFootprintPsp)
+    (programs : bfpsp.atoms → BernoulliM α) (path : BoolSeq) (X : bfpsp.atoms) :
+    path <+: bfpsp.prefixes X →
+    (bfpsp.prefixes X).drop path.length ∈ (toTree.go bfpsp programs path).prefixes := by
+  induction path using toTree.go.induct bfpsp with
+  | case1 path leafy =>
+    intro h
+    rw [toTree.go]
+    simp only [leafy, ↓reduceDIte]
+    obtain ⟨Y, hY⟩ := leafy
+    have hYX : Y = X := by
+      by_contra hne
+      exact bfpsp.pathInTreeValid Y X hne (hY.trans h)
+    subst hYX
+    have heq : path = bfpsp.prefixes Y :=
+      h.eq_of_length (le_antisymm h.length_le hY.length_le)
+    rw [← heq, List.drop_length]
+    simp
+  | case2 path leafy ihl ihr =>
+    intro h
+    rw [toTree.go]
+    simp only [leafy, ↓reduceDIte]
+    obtain ⟨t, ht⟩ := h
+    have hne : t ≠ [] := by
+      rintro rfl
+      exact leafy ⟨X, by simp at ht; rw [← ht]⟩
+    obtain ⟨b, t', rfl⟩ : ∃ b t', t = b :: t' := by
+      cases t with
+      | nil => exact absurd rfl hne
+      | cons b t' => exact ⟨b, t', rfl⟩
+    have hpre : path ++ [b] <+: bfpsp.prefixes X := ⟨t', by rw [← ht]; simp⟩
+    have hdrop : (bfpsp.prefixes X).drop path.length = b :: t' := by rw [← ht]; simp
+    have hdrop' : (bfpsp.prefixes X).drop (path ++ [b]).length = t' := by rw [← ht]; simp
+    rw [hdrop]
+    refine mem_prefixes_node b ?_
+    cases b
+    · simpa [← hdrop'] using ihr hpre
+    · simpa [← hdrop'] using ihl hpre
+
+lemma mem_prefixes_toTree (bfpsp : BoundedFootprintPsp)
+    (programs : bfpsp.atoms → BernoulliM α) (X : bfpsp.atoms) :
+    bfpsp.prefixes X ∈ (toTree bfpsp programs).prefixes := by
+  rw [toTree]
+  simpa using toTree_go_mem_prefixes bfpsp programs [] X List.nil_prefix
+
+/-- The tree's σ-algebra is exactly the footprint's: `toTree_ms_le` is one inclusion, and
+every atom is the event of its own prefix, which the tree has. -/
+lemma toTree_ms_eq (bfpsp : BoundedFootprintPsp) (programs : bfpsp.atoms → BernoulliM α) :
+    (toTree bfpsp programs).ms = MeasurableSpace.generateFrom bfpsp.atoms := by
+  refine le_antisymm (toTree_ms_le bfpsp programs) (MeasurableSpace.generateFrom_le ?_)
+  intro S hS
+  rw [show S = _ from atom_eq_prefixEqEvent bfpsp ⟨S, hS⟩]
+  exact measurableSet_prefixEqEvent (mem_prefixes_toTree bfpsp programs ⟨S, hS⟩)
+
+/-- A tree whose every leaf is `pure x` has nothing left to run. -/
+lemma toTree_go_pure_done (bfpsp : BoundedFootprintPsp) (x : α) (path : BoolSeq) :
+    (toTree.go bfpsp (fun _ ↦ (.pure x : BernoulliM α)) path).done = true := by
+  induction path using toTree.go.induct bfpsp with
+  | case1 path leafy =>
+    rw [toTree.go]
+    simp only [leafy, ↓reduceDIte]
+    rfl
+  | case2 path leafy ihl ihr =>
+    rw [toTree.go]
+    simp only [leafy, ↓reduceDIte, ProbTree.done, Bool.and_eq_true]
+    exact ⟨ihl, ihr⟩
+
+lemma toTree_pure_done (bfpsp : BoundedFootprintPsp) (x : α) :
+    (toTree bfpsp (fun _ ↦ (.pure x : BernoulliM α))).done = true := by
+  rw [toTree]; exact toTree_go_pure_done bfpsp x []
+
+/-- Every root-to-leaf path of such a tree reports `x`. -/
+lemma followTape_toTree_go_pure (bfpsp : BoundedFootprintPsp) (x : α) (path : BoolSeq) :
+    ∀ q ∈ (toTree.go bfpsp (fun _ ↦ (.pure x : BernoulliM α)) path).prefixes,
+      (toTree.go bfpsp (fun _ ↦ (.pure x : BernoulliM α)) path).followTape q = some x := by
+  induction path using toTree.go.induct bfpsp with
+  | case1 path leafy =>
+    intro q _
+    rw [toTree.go]
+    simp only [leafy, ↓reduceDIte]
+    rfl
+  | case2 path leafy ihl ihr =>
+    intro q hq
+    rw [toTree.go] at hq ⊢
+    simp only [leafy, ↓reduceDIte] at hq ⊢
+    rcases ProbTree.mem_prefixes_node_iff.mp hq with ⟨q', hq', rfl⟩ | ⟨q', hq', rfl⟩
+    · exact ihl q' hq'
+    · exact ihr q' hq'
+
+lemma reports_toTree_pure (bfpsp : BoundedFootprintPsp) (x : α) :
+    ProbTree.Reports (toTree bfpsp (fun _ ↦ (.pure x : BernoulliM α))) (fun _ ↦ x) := by
+  intro q hq ρ _
+  rw [toTree] at hq ⊢
+  exact followTape_toTree_go_pure bfpsp x [] q hq
+
+/-- `ofTree`'s space, with the tree it was built from named: the instance argument sits in
+`W`'s type, so it cannot be rewritten in place. -/
+lemma ofTree_psp [Inhabited α] (W : TreeWithMeasure α) (hW : IsProbabilityMeasure W.2)
+    {t : ProbTree α} {μ : Measure[t.ms] Ω} [hμ : IsProbabilityMeasure μ] (hWt : W = ⟨t, μ⟩) :
+    (@ofTree α W hW).psp = .some ⟨⟨t.ms, μ⟩, hμ⟩ := by
+  subst hWt; rfl
+
+/-- **Running a finished program leaves the footprint's space alone.** -/
+lemma bigStep_psp_of_done [Inhabited α] (bfpsp : BoundedFootprintPsp)
+    (programs : bfpsp.atoms → BernoulliM α) (valid : ✓bfpsp.psp)
+    (hdone : (toTree bfpsp programs).done = true) :
+    (bigStep bfpsp programs).1.psp = bfpsp.psp := by
+  set P : PSpace Ω := ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩ with hP
+  have hms : (toTree bfpsp programs).ms = P.ms := by
+    rw [toTree_ms_eq, hP, bfpsp.sigmaAgrees valid]
+  have hsome : bfpsp.psp = .some P := (Option.some_get _).symm
+  rw [bigStep, dite_eq_left valid]
+  refine Eq.trans (ofTree_psp _ _ (ProbTree.fixpoint_of_done hdone)) (Eq.trans ?_ hsome.symm)
+  congr 1
+  exact PSpace.ext_ms hms
+    (fun E hE ↦ Measure.le_preserves_measure (h := le_of_eq hms) (μ := P.μ) (hu := hE))
+
+/-- The value a finished run reports, with the tree it ran to named. -/
+lemma result_bigStep_body [Inhabited α] (W : TreeWithMeasure α)
+    (hW : IsProbabilityMeasure W.2) (hd : W.1.done = true) {g : Ω → α}
+    (hg : ProbTree.Reports W.1 g) :
+    result (⟨@ofTree α W hW, fun X ↦ (W.1.followTape X.2.choose).get
+        (followTape_isSome hd X.2.choose_spec.1)⟩
+      : Σ b : BoundedFootprintPsp, b.atoms → α) = g := by
+  funext ρ
+  show (W.1.followTape ((@ofTree α W hW).atomOf ρ).2.choose).get _ = g ρ
+  obtain ⟨q, hq, hρq⟩ := ProbTree.exists_prefix_mem W.1 ρ
+  apply Option.some_injective
+  rw [Option.some_get, @choose_atomOf_eq α W hW q hq ρ hρq]
+  exact hg q hq ρ hρq
+
+lemma result_bigStep_of_done [Inhabited α] (bfpsp : BoundedFootprintPsp)
+    (programs : bfpsp.atoms → BernoulliM α) (valid : ✓bfpsp.psp)
+    (hdone : (toTree bfpsp programs).done = true) {g : Ω → α}
+    (hg : ProbTree.Reports (toTree bfpsp programs) g) :
+    result (bigStep bfpsp programs) = g := by
+  rw [bigStep, dite_eq_left valid]
+  refine result_bigStep_body _ _ ProbTree.fixpoint_done ?_
+  rwa [congrArg Sigma.fst (ProbTree.fixpoint_of_done hdone)]
+
+/-- `pure x` does not touch the footprint. -/
+lemma run_pure_psp [Inhabited α] {m : Type → Type} [Monad m] [LawfulBernoulliInterpretable m]
+    (x : α) (μ₀ : BoundedFootprintPsp) (valid : ✓μ₀.psp) :
+    (run (pure x : m α) μ₀).1.psp = μ₀.psp := by
+  rw [run]
+  simp only [LawfulBernoulliInterpretable.interp_pure]
+  exact bigStep_psp_of_done μ₀ _ valid (toTree_pure_done μ₀ x)
+
+/-- `pure x` reports `x`, whatever the tape. -/
+lemma result_run_pure [Inhabited α] {m : Type → Type} [Monad m]
+    [LawfulBernoulliInterpretable m] (x : α) (μ₀ : BoundedFootprintPsp) (valid : ✓μ₀.psp) :
+    result (run (pure x : m α) μ₀) = fun _ ↦ x := by
+  rw [run]
+  simp only [LawfulBernoulliInterpretable.interp_pure]
+  exact result_bigStep_of_done μ₀ _ valid (toTree_pure_done μ₀ x) (reports_toTree_pure μ₀ x)
+
+end Pure
 
 end Interp
 

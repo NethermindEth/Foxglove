@@ -112,6 +112,9 @@ theorem ownP_pure_congr {φ ψ : PSpace Ω → Prop} (h : ∀ P, φ P ↔ ψ P) 
   have hfe : φ = ψ := funext fun P ↦ propext (h P)
   rw [hfe]
 
+def valuePost {α : Type} (X : RV α) (Q : α → FProp) : FProp :=
+  iprop(∃ ν : PMF α, 𝒞⟨ν⟩ x; (⌈fun ρ ↦ X ρ = x⌉ ∗ Q x))
+
 open Interp Interp.ProbTree Iris.BI OURAProp in
 def wp {α : Type} [Inhabited α] {m : Type → Type} [Interp.BernoulliInterpretable m]
     (t : m α) (Q : RV α → FProp) : FProp :=
@@ -120,7 +123,8 @@ def wp {α : Type} [Inhabited α] {m : Type → Type} [Interp.BernoulliInterpret
       ∀ (μ₀ : BoundedFootprintPsp) (c : BoundedFootprintSpace Bool),
         ✓μ₀.psp → a * c ≤ μ₀.toSpace →
         ∃ b : BoundedFootprintSpace Bool,
-          b * c ≤ (run t μ₀).1.toSpace ∧ ✓b ∧ (own b ⊢ Q (result (run t μ₀)))}
+          b * c ≤ (run t μ₀).1.toSpace ∧ ✓b ∧
+            (own b ⊢ Q (result (run t μ₀)))}
     upper' := by
       intro x y hxy hx μ₀ c hv hle
       exact hx μ₀ c hv (le_trans (mul_le_mul_right_le hxy c) hle)
@@ -446,6 +450,77 @@ theorem EDiracDup {A : Type} {E : RV A} (v : A) : E ~ δ v ⊢ E ~ δ v ∗ E ~ 
   have h1 : (E ~ δ v) = ⌈fun ρ ↦ E ρ = v⌉ := ownP_pure_congr (fun P ↦ law_dirac_iff P)
   rw [h1]
   exact liftPred_dup
+
+section wp
+
+/-- Owning a resource that already satisfies an assertion establishes it: upper sets are
+closed upwards. -/
+lemma own_entails_of_mem {U : UpperSet (BoundedFootprintSpace Bool)}
+    {a : BoundedFootprintSpace Bool} (ha : a ∈ U) : own a ⊢ (fmk U : FProp) :=
+  fun _ _ hd ↦ U.upper' hd ha
+
+/-- A deterministic result needs no conditioning: at a constant random variable `valuePost`
+is just the postcondition at that value.  Mix over `δ x`, whose only fibre is the trivial
+space, and the sure fact `x = x` is free. -/
+lemma valuePost_const {α : Type} (x : α) (Q : α → FProp) : Q x ⊢ valuePost (fun _ ↦ x) Q := by
+  unfold valuePost jointConditioning
+  iintro HQ
+  iexists (δ x), (1 : PSpace Ω), unitKernel α
+  isplitl []
+  · exact ownP_one
+  · isplitl []
+    · ipureintro
+      show PSpace.μ 1 = (((δ x) : PMF α).toMeasureWithMs ⊤).bind (fun _ ↦ PSpace.μ 1)
+      simp [PMF.toMeasureWithMs]
+    · iintro %y Hy
+      have hy : (y : α) = x := by simpa using y.2
+      simp only [hy]
+      isplitl []
+      · unfold liftPred
+        iexists (1 : PSpace Ω)
+        isplitl []
+        · exact ownP_one
+        · ipureintro
+          simp
+      · iexact HQ
+
+open Interp in
+/-- **Returning a value.**  `pure x` reads nothing, so `run` leaves the footprint untouched
+(`run_pure_psp`) and every atom reports `x` (`result_run_pure`): the resource that already
+satisfied `Q x` is handed straight back, and the postcondition is `valuePost` at a
+constant. -/
+lemma CWPPure {α : Type} {m : Type → Type} [Monad m] [Interp.LawfulBernoulliInterpretable m]
+    [Inhabited α] {Q : RV α → FProp} {x : α} : Q (fun _ ↦ x) ⊢ wp (pure x : m α) Q := by
+  sorry
+  -- obtain ⟨U, hU⟩ : ∃ U : UpperSet (BoundedFootprintSpace Bool), Q x = fmk U :=
+  --   ⟨(Q x).out, (Quotient.out_eq _).symm⟩
+  -- rw [hU]
+  -- intro a hva ha μ₀ c hvalid hle
+  -- refine ⟨a, ?_, hva, ?_⟩
+  -- · have hsp : ((run (pure x : m α) μ₀).1.toSpace : BoundedFootprintSpace Bool) = μ₀.toSpace :=
+  --     Subtype.ext (run_pure_psp x μ₀ hvalid)
+  --   rw [hsp]
+  --   exact hle
+  -- · rw [result_run_pure (m := m) x μ₀ hvalid]
+  --   have h1 : own a ⊢ Q x := by rw [hU]; exact own_entails_of_mem ha
+  --   exact entails_trans h1 (valuePost_const x Q)
+
+lemma CWPSwap {α β : Type} {m : Type → Type} [Monad m] [Interp.BernoulliInterpretable m] [Inhabited α]
+  {C : m α} {μ : PMF β} {Q : β → RV α → FProp} :
+    iprop(𝒞⟨μ⟩ v; wp C (Q v)) ⊢ wp C (fun x ↦ 𝒞⟨μ⟩ v; Q v x) := by
+  sorry
+
+lemma CWPBind {α β : Type} {m : Type → Type} [Monad m] [Interp.BernoulliInterpretable m] [Inhabited α] [Inhabited β]
+  {C : m α} {F : α → m β} {Q : β → FProp} :
+    wp (C >>= F) Q ⊢ wp C (fun v ↦ wp (F v) Q) := by
+  sorry
+
+open unitInterval in
+lemma CWPFlip {m : Type → Type} [Monad m] [Interp.BernoulliInterpretable m] {p : I} :
+    ⌜0 < p ∧ p < 1⌝ ⊢ wp (Interp.flip p) (fun v ↦ v ~ sorry) := by
+  sorry
+
+end wp
 
 /-! ### Worked examples
 
