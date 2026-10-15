@@ -2,7 +2,7 @@ module
 
 public import Mathlib.Probability.Distributions.Uniform
 public import Mathlib.Data.Set.Finite.List
-public import Foxglove.OURA
+public import Foxglove.Algebra.OURA
 
 /-! ## Independent product of probability measures -/
 
@@ -1995,6 +1995,14 @@ lemma hasBoundedFootprint_mul [Finite α] {x y : PSp (Tape α)}
 /-- The probability spaces over `Tape α` that read only a bounded part of the tape. -/
 abbrev BoundedFootprintSpace (α : Type*) [Inhabited α] : Type _ :=
   {psp : PSp (Tape α) // HasBoundedFootprint psp}
+
+/-- The resource a footprint carries: a `BoundedFootprintPsp` is exactly a witness for the
+side condition `HasBoundedFootprint`, so it names an element of the resource algebra. -/
+def BoundedFootprintPsp.toSpace (b : BoundedFootprintPsp α) : BoundedFootprintSpace α :=
+  ⟨b.psp, ⟨b, rfl⟩⟩
+
+@[simp]
+lemma BoundedFootprintPsp.toSpace_val (b : BoundedFootprintPsp α) : b.toSpace.val = b.psp := rfl
 
 /-- Bounded-footprint spaces contain the unit and are closed under independent products, so
 they are a resource algebra in their own right -- a subalgebra of `PSp (Tape α)`. -/

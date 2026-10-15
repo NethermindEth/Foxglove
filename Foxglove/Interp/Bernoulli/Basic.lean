@@ -1,7 +1,8 @@
 module
 
+public import Foxglove.Algebra.MeasureOnSpace
+public import Foxglove.Algebra.OURA
 public import Cslib.Foundations.Data.PFunctor.Free
-public import VCVio.OracleComp.OracleComp
 public import Foxglove.Basic
 public import Init.Data.Rat.Basic
 
@@ -26,9 +27,16 @@ def BernoulliPFunctor : PFunctor where
 
 abbrev BernoulliM := PFunctor.FreeM BernoulliPFunctor
 
-/-- An oracle spec whose operations can be implemented by Bernoulli coin flips. -/
-class BernoulliInterpretable {α : Type} (oSpec : OracleSpec α) where
-  interp_op (op : oSpec.toPFunctor.A) : BernoulliPFunctor.FreeM (oSpec.toPFunctor.B op)
+class BernoulliInterpretable (m : Type → Type) where
+  interp {α : Type} : m α → BernoulliM α
+
+/-- `BernoulliM` is its own interpretation. -/
+instance : BernoulliInterpretable BernoulliM where
+  interp := id
+
+@[simp]
+lemma interp_bernoulliM {α : Type} (m : BernoulliM α) :
+    BernoulliInterpretable.interp m = m := rfl
 
 def flip (r : I) : BernoulliM Bool :=
   PFunctor.FreeM.liftBind (BernoulliOps.Flip r) PFunctor.FreeM.pure
@@ -758,13 +766,29 @@ noncomputable def bigStep {α} [Inhabited α] (bfpsp : BoundedFootprintPsp)
   else
     Sigma.mk bfpsp (fun _ ↦ default)
 
+/-- **The global step.**  Run `t` in every atom of the current global view: the semantics
+applied to the whole state, which is what `wp` quantifies over. -/
+noncomputable def run {α : Type} [Inhabited α] {m : Type → Type} [BernoulliInterpretable m]
+    (t : m α) (μ₀ : BoundedFootprintPsp) : Σ b : BoundedFootprintPsp, b.atoms → α :=
+  bigStep μ₀ (fun _ ↦ BernoulliInterpretable.interp t)
+
+/-- Running a program on the unit footprint: nothing has been read yet, so this is the whole
+interpretation of a closed program. -/
 noncomputable def interp_psp {α : Type} [Inhabited α] (m : BernoulliM α) : (Σ bfpsp : BoundedFootprintPsp, bfpsp.atoms → α) :=
-  bigStep 1 (fun _ ↦ m)
+  run m 1
+
+lemma interp_psp_def {α : Type} [Inhabited α] (m : BernoulliM α) :
+    interp_psp m = bigStep 1 (fun _ ↦ m) := rfl
+
+/-- The value a finished interpretation reports, as a random variable: the value of the atom
+the tape lands in. -/
+noncomputable def result {α : Type} (out : Σ b : BoundedFootprintPsp, b.atoms → α) : RV α :=
+  out.2 ∘ out.1.atomOf
 
 /-- The space of outputs: push the footprint's space forward along the value the interpretation
 gives to the atom each tape lands in. -/
 noncomputable def outputPSp {α : Type} (input : Σ bfpsp : BoundedFootprintPsp, bfpsp.atoms → α) : PSp α :=
-  PSp.map (input.2 ∘ input.1.atomOf) input.1.psp
+  PSp.map (result input) input.1.psp
 
 /-! ## Reading off the distribution of a program
 
@@ -1322,7 +1346,7 @@ lemma outputPSp_interp [Inhabited α] (m : BernoulliM α)
     {t : ProbTree α} {μ : Measure[t.ms] Ω} [hμ : IsProbabilityMeasure μ]
     (hW : fixpoint (rootTree m) = ⟨t, μ⟩) {g : Ω → α} (hg : ProbTree.Reports t g) :
     outputPSp (interp_psp m) = .some (PSpace.map g (⟨⟨t.ms, μ⟩, hμ⟩ : PSpace Ω)) := by
-  rw [interp_psp, bigStep, dite_eq_left ProbSpace.BoundedFootprintPsp.valid_one]
+  rw [interp_psp_def, bigStep, dite_eq_left ProbSpace.BoundedFootprintPsp.valid_one]
   refine outputPSp_bigStep_body _ _ fixpoint_done ?_ hg
   rw [toTree_one]
   exact hW
