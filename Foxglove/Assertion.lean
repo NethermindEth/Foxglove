@@ -1241,6 +1241,8 @@ theorem C_UNIT_R : E ~ μ ⊣⊢ 𝒞⟨μ⟩ v; ⌈E = v⌉ := by
       ⟨_, ⟨hbfs, rfl⟩, le_refl (⟨(s : PSp Ω), hbfs⟩ : BoundedFootprintSpace Bool)⟩,
       ⟨ham, hlaw⟩⟩
 
+variable {μ₀ : PMF (α × β)} {κ : α → PMF β} {K : (α × β) → FProp}
+
 set_option linter.style.haveILetI false in
 open MeasureTheory in
 /-- Conditioning twice is conditioning once on the joint law.  Unpack both conditionings
@@ -1248,8 +1250,7 @@ open MeasureTheory in
 inner space `s v` mixing fibres `T v w`.  Extend each `T v w` to `s`'s σ-algebra by tilting
 `S v` with the density of `T v w` over `s v`: by `mixture_of_tilts` these extensions mix back
 to `S v`, so to `s`, and each still contains `T v w`, which satisfies the continuation. -/
-theorem C_ASSOC {μ₀ : PMF (α × β)} {κ : α → PMF β} {K : (α × β) → FProp}
-  (h : μ₀ = (PMF.bind μ fun v ↦ PMF.bind (κ v) fun w ↦ PMF.pure (v, w))) :
+theorem C_ASSOC (h : μ₀ = (PMF.bind μ fun v ↦ PMF.bind (κ v) fun w ↦ PMF.pure (v, w))) :
   𝒞⟨μ⟩ v; 𝒞⟨κ v⟩ w; K (v, w) ⊢ 𝒞⟨μ₀⟩ (v, w); K (v, w) := by
   classical
   subst h
@@ -1363,6 +1364,77 @@ theorem C_ASSOC {μ₀ : PMF (α × β)} {κ : α → PMF β} {K : (α × β) �
     rw [hYval]
     exact WithTop.coe_le_coe.2 hTΛ
   exact hYK y hvy hYy
+
+set_option linter.style.haveILetI false in
+open MeasureTheory in
+/-- Conditioning on a `bind` can be split into two conditionings.  Unpack the joint one
+(`cond_elim`): its space `s` mixes fibres `T w` along `bind μ κ`.  Keep `s`, and take the outer
+fibre at `v` to be the `κ v`-mixture of the `T w`.  These fibres mix back to `s`, and each of them
+is conditioned by `κ v` into the original `T w`. -/
+theorem C_UNASSOC {K : β → FProp} :
+  𝒞⟨PMF.bind μ κ⟩ w; K w ⊢ 𝒞⟨μ⟩ v; 𝒞⟨κ v⟩ w; K w := by
+  intro r hv hr
+  have hown : own r ⊢ jointConditioning (μ.bind κ) (fun w ↦ K w) :=
+    fun _ _ hry ↦ UpperSet.upper _ hry hr
+  obtain ⟨s, hbfs, hsr, w, hsmix, hX⟩ := cond_elim hv hown
+  have hsp := s.2
+  -- the outer fibres: the `κ v`-mixtures of the joint fibres
+  obtain ⟨ℓ, hℓ⟩ : ∃ ℓ : ProbabilityTheory.TrivialMarkovKernel α s,
+      ∀ v, ℓ.1 v = ((κ v).toMeasureWithMs ⊤).bind fun b ↦ (w b).1 := by
+    letI : MeasurableSpace Ω := s.ms
+    letI : MeasurableSpace α := ⊤
+    letI : MeasurableSpace β := ⊤
+    refine ⟨⟨⟨fun v ↦ ((κ v).toMeasureWithMs ⊤).bind fun b ↦ (w b).1, measurable_from_top⟩,
+      ⟨fun v ↦ ⟨?_⟩⟩⟩, fun _ ↦ rfl⟩
+    show (((κ v).toMeasureWithMs ⊤).bind fun b ↦ (w b).1) Set.univ = 1
+    rw [Measure.bind_apply MeasurableSet.univ measurable_from_top.aemeasurable,
+      lintegral_congr fun b ↦ (w b).2.measure_univ, lintegral_one]
+    show (κ v).toMeasure Set.univ = 1
+    exact measure_univ
+  -- they mix back to `s`
+  have hℓmix : s.μ = (μ.toMeasureWithMs ⊤).bind ℓ.1 := by
+    refine @Measure.ext Ω s.ms _ _ fun A hA ↦ ?_
+    letI : MeasurableSpace α := ⊤
+    letI : MeasurableSpace β := ⊤
+    rw [hsmix, Measure.bind_apply hA measurable_from_top.aemeasurable, toMeasure_bind_eq,
+      Measure.lintegral_bind measurable_from_top.aemeasurable measurable_from_top.aemeasurable,
+      Measure.bind_apply hA (ProbabilityTheory.Kernel.measurable ℓ.1).aemeasurable]
+    refine lintegral_congr fun v ↦ ?_
+    rw [hℓ, Measure.bind_apply hA measurable_from_top.aemeasurable]
+  -- the inner kernels hand back the joint fibres
+  let ι : ∀ v, ProbabilityTheory.TrivialMarkovKernel β (ℓ v) := fun _ ↦
+    letI : MeasurableSpace Ω := s.ms
+    letI : MeasurableSpace β := ⊤
+    ⟨⟨fun b ↦ (w b).1, measurable_from_top⟩, ⟨fun b ↦ (w b).2⟩⟩
+  have hKb : ∀ v (b : β), b ∈ (μ.bind κ).support → ownP (ι v b) ⊢ K b := by
+    intro v b hb
+    obtain ⟨X, hXval, hXK⟩ := hX b hb
+    unfold ownP
+    refine Iris.BI.exists_elim fun hbf ↦ ?_
+    rw [show (⟨((ι v b : PSpace Ω) : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool) = X from
+      Subtype.ext (by rw [hXval]; rfl)]
+    exact hXK
+  have key : ownP s ⊢ 𝒞⟨μ⟩ v; 𝒞⟨κ v⟩ w; K w := by
+    unfold jointConditioning
+    iintro Hown
+    iexists s, ℓ
+    isplitl [Hown]
+    · iexact Hown
+    · isplitl []
+      · ipureintro
+        exact hℓmix
+      · iintro %v Hv
+        iexists (ℓ v : PSpace Ω), ι v
+        isplitl [Hv]
+        · iexact Hv
+        · isplitl []
+          · ipureintro
+            show ℓ.1 v = ((κ v).toMeasureWithMs ⊤).bind fun b ↦ (w b).1
+            exact hℓ v
+          · iintro %b Hb
+            iapply (hKb v b ((PMF.mem_support_bind_iff _ _ _).2 ⟨v, v.2, b.2⟩))
+            iexact Hb
+  exact key r hv ⟨_, ⟨hbfs, rfl⟩, hsr⟩
 
 end JointConditioningRules
 

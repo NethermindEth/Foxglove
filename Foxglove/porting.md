@@ -43,3 +43,5 @@ Format:
 
 - `C-ASSOC` | Rules.lean/C_Assoc | Assertion.lean/C_ASSOC
 
+- `C-UNASSOC` | Rules.lean/C_Unassoc | Assertion.lean/C_UNASSOC
+
