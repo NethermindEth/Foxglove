@@ -89,7 +89,7 @@ A tale of precedence!
 - Ehh... `∗` wants at least 36; onwards and upwards.
   `P ∗ 𝒞⟨μ⟩ v; K v ⊢ 𝒞⟨μ⟩ v; (P ∗ (K v))`
 -/
-notation:36 "𝒞" "⟨" μ:arg "⟩" v:arg ";" K:36 => jointConditioning μ (fun v => iprop(K))
+notation:36 "𝒞" "⟨" μ "⟩" v:arg ";" K:36 => jointConditioning μ (fun v => iprop(K))
 
 def almostMeasurable {A : Type} (E : RV A) (P : PSp Ω) : Prop :=
   match P with
@@ -120,14 +120,28 @@ instance : LiftPred Prop where
 instance : LiftPred Bool where
   lift a := iprop(∃ P : PSpace Ω, ownP P ∗ ⌜P.μ {ρ | ¬ a ρ} = 0⌝)
 
-class LiftAny (β : Type) where
+class LiftUnary (β : Type) where
   lift : β → Ω → Prop
 
-instance : LiftAny (Ω → Prop) := ⟨fun a ω ↦ a ω⟩
+instance : LiftUnary (RV Prop) := ⟨fun a ω ↦ a ω⟩
 
-instance : LiftAny (RV Bool) := ⟨fun E ω ↦ E ω = true⟩
+instance : LiftUnary (RV Bool) := ⟨fun E ω ↦ E ω = true⟩
 
-instance : LiftAny Prop := ⟨fun p _ ↦ p⟩
+instance : LiftUnary Prop := ⟨fun p _ ↦ p⟩
+
+instance : LiftUnary Bool := ⟨fun p _ ↦ p = true⟩
+
+class LiftBinary (α β : Type) where
+  lift : α → β → Ω → Prop
+
+instance {α : Type} : LiftBinary (RV α) α where
+  lift := fun l r ω ↦ l ω = r
+
+instance {α : Type} : LiftBinary α (RV α) where
+  lift := fun l r ω ↦ l = r ω
+
+instance {α : Type} : LiftBinary (RV α) (RV α) where
+  lift := fun l r ω ↦ l ω = r ω
 
 syntax "lift(" term ", " term ")" : term
 
@@ -136,8 +150,9 @@ macro_rules
   | `(lift($a ∧ $b, $ρ)) => `(lift($a, $ρ) ∧ lift($b, $ρ))
   | `(lift($a ∨ $b, $ρ)) => `(lift($a, $ρ) ∨ lift($b, $ρ))
   | `(lift($a → $b, $ρ)) => `(lift($a, $ρ) → lift($b, $ρ))
+  | `(lift($a = $b, $ρ)) => `(LiftBinary.lift $a $b $ρ)
   | `(lift(($x), $ρ))    => `(lift($x, $ρ))
-  | `(lift($x, $ρ))      => `(LiftAny.lift $x $ρ)
+  | `(lift($x, $ρ))      => `(LiftUnary.lift $x $ρ)
 
 syntax (name := liftStx) (priority := high) "⌈" term "⌉" : term  
 
@@ -227,8 +242,9 @@ section Rules
 
 variable {P Q : FProp} {α β : Type}
          {v₀ : α}
-         {E E₁ E₂ : RV Bool}
-         {μ μ' μ₁ μ₂ : PMF Bool}
+         {E E₁ : RV α} {E₂ : RV β}
+         {μ μ' μ₁ : PMF α} {μ₂ : PMF β}
+         {B₁ B₂ : RV Bool}
 
 section DistributionOwnershipRules
 
@@ -368,7 +384,7 @@ theorem liftPred_split {a b : Ω → Prop} : ⌈fun ω ↦ a ω ∧ b ω⌉ ⊢ 
       ⟨_, ⟨hbf₀, rfl⟩, le_refl (⟨(P₀ : PSp Ω), hbf₀⟩ : BoundedFootprintSpace Bool)⟩, ?_⟩
     exact MeasureTheory.measure_mono_null (fun ρ hρ ↦ hNsub fun hab ↦ hρ hab.2) hN₀
 
-theorem SURE_MERGE : ⌈E₁⌉ ∗ ⌈E₂⌉ ⊣⊢ ⌈E₁ ∧ E₂⌉ :=
+theorem SURE_MERGE : ⌈B₁⌉ ∗ ⌈B₂⌉ ⊣⊢ ⌈B₁ ∧ B₂⌉ :=
   ⟨liftPred_sep, liftPred_split⟩
 
 open MeasureTheory in
@@ -396,7 +412,7 @@ theorem PSpace.isIndependentProduct_of_zero_one_le {p y : PSpace Ω} (hpy : p �
 
 /-- A sure fact can be split off any assertion it holds alongside: its 0-1 trim (as in
 `liftPred_split`) is independent of the whole resource and multiplies with it to itself. -/
-theorem Sure_And_Star : ⌈E₁⌉ ∧ P ⊢ ⌈E₁⌉ ∗ P := by
+theorem SURE_AND_STAR : ⌈B₁⌉ ∧ P ⊢ ⌈B₁⌉ ∗ P := by
   induction P using Quotient.ind
   intro m hv ⟨hE, hP⟩
   obtain ⟨q, ⟨W, hq⟩, hqm⟩ := hE
@@ -645,7 +661,7 @@ end DistributionOwnershipRules
 
 section JointConditioningRules
 
-variable {μ : PMF α} {K K₁ K₂ : α → FProp}
+variable {K K₁ K₂ : α → FProp}
 
 lemma C_TRUE : ⊢ (𝒞⟨μ⟩ _v; ftrue : FProp) := by
   unfold jointConditioning
@@ -660,78 +676,291 @@ lemma C_TRUE : ⊢ (𝒞⟨μ⟩ _v; ftrue : FProp) := by
       exact entails_ftrue
 
 set_option linter.style.haveILetI false in
-open ProbabilityTheory MeasureTheory in
-/-- A fibre of a conditioning kernel is absolutely continuous w.r.t. the mixture, at any
-value in the support. -/
-theorem kernel_fibre_ac {A : Type} {μ : PMF A} {m : PSpace Ω}
-    (κ : TrivialMarkovKernel A m) (hmix : m.μ = (μ.toMeasureWithMs ⊤).bind κ)
-    {v : A} (hv : v ∈ μ.support) : (κ.1 v) ≪ m.μ := by
-  letI : MeasurableSpace A := ⊤
-  have hmeas : ∀ F, MeasurableSet[m.ms] F → m.μ F = 0 → (κ.1 v) F = 0 := by
-    intro F hF h0
-    rw [hmix, Measure.bind_apply hF (Kernel.measurable κ.1).aemeasurable,
-      lintegral_eq_zero_iff (Kernel.measurable_coe κ.1 hF)] at h0
-    by_contra hne
-    have hsub : ({v} : Set A) ⊆ {a | κ.1 a F ≠ 0} := by
-      intro x hx
-      rw [Set.mem_singleton_iff] at hx
-      subst hx
-      exact hne
-    have hz : (μ.toMeasureWithMs ⊤) {v} = 0 := measure_mono_null hsub h0
-    rw [PMF.toMeasureWithMs, @PMF.toMeasure_apply_singleton A ⊤ μ v (by trivial)] at hz
-    exact (PMF.mem_support_iff μ v).mp hv hz
-  intro F h0
-  obtain ⟨F', hFF', hF'meas, hF'0⟩ := @exists_measurable_superset_of_null Ω m.ms m.μ F h0
-  exact measure_mono_null hFF' (hmeas F' hF'meas hF'0)
+open MeasureTheory in
+/-- A PMF's measure lives on the PMF's support. -/
+lemma ae_mem_support (μ : PMF α) : ∀ᵐ v ∂(μ.toMeasureWithMs ⊤), v ∈ μ.support := by
+  letI : MeasurableSpace α := ⊤
+  rw [ae_iff]
+  exact (μ.toMeasure_apply_eq_zero_iff MeasurableSpace.measurableSet_top).2
+    (Set.disjoint_left.2 fun _ hv hv' ↦ hv' hv)
+
+open MeasureTheory in
+/-- The tilt behind `PSpace.isIndependentProduct_reweight`, spelled out: on rectangles it
+multiplies `c`'s measure with `ν`. -/
+theorem reweight_rect {c m s : PSpace Ω} (hs : s =ᵢ c ⊕ᵢ m) (ν : Measure[m.ms] Ω)
+    [IsProbabilityMeasure ν] (hac : ν ≪ m.μ) {E F : Set Ω} (hE : @MeasurableSet Ω c.ms E)
+    (hF : @MeasurableSet Ω m.ms F) :
+    (s.μ.withDensity (ν.rnDeriv m.μ)) (E ∩ F) = c.μ E * ν F := by
+  have hmle : m.ms ≤ s.ms := (PSpace.le_of_isIndependentProduct_right hs).1
+  have hcle : c.ms ≤ s.ms := (PSpace.le_of_isIndependentProduct_left hs).1
+  have hmp := m.2
+  rw [withDensity_apply _ ((hcle _ hE).inter (hmle _ hF)),
+    PSpace.lintegral_rect hs (Measure.measurable_rnDeriv ν m.μ) hE hF, ← withDensity_apply _ hF,
+    Measure.withDensity_rnDeriv_eq ν m.μ hac]
 
 set_option linter.style.haveILetI false in
-/-- Conditioning with a `False` continuation is `False`: pick a value in the support and
-hand the continuation the fibre it asks for.  The fibre composes with the continuation's
-frame by `PSpace.isIndependentProduct_reweight`. -/
-lemma C_FALSE : (𝒞⟨μ⟩ _v; ffalse : FProp) ⊢ ffalse := by
-  intro r hv h
-  obtain ⟨q, ⟨m, hq⟩, hqr⟩ := h
-  obtain ⟨q', ⟨κ, hq'⟩, hq'r⟩ := (Quotient.exact hq).2 r hv hqr
+open MeasureTheory in
+/-- Integrating against a PMF is summing over its (countable) support. -/
+lemma pmf_lintegral_eq_tsum {γ : Type} (ν : PMF γ) (F : γ → ENNReal) :
+    ∫⁻ v, F v ∂(ν.toMeasureWithMs ⊤) = ∑' v : ν.support, F v * ν v := by
+  letI : MeasurableSpace γ := ⊤
+  show ∫⁻ v, F v ∂ν.toMeasure = _
+  rw [← ν.restrict_toMeasure_support, lintegral_countable _ ν.support_countable]
+  refine tsum_congr fun v ↦ ?_
+  rw [PMF.toMeasure_apply_singleton _ _ MeasurableSpace.measurableSet_top]
+
+open MeasureTheory in
+/-- Integrals against a PMF commute with integrals against any measure. -/
+lemma lintegral_pmf_swap {γ X : Type} {_ : MeasurableSpace X} (ν : PMF γ) (κ : Measure X)
+    (g : γ → X → ENNReal) (hg : ∀ v, AEMeasurable (g v) κ) :
+    ∫⁻ v, ∫⁻ x, g v x ∂κ ∂(ν.toMeasureWithMs ⊤)
+      = ∫⁻ x, ∫⁻ v, g v x ∂(ν.toMeasureWithMs ⊤) ∂κ := by
+  have := ν.support_countable.to_subtype
+  simp_rw [pmf_lintegral_eq_tsum]
+  rw [lintegral_tsum (f := fun (v : ν.support) x ↦ g v x * ν v) fun v ↦ (hg v).mul_const _]
+  exact tsum_congr fun v ↦ (lintegral_mul_const'' _ (hg v)).symm
+
+set_option linter.style.haveILetI false in
+open MeasureTheory in
+/-- Each fibre of a PMF mixture, at a point of the PMF's support, is absolutely continuous
+with respect to the mixture. -/
+lemma bind_fibre_ac {γ X : Type} {_ : MeasurableSpace X} {ν : PMF γ} {μX : Measure X}
+    {lam : γ → Measure X} (h : μX = (ν.toMeasureWithMs ⊤).bind lam) {v : γ}
+    (hv : v ∈ ν.support) : lam v ≪ μX := by
+  letI : MeasurableSpace γ := ⊤
+  intro F hF
+  obtain ⟨N, hFN, hNmeas, hN⟩ := exists_measurable_superset_of_null hF
+  refine measure_mono_null hFN ?_
+  rw [h, Measure.bind_apply hNmeas measurable_from_top.aemeasurable, pmf_lintegral_eq_tsum] at hN
+  exact (mul_eq_zero.1 (ENNReal.tsum_eq_zero.1 hN ⟨v, hv⟩)).resolve_right
+    ((PMF.mem_support_iff _ _).1 hv)
+
+open MeasureTheory in
+/-- A density measurable on a sub-space integrates the same on the sub-space and on the whole
+space, over the sub-space's sets. -/
+lemma PSpace.withDensity_le_apply {p q : PSpace Ω} (hpq : p ≤ q) {f : Ω → ENNReal}
+    (hf : @Measurable Ω ENNReal p.ms _ f) {A : Set Ω} (hA : @MeasurableSet Ω p.ms A) :
+    q.μ.withDensity f A = p.μ.withDensity f A := by
+  have htrim : p.μ = q.μ.trim hpq.1 := by
+    refine @Measure.ext Ω p.ms _ _ fun u hu ↦ ?_
+    rw [trim_measurableSet_eq hpq.1 hu]
+    exact MeasureOnSpace.le_preserves_measure hpq hu
+  rw [withDensity_apply _ (hpq.1 _ hA), withDensity_apply _ hA, htrim,
+    restrict_trim hpq.1 _ hA, lintegral_trim hpq.1 hf]
+
+/-- A space is below another if its σ-algebra is coarser and the measures agree on it. -/
+lemma PSpace.le_of_measure_eq {p q : PSpace Ω} (hms : p.ms ≤ q.ms)
+    (hμ : ∀ u, @MeasurableSet Ω p.ms u → p.μ u = q.μ u) : p ≤ q := by
+  refine ⟨hms, ?_⟩
+  apply @MeasureTheory.Measure.ext Ω p.ms
+  intro u hu
+  exact (hμ u hu).trans (_root_.Measure.le_preserves_measure (h := hms) (μ := q.μ) (hu := hu)).symm
+
+set_option linter.style.haveILetI false in
+open MeasureTheory in
+/-- **Tilting along a mixture.**  If a sub-space `m` of `S` is the `ν`-mixture of fibres
+`lam v`, then `S` is the `ν`-mixture of its tilts by the fibres' densities over `m`: those
+densities sum to one `m`-a.e., hence `S`-a.e. -/
+theorem mixture_of_tilts {γ : Type} {S m : PSpace Ω} (hmS : m ≤ S) (ν : PMF γ)
+    (lam : γ → Measure[m.ms] Ω) (hprob : ∀ v, IsProbabilityMeasure (lam v))
+    (hmix : m.μ = (ν.toMeasureWithMs ⊤).bind lam) {A : Set Ω} (hA : @MeasurableSet Ω S.ms A) :
+    S.μ A = ∫⁻ v, S.μ.withDensity ((lam v).rnDeriv m.μ) A ∂(ν.toMeasureWithMs ⊤) := by
+  have hmp := m.2
+  have hsupp := ae_mem_support ν
+  letI : MeasurableSpace γ := ⊤
+  have hf : ∀ v, @Measurable Ω ENNReal m.ms _ ((lam v).rnDeriv m.μ) :=
+    fun v ↦ Measure.measurable_rnDeriv _ _
+  have hfS : ∀ v, @Measurable Ω ENNReal S.ms _ ((lam v).rnDeriv m.μ) :=
+    fun v ↦ (hf v).mono hmS.1 le_rfl
+  -- the densities sum to one, `m`-a.e.
+  let Fs : Ω → ENNReal := fun ρ ↦ ∫⁻ v, (lam v).rnDeriv m.μ ρ ∂(ν.toMeasureWithMs ⊤)
+  have hFmeas : @Measurable Ω ENNReal m.ms _ Fs := by
+    haveI := ν.support_countable.to_subtype
+    have h : Fs = fun ρ ↦ ∑' v : ν.support, (lam v).rnDeriv m.μ ρ * ν v :=
+      funext fun ρ ↦ pmf_lintegral_eq_tsum ν _
+    rw [h]
+    letI : MeasurableSpace Ω := m.ms
+    exact Measurable.tsum fun v ↦ (hf v).mul_const _
+  have hFone : Fs =ᵐ[m.μ] 1 := by
+    letI : MeasurableSpace Ω := m.ms
+    refine ae_eq_of_forall_setLIntegral_eq_of_sigmaFinite hFmeas measurable_const
+      fun F hF _ ↦ ?_
+    calc ∫⁻ x in F, Fs x ∂m.μ
+        = ∫⁻ v, ∫⁻ x in F, (lam v).rnDeriv m.μ x ∂m.μ ∂(ν.toMeasureWithMs ⊤) :=
+          (lintegral_pmf_swap ν (m.μ.restrict F) _ fun v ↦ (hf v).aemeasurable).symm
+      _ = ∫⁻ v, lam v F ∂(ν.toMeasureWithMs ⊤) := by
+          refine lintegral_congr_ae ?_
+          filter_upwards [hsupp] with v hv
+          haveI := hprob v
+          exact Measure.setLIntegral_rnDeriv (bind_fibre_ac hmix hv) F
+      _ = m.μ F := by rw [hmix, Measure.bind_apply hF measurable_from_top.aemeasurable]
+      _ = ∫⁻ x in F, (1 : Ω → ENNReal) x ∂m.μ := by simp
+  have hFoneS : Fs =ᵐ[S.μ] 1 := PSpace.ae_eq_of_le hmS hFone
+  calc S.μ A = ∫⁻ x in A, Fs x ∂S.μ := by
+        rw [lintegral_congr_ae (ae_restrict_of_ae hFoneS)]
+        simp
+    _ = ∫⁻ v, ∫⁻ x in A, (lam v).rnDeriv m.μ x ∂S.μ ∂(ν.toMeasureWithMs ⊤) :=
+        (lintegral_pmf_swap ν (S.μ.restrict A) _ fun v ↦ (hfS v).aemeasurable).symm
+    _ = _ := lintegral_congr fun v ↦ (withDensity_apply _ hA).symm
+
+set_option linter.style.haveILetI false in
+open MeasureTheory in
+/-- A PMF's `bind` becomes the measures' `bind`. -/
+lemma toMeasure_bind_eq {γ δ : Type} (p : PMF γ) (f : γ → PMF δ) :
+    (p.bind f).toMeasureWithMs ⊤
+      = (p.toMeasureWithMs ⊤).bind fun a ↦ (f a).toMeasureWithMs ⊤ := by
+  letI : MeasurableSpace γ := ⊤
+  letI : MeasurableSpace δ := ⊤
+  ext s hs
+  rw [Measure.bind_apply hs measurable_from_top.aemeasurable, pmf_lintegral_eq_tsum]
+  show (p.bind f).toMeasure s = _
+  have hsub : Function.support (fun a ↦ p a * (f a).toMeasure s) ⊆ p.support := fun a ha ↦
+    (PMF.mem_support_iff _ _).2 (left_ne_zero_of_mul ha)
+  rw [PMF.toMeasure_bind_apply p f s hs, ← tsum_subtype_eq_of_support_subset hsub]
+  exact tsum_congr fun a ↦ mul_comm _ _
+
+set_option linter.style.haveILetI false in
+open MeasureTheory in
+/-- Integrating against the joint law of a pair is integrating out each component in turn. -/
+lemma lintegral_pmf_bind_pair {γ δ : Type} (p : PMF γ) (κ : γ → PMF δ) (F : γ × δ → ENNReal) :
+    ∫⁻ x, F x ∂((p.bind fun v ↦ (κ v).bind fun w ↦ PMF.pure (v, w)).toMeasureWithMs ⊤)
+      = ∫⁻ v, ∫⁻ w, F (v, w) ∂((κ v).toMeasureWithMs ⊤) ∂(p.toMeasureWithMs ⊤) := by
+  letI : MeasurableSpace γ := ⊤
+  letI : MeasurableSpace δ := ⊤
+  letI : MeasurableSpace (γ × δ) := ⊤
+  rw [toMeasure_bind_eq,
+    Measure.lintegral_bind measurable_from_top.aemeasurable measurable_from_top.aemeasurable]
+  refine lintegral_congr fun v ↦ ?_
+  rw [toMeasure_bind_eq,
+    Measure.lintegral_bind measurable_from_top.aemeasurable measurable_from_top.aemeasurable]
+  refine lintegral_congr fun w ↦ ?_
+  show ∫⁻ x, F x ∂(PMF.pure (v, w)).toMeasure = F (v, w)
+  rw [PMF.toMeasure_pure, lintegral_dirac' _ measurable_from_top]
+
+set_option linter.style.haveILetI false in
+open MeasureTheory in
+/-- **Unpacking a conditioning.**  A valid resource owning `𝒞⟨ν⟩ v; Kc v` contains a space
+`s` that is the `ν`-mixture of probability fibres `w v`; on the support, each fibre is owned
+(as a resource `X`) in a way satisfying `Kc v`.  The space is the conditioned space times the
+continuation's frame, and the fibres are its tilts along the kernel. -/
+theorem cond_elim {γ : Type} {ν : PMF γ} {Kc : γ → FProp} {r : BoundedFootprintSpace Bool}
+    (hv : ✓r) (h : own r ⊢ jointConditioning ν Kc) :
+    ∃ (s : PSpace Ω) (hbfs : HasBoundedFootprint (s : PSp Ω)),
+      (⟨(s : PSp Ω), hbfs⟩ : BoundedFootprintSpace Bool) ≤ r ∧
+      ∃ w : γ → {p : Measure[s.ms] Ω // IsProbabilityMeasure p},
+        s.μ = (ν.toMeasureWithMs ⊤).bind (fun v ↦ (w v).1) ∧
+        ∀ v ∈ ν.support, ∃ X : BoundedFootprintSpace Bool,
+          X.val = ((show PSpace Ω from ⟨⟨s.ms, (w v).1⟩, (w v).2⟩) : PSp Ω) ∧
+            (own X ⊢ Kc v) := by
+  classical
+  obtain ⟨Kr, rfl⟩ : ∃ Kr : γ → UpperSet (BoundedFootprintSpace Bool), Kc = fun v ↦ fmk (Kr v) :=
+    ⟨fun v ↦ (Kc v).out, funext fun v ↦ (Quotient.out_eq _).symm⟩
+  have hr := h r hv (le_refl r)
+  obtain ⟨q, ⟨m, hq⟩, hqr⟩ := hr
+  obtain ⟨q', ⟨ℓ, hq'⟩, hq'r⟩ := (Quotient.exact hq).2 r hv hqr
   obtain ⟨b₁, b₂, hle, hown, hrest⟩ := (Quotient.exact hq').2 r hv hq'r
   obtain ⟨c₁, c₂, hle', hmix, hall⟩ := hrest
   obtain ⟨r₁, ⟨hbfm, hr₁⟩, hb₁⟩ := hown
-  have hmb₁ := (Quotient.exact hr₁).2 b₁ (valid_mono (le_trans (le_mul_of_one_le PSp.one_le) hle) hv) hb₁
-  obtain ⟨v, hvsupp⟩ := μ.support_nonempty
-  -- `c₂` sits inside `b₂`, so `m`'s resource and `c₂` compose inside `r`
+  have hmb₁ := (Quotient.exact hr₁).2 b₁
+    (valid_mono (le_trans (le_mul_of_one_le PSp.one_le) hle) hv) hb₁
+  -- `m` and the continuation's frame `c₂` compose, as in `C_FALSE`
   have hc₂b₂ : c₂ ≤ b₂ := by
     refine le_trans ?_ hle'
     rw [mul_comm]
     exact le_mul_of_one_le PSp.one_le
   have hmc₂r : (⟨(m : PSp Ω), hbfm⟩ : BoundedFootprintSpace Bool) * c₂ ≤ r :=
     le_trans (mul_le_mul_right_le hmb₁ c₂) (le_trans (mul_le_mul_left_le hc₂b₂ b₁) hle)
-  have hvmc₂ : ✓((⟨(m : PSp Ω), hbfm⟩ : BoundedFootprintSpace Bool) * c₂) := valid_mono hmc₂r hv
+  have hvmc₂ : ✓((⟨(m : PSp Ω), hbfm⟩ : BoundedFootprintSpace Bool) * c₂) :=
+    valid_mono hmc₂r hv
   have hb₂r : b₂ ≤ r := by
     refine le_trans ?_ hle
     rw [mul_comm]
     exact le_mul_of_one_le PSp.one_le
   have hvc₂ : ✓c₂ := valid_mono (le_trans hc₂b₂ hb₂r) hv
-  -- the spaces behind `c₂` and behind `m * c₂`
   obtain ⟨c₂', hc₂'⟩ : ∃ c : PSpace Ω, c₂.val = (c : PSp Ω) :=
     Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hvc₂)
   obtain ⟨s, hs⟩ : ∃ s : PSpace Ω, PSp.mul ((m : PSp Ω)) (c₂.val) = (s : PSp Ω) :=
     Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hvmc₂)
+  have hbfs : HasBoundedFootprint (s : PSp Ω) := by
+    have h := ((⟨(m : PSp Ω), hbfm⟩ : BoundedFootprintSpace Bool) * c₂).property
+    rwa [show ((⟨(m : PSp Ω), hbfm⟩ : BoundedFootprintSpace Bool) * c₂).val
+      = (s : PSp Ω) from hs] at h
+  have hsr : (⟨(s : PSp Ω), hbfs⟩ : BoundedFootprintSpace Bool) ≤ r := by
+    have h : ((⟨(m : PSp Ω), hbfm⟩ : BoundedFootprintSpace Bool) * c₂).val ≤ r.val := hmc₂r
+    rw [show ((⟨(m : PSp Ω), hbfm⟩ : BoundedFootprintSpace Bool) * c₂).val
+      = (s : PSp Ω) from hs] at h
+    exact h
   rw [hc₂'] at hs
   have hcomm : s =ᵢ c₂' ⊕ᵢ m := independentProduct_comm (PSp.mul_inversion hs)
-  -- reweight that product along the `v`-fibre
-  haveI hprob : MeasureTheory.IsProbabilityMeasure (κ.1 v) := κ.2.isProbabilityMeasure v
-  obtain ⟨s', hs'⟩ :=
-    PSpace.isIndependentProduct_reweight hcomm (κ.1 v) (kernel_fibre_ac κ hmix hvsupp)
-  have hvm : ✓((m : PSp Ω)) := PSp.valid_def.mpr (Option.some_ne_none _)
-  have hvk : ✓(((κ v : PSpace Ω)) : PSp Ω) := PSp.valid_def.mpr (Option.some_ne_none _)
-  have hbfk : HasBoundedFootprint (((κ v : PSpace Ω)) : PSp Ω) :=
-    hasBoundedFootprint_congr hvm hvk rfl hbfm
-  have hvalid : ✓(c₂ * (⟨((κ v : PSpace Ω) : PSp Ω), hbfk⟩ : BoundedFootprintSpace Bool)) := by
-    show PSp.mul c₂.val _ ≠ (⊤ : PSp Ω)
-    rw [hc₂']
-    exact PSp.mul_ne_top_of_exists ⟨s', hs'⟩
-  exact hall _ ⟨⟨v, hvsupp⟩, rfl⟩ _ hvalid
-    ⟨_, ⟨hbfk, rfl⟩,
-      le_refl (⟨((κ v : PSpace Ω) : PSp Ω), hbfk⟩ : BoundedFootprintSpace Bool)⟩
+  have hcp := c₂'.2
+  have hsp := s.2
+  have hms : m ≤ s := PSpace.le_of_isIndependentProduct_right hcomm
+  -- the fibres: tilt `s` along the kernel (on the support)
+  let wμ : γ → Measure[s.ms] Ω := fun v ↦
+    if v ∈ ν.support then s.μ.withDensity ((ℓ.1 v).rnDeriv m.μ) else s.μ
+  have hrect : ∀ v ∈ ν.support, ∀ E F, @MeasurableSet Ω c₂'.ms E → @MeasurableSet Ω m.ms F →
+      wμ v (E ∩ F) = c₂'.μ E * ℓ.1 v F := fun v hv E F hE hF ↦ by
+    haveI : IsProbabilityMeasure (ℓ.1 v) := ℓ.2.isProbabilityMeasure v
+    simp only [wμ, hv, ↓reduceIte]
+    exact reweight_rect hcomm (ℓ.1 v) (bind_fibre_ac hmix hv) hE hF
+  have hwprob : ∀ v, IsProbabilityMeasure (wμ v) := fun v ↦ by
+    by_cases hv : v ∈ ν.support
+    · haveI : IsProbabilityMeasure (ℓ.1 v) := ℓ.2.isProbabilityMeasure v
+      constructor
+      have h := hrect v hv Set.univ Set.univ MeasurableSet.univ MeasurableSet.univ
+      rw [Set.inter_univ] at h
+      rw [h, measure_univ, measure_univ, one_mul]
+    · simp only [wμ, hv, ↓reduceIte]
+      exact hsp
+  let w : γ → {p : Measure[s.ms] Ω // IsProbabilityMeasure p} := fun v ↦ ⟨wμ v, hwprob v⟩
+  refine ⟨s, hbfs, hsr, w, ?_, fun v hv ↦ ?_⟩
+  · -- `s` is the mixture of its tilts
+    have hsupp := ae_mem_support ν
+    letI : MeasurableSpace γ := ⊤
+    refine @Measure.ext Ω s.ms _ _ fun A hA ↦ ?_
+    rw [Measure.bind_apply hA measurable_from_top.aemeasurable,
+      mixture_of_tilts hms ν (fun v ↦ ℓ.1 v) (fun v ↦ ℓ.2.isProbabilityMeasure v) hmix hA]
+    refine lintegral_congr_ae ?_
+    filter_upwards [hsupp] with v hv
+    show _ = wμ v A
+    simp only [wμ, hv, ↓reduceIte]
+  · -- the fibre at `v` is owned with the frame, which the continuation turns into `Kc v`
+    haveI : IsProbabilityMeasure (ℓ.1 v) := ℓ.2.isProbabilityMeasure v
+    let S : PSpace Ω := ⟨⟨s.ms, (w v).1⟩, (w v).2⟩
+    have hS : S =ᵢ c₂' ⊕ᵢ (ℓ v : PSpace Ω) :=
+      ⟨hcomm.1, fun E hE F hF ↦ hrect v hv E F hE hF⟩
+    have hvm : ✓((m : PSp Ω)) := PSp.valid_def.mpr (Option.some_ne_none _)
+    have hvk : ✓(((ℓ v : PSpace Ω)) : PSp Ω) := PSp.valid_def.mpr (Option.some_ne_none _)
+    have hbfk : HasBoundedFootprint (((ℓ v : PSpace Ω)) : PSp Ω) :=
+      hasBoundedFootprint_congr hvm hvk rfl hbfm
+    have hval : (c₂ * (⟨((ℓ v : PSpace Ω) : PSp Ω), hbfk⟩ : BoundedFootprintSpace Bool)).val
+        = (S : PSp Ω) := by
+      show PSp.mul c₂.val _ = _
+      rw [hc₂']
+      exact mul_respect_independentProduct hS
+    have hvalid : ✓(c₂ * (⟨((ℓ v : PSpace Ω) : PSp Ω), hbfk⟩ : BoundedFootprintSpace Bool)) := by
+      show (c₂ * _).val ≠ (⊤ : PSp Ω)
+      rw [hval]
+      exact WithTop.coe_ne_top
+    have hmem := hall _ ⟨⟨v, hv⟩, rfl⟩ _ hvalid
+      ⟨_, ⟨hbfk, rfl⟩,
+        le_refl (⟨((ℓ v : PSpace Ω) : PSp Ω), hbfk⟩ : BoundedFootprintSpace Bool)⟩
+    exact ⟨_, hval, fun y _ hy ↦ UpperSet.upper _ hy hmem⟩
+
+/-- Conditioning with a `False` continuation is `False`: the support is nonempty, and the
+fibre owned there would have to satisfy `False`. -/
+lemma C_FALSE : (𝒞⟨μ⟩ _v; ffalse : FProp) ⊢ ffalse := by
+  intro r hv h
+  have hown : own r ⊢ jointConditioning μ (fun _ ↦ ffalse) :=
+    fun _ _ hry ↦ UpperSet.upper _ hry h
+  obtain ⟨s, -, -, w, -, hX⟩ := cond_elim hv hown
+  obtain ⟨v, hvsupp⟩ := μ.support_nonempty
+  obtain ⟨X, hXval, hXK⟩ := hX v hvsupp
+  have hXv : ✓X := by
+    show X.val ≠ (⊤ : PSp Ω)
+    rw [hXval]
+    exact WithTop.coe_ne_top
+  exact False.elim (hXK X hXv (le_refl X))
 
 theorem C_CONS (h : ∀ v, K₁ v ⊢ K₂ v) : 𝒞⟨μ⟩ v; K₁ v ⊢ 𝒞⟨μ⟩ v; K₂ v := by
   unfold jointConditioning
@@ -764,8 +993,376 @@ theorem C_FRAME : P ∗ 𝒞⟨μ⟩ v; K v ⊢ 𝒞⟨μ⟩ v; (P ∗ K v) := b
       · iapply Hall
         iexact Hv
 
-theorem C_UNIT_L [Countable α] :
-  𝒞⟨δ v₀⟩ _v; K v₀ ⊣⊢ K v₀ 
+set_option linter.style.haveILetI false in
+open MeasureTheory in
+/-- Conditioning on a Dirac distribution does nothing: its only fibre is the whole space, so
+the continuation is handed back what was owned (`⊢`); conversely, condition the trivial space
+(`⊣`). -/
+theorem C_UNIT_L : 𝒞⟨δ v₀⟩ _v; K v₀ ⊣⊢ K v₀ := by
+  constructor
+  · unfold jointConditioning
+    iintro ⟨%m, %κ, Hown, %hmix, Hall⟩
+    -- the only fibre, at `v₀`, is `m` itself
+    have hκ : (κ v₀ : PSpace Ω) = m := by
+      apply Subtype.ext
+      show (⟨m.ms, κ.1 v₀⟩ : MeasureOnSpace Ω) = m.1
+      have h : κ.1 v₀ = m.μ := by
+        letI : MeasurableSpace α := ⊤
+        rw [hmix]
+        simp only [PMF.toMeasureWithMs, PMF.toMeasure_pure]
+        exact (Measure.dirac_bind (ProbabilityTheory.Kernel.measurable κ.1) v₀).symm
+      rw [h]
+    have hown : ownP m ⊢ ownP (κ v₀) := by rw [hκ]
+    ispecialize Hall $$ %⟨v₀, (PMF.mem_support_pure_iff _ _).2 rfl⟩
+    iapply Hall
+    iapply hown
+    iexact Hown
+  · unfold jointConditioning
+    iintro HK
+    iexists (1 : PSpace Ω), unitKernel α
+    isplitl []
+    · exact ownP_one
+    · isplitl []
+      · ipureintro
+        show PSpace.μ 1 = (((δ v₀) : PMF α).toMeasureWithMs ⊤).bind (fun _ ↦ PSpace.μ 1)
+        simp [PMF.toMeasureWithMs]
+      · iintro %v Hv
+        iexact HK 
+
+set_option linter.style.haveILetI false in
+open MeasureTheory in
+/-- A space that is a `μ`-mixture of fibres, on each of which `E` surely is the fibre's
+value, gives `E` the law `μ`.  A measurable version of `E` is read off a conull cover of each
+fibre's event `E = v`; the covers are disjoint, and there are countably many of them. -/
+theorem law_of_fibres {E : RV α} {μ : PMF α} (s : PSpace Ω) (w : α → Measure[s.ms] Ω)
+    (hmix : ∀ S, @MeasurableSet Ω s.ms S → s.μ S = ∫⁻ v, w v S ∂(μ.toMeasureWithMs ⊤))
+    (hprob : ∀ v ∈ μ.support, w v Set.univ = 1)
+    (hsure : ∀ v ∈ μ.support, w v {ρ | ¬ E ρ = v} = 0) :
+    almostMeasurable E (s : PSp Ω) ∧
+      @Measure.map Ω α s.ms ⊤ E s.μ = μ.toMeasureWithMs ⊤ := by
+  classical
+  have hsupp := ae_mem_support μ
+  letI : MeasurableSpace α := ⊤
+  letI : MeasurableSpace Ω := s.ms
+  -- a measurable null cover `N v` of each fibre's exceptional set
+  choose! N hNsub hNmeas hNnull using fun v (hv : v ∈ μ.support) ↦
+    exists_measurable_superset_of_null (hsure v hv)
+  have hEv : ∀ v ∈ μ.support, ∀ ρ, ρ ∉ N v → E ρ = v := fun v hv ρ hρ ↦
+    by_contra fun h ↦ hρ (hNsub v hv h)
+  set U := ⋃ v ∈ μ.support, (N v)ᶜ with hU
+  have hUmeas : MeasurableSet U :=
+    MeasurableSet.biUnion μ.support_countable fun v hv ↦ (hNmeas v hv).compl
+  have hmemU : ∀ v ∈ μ.support, ∀ ρ, ρ ∉ N v → ρ ∈ U := fun v hv ρ hρ ↦
+    Set.mem_biUnion hv hρ
+  obtain ⟨v₁, -⟩ := μ.support_nonempty
+  -- the measurable version: `E` on the covers, anything off them
+  let g : Ω → α := fun ρ ↦ if ρ ∈ U then E ρ else v₁
+  have hgv : ∀ v ∈ μ.support, ∀ ρ, ρ ∉ N v → g ρ = v := fun v hv ρ hρ ↦ by
+    simp only [g, hmemU v hv ρ hρ, ↓reduceIte]
+    exact hEv v hv ρ hρ
+  have hpre : ∀ B : Set α, g ⁻¹' B
+      = (⋃ v ∈ {v | v ∈ μ.support ∧ v ∈ B}, (N v)ᶜ) ∪ (Uᶜ ∩ {_ρ | v₁ ∈ B}) := by
+    intro B
+    ext ρ
+    by_cases hρ : ρ ∈ U
+    · obtain ⟨v, hv, hρv⟩ : ∃ v ∈ μ.support, ρ ∉ N v := by simpa [hU] using hρ
+      simp only [Set.mem_preimage, hgv v hv ρ hρv, Set.mem_union, Set.mem_iUnion,
+        Set.mem_compl_iff, Set.mem_inter_iff, Set.mem_ofPred_eq, hρ, not_true_eq_false,
+        false_and, or_false, exists_prop]
+      constructor
+      · exact fun hvB ↦ ⟨v, ⟨hv, hvB⟩, hρv⟩
+      · rintro ⟨v', ⟨hv', hv'B⟩, hρv'⟩
+        rwa [← hgv v hv ρ hρv, hgv v' hv' ρ hρv']
+    · simp only [Set.mem_preimage, g, Set.mem_union, Set.mem_iUnion,
+        Set.mem_compl_iff, Set.mem_inter_iff, Set.mem_ofPred_eq, hρ, not_false_eq_true,
+        true_and, exists_prop]
+      constructor
+      · exact Or.inr
+      · rintro (⟨v', ⟨hv', -⟩, hρv'⟩ | h)
+        · exact absurd (hmemU v' hv' ρ hρv') hρ
+        · exact h
+  have hg : Measurable g := by
+    intro B _
+    rw [hpre B]
+    refine MeasurableSet.union ?_ (hUmeas.compl.inter (MeasurableSet.const _))
+    exact MeasurableSet.biUnion (μ.support_countable.mono fun v hv ↦ hv.1)
+      fun v hv ↦ (hNmeas v hv.1).compl
+  -- off the covers there is no mass
+  have hUc : s.μ Uᶜ = 0 := by
+    rw [hmix _ hUmeas.compl]
+    refine (lintegral_congr_ae ?_).trans lintegral_zero
+    filter_upwards [hsupp] with v hv
+    exact measure_mono_null (fun ρ hρ ↦ by_contra fun h ↦ hρ (hmemU v hv ρ h)) (hNnull v hv)
+  have hae : E =ᵐ[s.μ] g := by
+    refine ae_iff.2 (measure_mono_null
+      (show {ρ | ¬ E ρ = g ρ} ⊆ Uᶜ from fun ρ hρ hρU ↦ hρ ?_) hUc)
+    simp only [g, hρU, ↓reduceIte]
+  have haem : AEMeasurable E s.μ := ⟨g, hg, hae⟩
+  refine ⟨haem, ?_⟩
+  -- each fibre puts all its mass on `g ⁻¹' B` or none
+  ext B _
+  rw [Measure.map_apply_of_aemeasurable haem MeasurableSpace.measurableSet_top,
+    measure_congr (hae.preimage B), hmix _ (hg MeasurableSpace.measurableSet_top)]
+  have hind : ∀ᵐ v ∂(μ.toMeasureWithMs ⊤), w v (g ⁻¹' B) = B.indicator 1 v := by
+    filter_upwards [hsupp] with v hv
+    by_cases hvB : v ∈ B
+    · rw [Set.indicator_of_mem hvB, Pi.one_apply]
+      have hNfin : w v (N v) ≠ (⊤ : ENNReal) := by rw [hNnull v hv]; exact ENNReal.zero_ne_top
+      have hcov : w v (N v)ᶜ = 1 := by
+        rw [measure_compl (hNmeas v hv) hNfin, hprob v hv, hNnull v hv, tsub_zero]
+      refine le_antisymm ((measure_mono (Set.subset_univ _)).trans (hprob v hv).le) ?_
+      rw [← hcov]
+      exact measure_mono fun ρ hρ ↦ show g ρ ∈ B by rw [hgv v hv ρ hρ]; exact hvB
+    · rw [Set.indicator_of_notMem hvB]
+      refine measure_mono_null (fun ρ hρ ↦ by_contra fun hρN ↦ hvB ?_) (hNnull v hv)
+      have hρB : g ρ ∈ B := hρ
+      rwa [hgv v hv ρ hρN] at hρB
+  rw [lintegral_congr_ae hind, lintegral_indicator_one MeasurableSpace.measurableSet_top]
+
+set_option linter.style.haveILetI false in
+open MeasureTheory ProbabilityTheory in
+/-- A random variable with law `μ` on `P` conditions `P`: sending `v` to `P` conditioned on
+`E = v` (read on a measurable version of `E`) is a kernel mixing back to `P`, and on its fibre
+at `v` the variable surely is `v`. -/
+theorem condKernel_of_law {E : RV α} {μ : PMF α} (P : PSpace Ω)
+    (ham : almostMeasurable E (P : PSp Ω))
+    (hlaw : @Measure.map Ω α P.ms ⊤ E P.μ = μ.toMeasureWithMs ⊤) :
+    ∃ κ : TrivialMarkovKernel α P, P.μ = (μ.toMeasureWithMs ⊤).bind κ ∧
+      ∀ v ∈ μ.support, (κ v : PSpace Ω).μ {ρ | ¬ E ρ = v} = 0 := by
+  classical
+  have hP := P.isProbability
+  letI : MeasurableSpace α := ⊤
+  letI : MeasurableSpace Ω := P.ms
+  obtain ⟨g, hg, hae⟩ : AEMeasurable E P.μ := ham
+  have hlaw' : Measure.map g P.μ = μ.toMeasure := (Measure.map_congr hae).symm.trans hlaw
+  have hG : ∀ v, MeasurableSet (g ⁻¹' {v}) := fun _ ↦ hg MeasurableSpace.measurableSet_top
+  have hGμ : ∀ v, P.μ (g ⁻¹' {v}) = μ v := fun v ↦ by
+    rw [← Measure.map_apply hg MeasurableSpace.measurableSet_top, hlaw',
+      PMF.toMeasure_apply_singleton _ _ MeasurableSpace.measurableSet_top]
+  have hG0 : ∀ v ∈ μ.support, P.μ (g ⁻¹' {v}) ≠ 0 := fun v hv ↦ by
+    rw [hGμ]; exact (PMF.mem_support_iff _ _).1 hv
+  -- the fibres: `P` conditioned on `g = v`
+  let f : α → Measure Ω := fun v ↦ if v ∈ μ.support then P.μ[|g ⁻¹' {v}] else P.μ
+  have hfprob : ∀ v, IsProbabilityMeasure (f v) := by
+    intro v
+    by_cases hv : v ∈ μ.support
+    · simp only [f, hv, ↓reduceIte]
+      exact cond_isProbabilityMeasure (hG0 v hv)
+    · simp only [f, hv, ↓reduceIte]
+      exact hP
+  let κ : TrivialMarkovKernel α P := ⟨⟨f, measurable_from_top⟩, ⟨hfprob⟩⟩
+  refine ⟨κ, ?_, fun v hv ↦ ?_⟩
+  · -- `P` is the mixture of its fibres: sum over the countable support
+    ext F hF
+    rw [Measure.bind_apply hF (Kernel.measurable κ.1).aemeasurable]
+    show P.μ F = ∫⁻ v, f v F ∂μ.toMeasure
+    have hcon : P.μ (g ⁻¹' μ.support)ᶜ = 0 := by
+      rw [← Set.preimage_compl, ← Measure.map_apply hg MeasurableSpace.measurableSet_top, hlaw',
+        μ.toMeasure_apply_eq_zero_iff MeasurableSpace.measurableSet_top]
+      exact disjoint_compl_right
+    have hterm : ∀ v : μ.support,
+        f v F * μ.toMeasure {(v : α)} = (P.μ.restrict F) (g ⁻¹' {(v : α)}) := by
+      rintro ⟨v, hv⟩
+      simp only [f, hv, ↓reduceIte]
+      rw [cond_apply (hG v), PMF.toMeasure_apply_singleton _ _ MeasurableSpace.measurableSet_top,
+        ← hGμ, Measure.restrict_apply (hG v), Set.inter_comm, mul_comm, ← mul_assoc,
+        ENNReal.mul_inv_cancel (hG0 v hv) (measure_ne_top _ _), one_mul]
+    rw [← μ.restrict_toMeasure_support, lintegral_countable _ μ.support_countable,
+      tsum_congr hterm,
+      tsum_measure_preimage_singleton μ.support_countable (fun v _ ↦ hG v),
+      Measure.restrict_apply (hg MeasurableSpace.measurableSet_top), Set.inter_comm,
+      measure_inter_conull hcon]
+  · -- on the fibre at `v`, `E` is `v` up to the null set where `E` and `g` differ
+    show f v {ρ | ¬ E ρ = v} = 0
+    simp only [f, hv, ↓reduceIte]
+    obtain ⟨N, hNsub, -, hNnull⟩ := exists_measurable_superset_of_null (ae_iff.1 hae)
+    refine measure_mono_null (t := (g ⁻¹' {v})ᶜ ∪ N) (fun ρ hρ ↦ ?_)
+      (measure_union_null ?_ (cond_absolutelyContinuous hNnull))
+    · by_cases hgv : g ρ = v
+      · exact Or.inr (hNsub fun h ↦ hρ (h.trans hgv))
+      · exact Or.inl hgv
+    · rw [cond_apply (hG v), Set.inter_compl_self, measure_empty, mul_zero]
+
+set_option linter.style.haveILetI false in
+open MeasureTheory in
+/-- A random variable with law `μ` is the conditioning on `μ` of surely being each value:
+condition on `E = v` (`⊢`); conversely, unpack the conditioning (`cond_elim`): `E` is surely
+`v` on the fibre at `v`, so the mixture of the fibres gives `E` the law `μ` (`⊣`). -/
+theorem C_UNIT_R : E ~ μ ⊣⊢ 𝒞⟨μ⟩ v; ⌈E = v⌉ := by
+  constructor
+  · unfold hasDistribution jointConditioning
+    iintro ⟨%P, HP, %hpure⟩
+    obtain ⟨ham, hlaw⟩ := hpure
+    obtain ⟨κ, hmix, hsure⟩ := condKernel_of_law P ham hlaw
+    iexists P, κ
+    isplitl [HP]
+    · iexact HP
+    · isplitl []
+      · ipureintro
+        exact hmix
+      · iintro %v Hv
+        dsimp only [LiftPred.lift]
+        iexists (κ v)
+        isplitl [Hv]
+        · iexact Hv
+        · ipureintro
+          exact hsure v v.2
+  · intro r hv h
+    have hown : own r ⊢ jointConditioning μ (fun v ↦ ⌈E = v⌉) :=
+      fun _ _ hry ↦ UpperSet.upper _ hry h
+    obtain ⟨s, hbfs, hsr, w, hsmix, hX⟩ := cond_elim hv hown
+    -- on each fibre the continuation made `E` surely its value
+    have hsure : ∀ v ∈ μ.support, (w v).1 {ρ | ¬ E ρ = v} = 0 := by
+      intro v hv'
+      obtain ⟨X, hXval, hXK⟩ := hX v hv'
+      have hXv : ✓X := by
+        show X.val ≠ (⊤ : PSp Ω)
+        rw [hXval]
+        exact WithTop.coe_ne_top
+      obtain ⟨q₀, ⟨P', hq₀⟩, hq₀m⟩ := hXK X hXv (le_refl X)
+      obtain ⟨e₁, _, hlee, hown', hpure'⟩ := (Quotient.exact hq₀).2 _ hXv hq₀m
+      obtain ⟨r', ⟨hbf', hr'⟩, he₁⟩ := hown'
+      have he₁m := le_trans (le_mul_of_one_le PSp.one_le) hlee
+      have hP' := (Quotient.exact hr').2 e₁ (valid_mono he₁m hXv) he₁
+      have hP'S : P' ≤ (show PSpace Ω from ⟨⟨s.ms, (w v).1⟩, (w v).2⟩) := by
+        have h : (P' : PSp Ω) ≤ X.val := le_trans hP' he₁m
+        rw [hXval] at h
+        exact WithTop.coe_le_coe.1 h
+      exact PSpace.null_of_le hP'S hpure'
+    -- so the mixture of the fibres gives `E` the law `μ`
+    have hmix : ∀ S, @MeasurableSet Ω s.ms S →
+        s.μ S = ∫⁻ v, (w v).1 S ∂(μ.toMeasureWithMs ⊤) := by
+      letI : MeasurableSpace α := ⊤
+      intro S hS
+      rw [hsmix, Measure.bind_apply hS measurable_from_top.aemeasurable]
+    obtain ⟨ham, hlaw⟩ := law_of_fibres s (fun v ↦ (w v).1) hmix
+      (fun v _ ↦ (w v).2.measure_univ) hsure
+    exact ⟨_, ⟨s, rfl⟩, ⟨(s : PSp Ω), hbfs⟩, 1, by rw [mul_one]; exact hsr,
+      ⟨_, ⟨hbfs, rfl⟩, le_refl (⟨(s : PSp Ω), hbfs⟩ : BoundedFootprintSpace Bool)⟩,
+      ⟨ham, hlaw⟩⟩
+
+set_option linter.style.haveILetI false in
+open MeasureTheory in
+/-- Conditioning twice is conditioning once on the joint law.  Unpack both conditionings
+(`cond_elim`); the outer space `s` is the mixture of fibres `S v`, and each `S v` contains an
+inner space `s v` mixing fibres `T v w`.  Extend each `T v w` to `s`'s σ-algebra by tilting
+`S v` with the density of `T v w` over `s v`: by `mixture_of_tilts` these extensions mix back
+to `S v`, so to `s`, and each still contains `T v w`, which satisfies the continuation. -/
+theorem C_ASSOC {μ₀ : PMF (α × β)} {κ : α → PMF β} {K : (α × β) → FProp}
+  (h : μ₀ = (PMF.bind μ fun v ↦ PMF.bind (κ v) fun w ↦ PMF.pure (v, w))) :
+  𝒞⟨μ⟩ v; 𝒞⟨κ v⟩ w; K (v, w) ⊢ 𝒞⟨μ₀⟩ (v, w); K (v, w) := by
+  classical
+  subst h
+  obtain ⟨Kr, rfl⟩ : ∃ Kr : α × β → UpperSet (BoundedFootprintSpace Bool),
+      K = fun x ↦ fmk (Kr x) :=
+    ⟨fun x ↦ (K x).out, funext fun x ↦ (Quotient.out_eq _).symm⟩
+  intro r hv hr
+  have hown : own r ⊢ jointConditioning μ
+      (fun v ↦ jointConditioning (κ v) (fun w ↦ fmk (Kr (v, w)))) :=
+    fun _ _ hry ↦ UpperSet.upper _ hry hr
+  -- the outer conditioning
+  obtain ⟨s, hbfs, hsr, w, hsmix, hX⟩ := cond_elim hv hown
+  have hsp := s.2
+  -- the inner conditionings, one per value of the outer one
+  have hinner : ∀ v ∈ μ.support, ∃ (sv : PSpace Ω)
+      (wv : β → {p : Measure[sv.ms] Ω // IsProbabilityMeasure p}),
+      sv ≤ (⟨⟨s.ms, (w v).1⟩, (w v).2⟩ : PSpace Ω) ∧
+      sv.μ = ((κ v).toMeasureWithMs ⊤).bind (fun b ↦ (wv b).1) ∧
+      ∀ b ∈ (κ v).support, ∃ Y : BoundedFootprintSpace Bool,
+        Y.val = ((show PSpace Ω from ⟨⟨sv.ms, (wv b).1⟩, (wv b).2⟩) : PSp Ω) ∧
+          (own Y ⊢ fmk (Kr (v, b))) := by
+    intro v hv'
+    obtain ⟨X, hXval, hXK⟩ := hX v hv'
+    have hXv : ✓X := by
+      show X.val ≠ (⊤ : PSp Ω)
+      rw [hXval]
+      exact WithTop.coe_ne_top
+    obtain ⟨sv, hbfsv, hsvX, wv, hsvmix, hY⟩ := cond_elim hXv hXK
+    refine ⟨sv, wv, ?_, hsvmix, hY⟩
+    have h : (sv : PSp Ω) ≤ X.val := hsvX
+    rw [hXval] at h
+    exact WithTop.coe_le_coe.1 h
+  choose sv wv hsvle hsvmix hY using hinner
+  -- the joint fibres: `S v` tilted by the density of `T v b` over `s v`
+  let Λμ : α × β → Measure[s.ms] Ω := fun x ↦
+    if hx : x.1 ∈ μ.support ∧ x.2 ∈ (κ x.1).support then
+      (w x.1).1.withDensity (((wv x.1 hx.1 x.2).1).rnDeriv (sv x.1 hx.1).μ)
+    else s.μ
+  -- on the inner space's sets, the joint fibre is `T v b`
+  have hΛT : ∀ v (hv : v ∈ μ.support), ∀ b ∈ (κ v).support, ∀ A,
+      @MeasurableSet Ω (sv v hv).ms A → Λμ (v, b) A = (wv v hv b).1 A := by
+    intro v hv b hb A hA
+    haveI := (wv v hv b).2
+    have hsvp := (sv v hv).2
+    have hac : (wv v hv b).1 ≪ (sv v hv).μ := bind_fibre_ac (hsvmix v hv) hb
+    simp only [Λμ, show (v, b).1 ∈ μ.support ∧ (v, b).2 ∈ (κ (v, b).1).support from ⟨hv, hb⟩]
+    refine (PSpace.withDensity_le_apply (hsvle v hv)
+      (@Measure.measurable_rnDeriv Ω (sv v hv).ms (wv v hv b).1 (sv v hv).μ) hA).trans ?_
+    rw [Measure.withDensity_rnDeriv_eq _ _ hac]
+  have hΛprob : ∀ x, IsProbabilityMeasure (Λμ x) := by
+    rintro ⟨v, b⟩
+    by_cases hx : v ∈ μ.support ∧ b ∈ (κ v).support
+    · constructor
+      rw [hΛT v hx.1 b hx.2 _ MeasurableSet.univ]
+      exact (wv v hx.1 b).2.measure_univ
+    · simp only [Λμ, show ¬ ((v, b).1 ∈ μ.support ∧ (v, b).2 ∈ (κ (v, b).1).support) from hx,
+        ↓reduceDIte]
+      exact hsp
+  letI : MeasurableSpace (α × β) := ⊤
+  obtain ⟨Λk, hΛk⟩ : ∃ Λk : ProbabilityTheory.TrivialMarkovKernel (α × β) s, ∀ x, Λk.1 x = Λμ x := by
+    letI : MeasurableSpace Ω := s.ms
+    exact ⟨⟨⟨Λμ, measurable_from_top⟩, ⟨hΛprob⟩⟩, fun _ ↦ rfl⟩
+  -- `s` is the joint mixture of the joint fibres
+  have hΛmix : s.μ = (((μ.bind fun v ↦ (κ v).bind fun w ↦ PMF.pure (v, w)).toMeasureWithMs ⊤).bind
+      Λk.1) := by
+    refine @Measure.ext Ω s.ms _ _ fun A hA ↦ ?_
+    rw [Measure.bind_apply hA (ProbabilityTheory.Kernel.measurable Λk.1).aemeasurable,
+      lintegral_pmf_bind_pair, hsmix]
+    letI : MeasurableSpace α := ⊤
+    rw [Measure.bind_apply hA measurable_from_top.aemeasurable]
+    refine lintegral_congr_ae ?_
+    filter_upwards [ae_mem_support μ] with v hv
+    refine (mixture_of_tilts (hsvle v hv) (κ v) (fun b ↦ (wv v hv b).1) (fun b ↦ (wv v hv b).2)
+      (hsvmix v hv) hA).trans ?_
+    refine lintegral_congr_ae ?_
+    filter_upwards [ae_mem_support (κ v)] with b hb
+    rw [hΛk]
+    simp only [Λμ, show (v, b).1 ∈ μ.support ∧ (v, b).2 ∈ (κ (v, b).1).support from ⟨hv, hb⟩]
+    rfl
+  -- the joint conditioning, framed by nothing: each joint fibre contains `T v b`
+  refine ⟨_, ⟨s, rfl⟩, _, ⟨Λk, rfl⟩, ⟨(s : PSp Ω), hbfs⟩, 1, by rw [mul_one]; exact hsr,
+    ⟨_, ⟨hbfs, rfl⟩, le_refl (⟨(s : PSp Ω), hbfs⟩ : BoundedFootprintSpace Bool)⟩,
+    1, 1, le_of_eq (mul_one 1), hΛmix, ?_⟩
+  intro p ⟨x, hxp⟩
+  obtain ⟨⟨a, b⟩, hab⟩ := x
+  obtain ⟨ha, hb⟩ : a ∈ μ.support ∧ b ∈ (κ a).support := by
+    rw [PMF.mem_support_bind_iff] at hab
+    obtain ⟨v, hv, hvb⟩ := hab
+    rw [PMF.mem_support_bind_iff] at hvb
+    obtain ⟨b', hb', hpb⟩ := hvb
+    rw [PMF.mem_support_pure_iff] at hpb
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj hpb
+    exact ⟨hv, hb'⟩
+  refine (Quotient.exact hxp).1 1 valid_one fun y _ hy ↦ ?_
+  rw [one_mul]
+  -- `y` owns the joint fibre, hence `T a b`, which satisfies the continuation
+  obtain ⟨q, ⟨hbfΛ, hq⟩, hyq⟩ := hy
+  have hvy : ✓y := valid_mono (le_of_eq (one_mul y).symm) ‹_›
+  have hΛy := (Quotient.exact hq).2 y hvy hyq
+  obtain ⟨Y, hYval, hYK⟩ := hY a ha b hb
+  have hTΛ : (⟨⟨(sv a ha).ms, (wv a ha b).1⟩, (wv a ha b).2⟩ : PSpace Ω)
+      ≤ (Λk (a, b) : PSpace Ω) :=
+    PSpace.le_of_measure_eq (le_trans (hsvle a ha).1 le_rfl)
+      fun u hu ↦ by
+        show _ = Λk.1 (a, b) u
+        rw [hΛk]
+        exact (hΛT a ha b hb u hu).symm
+  have hYy : Y ≤ y := by
+    refine le_trans ?_ hΛy
+    show Y.val ≤ ((Λk (a, b) : PSpace Ω) : PSp Ω)
+    rw [hYval]
+    exact WithTop.coe_le_coe.2 hTΛ
+  exact hYK y hvy hYy
 
 end JointConditioningRules
 
@@ -897,7 +1494,7 @@ lemma valuePost_const {α : Type} (x : α) (Q : α → FProp) : Q x ⊢ valuePos
         isplitl []
         · exact ownP_one
         · ipureintro
-          simp [LiftAny.lift]
+          simp [LiftUnary.lift]
       · iexact HQ
 
 open Interp in

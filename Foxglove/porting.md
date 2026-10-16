@@ -36,3 +36,10 @@ Format:
 - `C-CONS` | Rules.lean/C_Cons | Assertion.lean/C_CONS
 
 - `C-FRAME` | Rules.lean/C_Frame | Assertion.lean/C_FRAME
+
+- `C-UNIT_L` | Rules.lean/C_Unit_L | Assertion.lean/C_UNIT_L (droppped `Countable` requirement)
+
+- `C-UNIT_R` | Rules.lean/C_Unit_R | Assertion.lean/C_UNIT_R
+
+- `C-ASSOC` | Rules.lean/C_Assoc | Assertion.lean/C_ASSOC
+
