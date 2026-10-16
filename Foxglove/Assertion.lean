@@ -79,7 +79,12 @@ def jointConditioning {A : Type} (μ : PMF A) (K : A → FProp) : FProp :=
       ∀ v : μ.support, ownP (κ v) -∗ K v
   )
 
-notation "𝒞" "⟨" μ "⟩" v ";" K => jointConditioning μ (fun v => iprop(K))
+
+/--
+Need to overrule `⊢` and `⊣⊢` to state stuff like `𝒞⟨μ⟩ v; K₁ v ⊢ 𝒞⟨μ⟩ v; K₂ v`.
+These happen to be at 29.
+-/
+notation:29 "𝒞" "⟨" μ:arg "⟩" v:arg ";" K:29 => jointConditioning μ (fun v => iprop(K))
 
 def almostMeasurable {A : Type} (E : RV A) (P : PSp Ω) : Prop :=
   match P with
@@ -213,11 +218,13 @@ disregard.
 TODO - They need a review because I kinda just put whatever I thought was semi-reasonable.
 -/
 
-section DistributionOwnershipRules
+section Rules
 
 variable {P Q : FProp} {α β : Type}
          {E E₁ E₂ : RV Bool}
          {μ μ' μ₁ μ₂ : PMF Bool}
+
+section DistributionOwnershipRules
 
 /--
 Not relevant for Foxglove.
@@ -632,15 +639,11 @@ end DistributionOwnershipRules
 
 section JointConditioningRules
 
+variable {μ : PMF α} {K₁ K₂ : α → FProp}
 
-
-end JointConditioningRules
-
-lemma C_True
-  {A : Type} {μ : PMF A}
-  : ⊢ (𝒞⟨μ⟩ _v; ftrue : FProp) := by
+lemma C_TRUE : ⊢ (𝒞⟨μ⟩ _v; ftrue : FProp) := by
   unfold jointConditioning
-  iexists (1 : PSpace Ω), unitKernel A
+  iexists (1 : PSpace Ω), unitKernel α
   isplitl []
   · exact ownP_one
   · isplitl []
@@ -679,9 +682,7 @@ set_option linter.style.haveILetI false in
 /-- Conditioning with a `False` continuation is `False`: pick a value in the support and
 hand the continuation the fibre it asks for.  The fibre composes with the continuation's
 frame by `PSpace.isIndependentProduct_reweight`. -/
-lemma C_False
-  {A : Type} {μ : PMF A}
-  : (𝒞⟨μ⟩ _v; ffalse : FProp) ⊢ ffalse := by
+lemma C_FALSE : (𝒞⟨μ⟩ _v; ffalse : FProp) ⊢ ffalse := by
   intro r hv h
   obtain ⟨q, ⟨m, hq⟩, hqr⟩ := h
   obtain ⟨q', ⟨κ, hq'⟩, hq'r⟩ := (Quotient.exact hq).2 r hv hqr
@@ -725,6 +726,24 @@ lemma C_False
   exact hall _ ⟨⟨v, hvsupp⟩, rfl⟩ _ hvalid
     ⟨_, ⟨hbfk, rfl⟩,
       le_refl (⟨((κ v : PSpace Ω) : PSp Ω), hbfk⟩ : BoundedFootprintSpace Bool)⟩
+
+theorem C_CONS (h : ∀ v, K₁ v ⊢ K₂ v) : 𝒞⟨μ⟩ v; K₁ v ⊢ 𝒞⟨μ⟩ v; K₂ v := by
+  unfold jointConditioning
+  iintro ⟨%m, %κ, Hown, %hmix, Hall⟩
+  iexists m, κ
+  isplitl [Hown]
+  · iexact Hown
+  · isplitl []
+    · ipureintro
+      exact hmix
+    · iintro %v Hv
+      iapply (h v)
+      iapply Hall
+      iexact Hv
+
+end JointConditioningRules
+
+end Rules
 
 open MeasureTheory in
 theorem EDistInj

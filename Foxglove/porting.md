@@ -26,3 +26,11 @@ Format:
 - `SURE-AND-STAR` | Rules.lean/Sure_And_Star | Assertion.lean/SURE_AND_STAR
 
 - `PROD-SPLIT` | Rules.lean/Prod_Split | Assertion.lean/PROD_SPLIT
+
+### Joint conditioning rules
+
+- `C-TRUE` | Rules.lean/C_True | Assertion.lean/C_TRUE
+
+- `C-TRUE` | Rules.lean/C_False | Assertion.lean/C_FALSE
+
+- `C-CONS` | Rules.lean/C_Cons | Assertion.lean/C_CONS
