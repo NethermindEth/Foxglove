@@ -81,10 +81,15 @@ def jointConditioning {A : Type} (μ : PMF A) (K : A → FProp) : FProp :=
 
 
 /--
-Need to overrule `⊢` and `⊣⊢` to state stuff like `𝒞⟨μ⟩ v; K₁ v ⊢ 𝒞⟨μ⟩ v; K₂ v`.
-These happen to be at 29.
+A tale of precedence!
+
+- Need to overrule `⊢` and `⊣⊢` to state stuff like `𝒞⟨μ⟩ v; K₁ v ⊢ 𝒞⟨μ⟩ v; K₂ v`.
+  These happen to be at 29.
+
+- Ehh... `∗` wants at least 36; onwards and upwards.
+  `P ∗ 𝒞⟨μ⟩ v; K v ⊢ 𝒞⟨μ⟩ v; (P ∗ (K v))`
 -/
-notation:29 "𝒞" "⟨" μ:arg "⟩" v:arg ";" K:29 => jointConditioning μ (fun v => iprop(K))
+notation:36 "𝒞" "⟨" μ:arg "⟩" v:arg ";" K:36 => jointConditioning μ (fun v => iprop(K))
 
 def almostMeasurable {A : Type} (E : RV A) (P : PSp Ω) : Prop :=
   match P with
@@ -221,6 +226,7 @@ TODO - They need a review because I kinda just put whatever I thought was semi-r
 section Rules
 
 variable {P Q : FProp} {α β : Type}
+         {v₀ : α}
          {E E₁ E₂ : RV Bool}
          {μ μ' μ₁ μ₂ : PMF Bool}
 
@@ -639,7 +645,7 @@ end DistributionOwnershipRules
 
 section JointConditioningRules
 
-variable {μ : PMF α} {K₁ K₂ : α → FProp}
+variable {μ : PMF α} {K K₁ K₂ : α → FProp}
 
 lemma C_TRUE : ⊢ (𝒞⟨μ⟩ _v; ftrue : FProp) := by
   unfold jointConditioning
@@ -740,6 +746,26 @@ theorem C_CONS (h : ∀ v, K₁ v ⊢ K₂ v) : 𝒞⟨μ⟩ v; K₁ v ⊢ 𝒞�
       iapply (h v)
       iapply Hall
       iexact Hv
+
+/-- A frame can be moved under conditioning: keep the space and the kernel, and hand the frame
+to every fibre's continuation. -/
+theorem C_FRAME : P ∗ 𝒞⟨μ⟩ v; K v ⊢ 𝒞⟨μ⟩ v; (P ∗ K v) := by
+  unfold jointConditioning
+  iintro ⟨HP, %m, %κ, Hown, %hmix, Hall⟩
+  iexists m, κ
+  isplitl [Hown]
+  · iexact Hown
+  · isplitl []
+    · ipureintro
+      exact hmix
+    · iintro %v Hv
+      isplitl [HP]
+      · iexact HP
+      · iapply Hall
+        iexact Hv
+
+theorem C_UNIT_L [Countable α] :
+  𝒞⟨δ v₀⟩ _v; K v₀ ⊣⊢ K v₀ 
 
 end JointConditioningRules
 

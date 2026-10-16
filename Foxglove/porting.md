@@ -34,3 +34,5 @@ Format:
 - `C-TRUE` | Rules.lean/C_False | Assertion.lean/C_FALSE
 
 - `C-CONS` | Rules.lean/C_Cons | Assertion.lean/C_CONS
+
+- `C-FRAME` | Rules.lean/C_Frame | Assertion.lean/C_FRAME
