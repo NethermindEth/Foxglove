@@ -45,3 +45,8 @@ Format:
 
 - `C-UNASSOC` | Rules.lean/C_Unassoc | Assertion.lean/C_UNASSOC
 
+- `C-AND` | Rules.lean/C_And | ~~Assertion.lean/C_AND~~
+
+- `C-SKOLEM` | Rules.lean/C_Skolem | Assertion.lean/C_SKOLEM
+
+- `C-TRANSF` | Rules.lean/C_Transf | Assertion.lean/C_TRANSF (use the support explicitly)

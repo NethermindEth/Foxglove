@@ -231,13 +231,6 @@ lemma fals_entails : ffalse ⊢ P := by
   apply pure_elim'
   grind
 
-/-
-Rules named `<RULE>'` are heavily modified from the Bluebell model and are likely safe to
-disregard.
-
-TODO - They need a review because I kinda just put whatever I thought was semi-reasonable.
--/
-
 section Rules
 
 variable {P Q : FProp} {α β : Type}
@@ -249,10 +242,10 @@ variable {P Q : FProp} {α β : Type}
 section DistributionOwnershipRules
 
 /--
-Not relevant for Foxglove.
+Not relevant for Foxglove. I put `'` after its name, honestly, this can just go away.
 -/
 private
-theorem AND_TO_STAR'_PRF (h : (⊢ P) ∨ (⊢ Q)) : P ∧ Q ⊢ P ∗ Q := by
+theorem AND_TO_STAR' (h : (⊢ P) ∨ (⊢ Q)) : P ∧ Q ⊢ P ∗ Q := by
   rcases h with hP | hQ
   · exact entails_trans and_elim_r (entails_trans emp_sep.2 (sep_mono_left hP))
   · exact entails_trans and_elim_l (entails_trans sep_emp.2 (sep_mono_right hQ))
@@ -1434,6 +1427,121 @@ theorem C_UNASSOC {K : β → FProp} :
           · iintro %b Hb
             iapply (hKb v b ((PMF.mem_support_bind_iff _ _ _).2 ⟨v, v.2, b.2⟩))
             iexact Hb
+  exact key r hv ⟨_, ⟨hbfs, rfl⟩, hsr⟩
+
+/-
+Does not apply in our unary logic. (Bluebell carries a side-condition here.)
+
+theorem C_AND : ¬ ∀ {K₁ K₂ : α → FProp}, 𝒞⟨μ⟩ v; K₁ v ∧ 𝒞⟨μ⟩ v; K₂ v ⊢ 𝒞⟨μ⟩ v; (K₁ v ∧ K₂ v) :=
+  sorry
+-/
+
+/--
+Note: In Bluebell, we have `𝜇 : D(Σ𝐴)` side condition.
+Here, we take a `μ` that's a `PMF`, not a measure. As such, every subset is measurable, and we are,
+as some would say, Gucci.
+-/
+theorem C_SKOLEM {α X : Type} {μ : PMF α} {Q : (α × X) → FProp} :
+  𝒞⟨μ⟩ v; (∃ x : X, Q (v, x)) ⊢ ∃ (f : α → X), 𝒞⟨μ⟩ v; Q (v, f v) := by
+  classical
+  obtain ⟨Qr, rfl⟩ : ∃ Qr : α × X → UpperSet (BoundedFootprintSpace Bool),
+      Q = fun x ↦ fmk (Qr x) :=
+    ⟨fun x ↦ (Q x).out, funext fun x ↦ (Quotient.out_eq _).symm⟩
+  intro r hv hr
+  have hown : own r ⊢ jointConditioning μ (fun v ↦ iprop(∃ x : X, fmk (Qr (v, x)))) :=
+    fun _ _ hry ↦ UpperSet.upper _ hry hr
+  obtain ⟨s, hbfs, hsr, w, hsmix, hX⟩ := cond_elim hv hown
+  -- a witness per value in the support, read off the fibre itself
+  have hwit : ∀ v ∈ μ.support, ∃ x : X, ∀ p : PSpace Ω,
+      (p : PSp Ω) = ((show PSpace Ω from ⟨⟨s.ms, (w v).1⟩, (w v).2⟩) : PSp Ω) →
+        ownP p ⊢ fmk (Qr (v, x)) := by
+    intro v hv'
+    obtain ⟨Y, hYval, hYK⟩ := hX v hv'
+    have hYv : ✓Y := by
+      show Y.val ≠ (⊤ : PSp Ω)
+      rw [hYval]
+      exact WithTop.coe_ne_top
+    obtain ⟨q, ⟨x, hqx⟩, hYq⟩ := hYK Y hYv (le_refl Y)
+    have hmem := (Quotient.exact hqx).2 Y hYv hYq
+    refine ⟨x, fun p hp ↦ ?_⟩
+    unfold ownP
+    refine Iris.BI.exists_elim fun hbf ↦ ?_
+    intro y _ hy
+    have hpY : (⟨(p : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool) = Y :=
+      Subtype.ext (hp.trans hYval.symm)
+    rw [hpY] at hy
+    exact UpperSet.upper _ hy hmem
+  obtain ⟨v₀, hv₀⟩ := μ.support_nonempty
+  have : Nonempty X := ⟨(hwit v₀ hv₀).choose⟩
+  choose! f hf using hwit
+  -- the fibres of `s` themselves form the kernel
+  let ℓ : ProbabilityTheory.TrivialMarkovKernel α s :=
+    letI : MeasurableSpace Ω := s.ms
+    letI : MeasurableSpace α := ⊤
+    ⟨⟨fun v ↦ (w v).1, measurable_from_top⟩, ⟨fun v ↦ (w v).2⟩⟩
+  have key : ownP s ⊢ ∃ f : α → X, 𝒞⟨μ⟩ v; fmk (Qr (v, f v)) := by
+    iintro Hown
+    iexists f
+    unfold jointConditioning
+    iexists s, ℓ
+    isplitl [Hown]
+    · iexact Hown
+    · isplitl []
+      · ipureintro
+        exact hsmix
+      · iintro %v Hv
+        iapply (hf v.1 v.2 (ℓ v.1) rfl)
+        iexact Hv
+  exact key r hv ⟨_, ⟨hbfs, rfl⟩, hsr⟩
+
+set_option linter.style.haveILetI false in
+open MeasureTheory in
+/-- Relabelling the values of a conditioning along a bijection of supports that preserves
+the weights.  Keep the space and pull the fibres back along `f`: the mixture over `μ'` is the
+mixture over `μ` reindexed by the bijection. -/
+theorem C_TRANSF {μ : PMF α} {μ' : PMF β} {f : β → α} {K : α → FProp}
+  (h₁ : Set.BijOn f μ'.support μ.support)
+  (h₂ : ∀ b ∈ μ'.support, μ' b = μ (f b)) :
+  𝒞⟨μ⟩ a; K a ⊢ 𝒞⟨μ'⟩ b; K (f b) := by
+  intro r hv hr
+  have hown : own r ⊢ jointConditioning μ (fun a ↦ K a) :=
+    fun _ _ hry ↦ UpperSet.upper _ hry hr
+  obtain ⟨s, hbfs, hsr, w, hsmix, hX⟩ := cond_elim hv hown
+  -- the fibres pulled back along `f`
+  let ℓ : ProbabilityTheory.TrivialMarkovKernel β s :=
+    letI : MeasurableSpace Ω := s.ms
+    letI : MeasurableSpace β := ⊤
+    ⟨⟨fun b ↦ (w (f b)).1, measurable_from_top⟩, ⟨fun b ↦ (w (f b)).2⟩⟩
+  -- they mix to `s` along `μ'`: reindex the sum over the support by the bijection
+  have hℓmix : s.μ = (μ'.toMeasureWithMs ⊤).bind ℓ.1 := by
+    refine @Measure.ext Ω s.ms _ _ fun A hA ↦ ?_
+    letI : MeasurableSpace α := ⊤
+    rw [Measure.bind_apply hA (ProbabilityTheory.Kernel.measurable ℓ.1).aemeasurable, hsmix,
+      Measure.bind_apply hA measurable_from_top.aemeasurable,
+      pmf_lintegral_eq_tsum, pmf_lintegral_eq_tsum, ← h₁.equiv.tsum_eq]
+    refine tsum_congr fun b ↦ ?_
+    show (w (f b)).1 A * μ (f b) = (w (f b)).1 A * μ' b
+    rw [h₂ b b.2]
+  have hKb : ∀ b ∈ μ'.support, ownP (ℓ b) ⊢ K (f b) := by
+    intro b hb
+    obtain ⟨X, hXval, hXK⟩ := hX (f b) (h₁.mapsTo hb)
+    unfold ownP
+    refine Iris.BI.exists_elim fun hbf ↦ ?_
+    rw [show (⟨((ℓ b : PSpace Ω) : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool) = X from
+      Subtype.ext (by rw [hXval]; rfl)]
+    exact hXK
+  have key : ownP s ⊢ 𝒞⟨μ'⟩ b; K (f b) := by
+    unfold jointConditioning
+    iintro Hown
+    iexists s, ℓ
+    isplitl [Hown]
+    · iexact Hown
+    · isplitl []
+      · ipureintro
+        exact hℓmix
+      · iintro %b Hb
+        iapply (hKb b.1 b.2)
+        iexact Hb
   exact key r hv ⟨_, ⟨hbfs, rfl⟩, hsr⟩
 
 end JointConditioningRules
