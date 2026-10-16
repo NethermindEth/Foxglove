@@ -17,10 +17,12 @@ Format:
 
 ### Distribution ownership rules
 
-- AND-TO-STAR | Rules.lean/And_To_Star | ~~Assertion.lean/AND_TO_STAR~~' Does not apply.
+- `AND-TO-STAR` | Rules.lean/And_To_Star | ~~Assertion.lean/AND_TO_STAR'~~
 
-- DIST-INJ | Rules.lean/Dist_Inj | Assertion.lean/DIST_INJ
+- `DIST-INJ` | Rules.lean/Dist_Inj | Assertion.lean/DIST_INJ
 
-- SURE-MERGE | Rules.lean/Sure_Merge | Assertion.lean/SURE_MERGE
+- `SURE-MERGE` | Rules.lean/Sure_Merge | Assertion.lean/SURE_MERGE
 
-- SURE-AND-STAR | Rules.lean/Sure_And_Star | Assertion.lean/SURE_AND_STAR
+- `SURE-AND-STAR` | Rules.lean/Sure_And_Star | Assertion.lean/SURE_AND_STAR
+
+- `PROD-SPLIT` | Rules.lean/Prod_Split | Assertion.lean/PROD_SPLIT
