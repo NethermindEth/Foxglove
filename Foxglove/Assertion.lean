@@ -91,9 +91,11 @@ through a wand, so no single residual has to serve every `v` at once; and the mi
 definitional, so no side condition states it. -/
 def jointConditioning {A : Type} (μ : PMF A) (K : A → FProp) : FProp :=
   iprop(
-    ∃ κ : A → PSpace Ω,
-      ownP (PSpace.wsum μ κ) ∗
-      ⌜∀ v : μ.support, satP (κ v) (K v)⌝
+    ∃ m : PSpace Ω,
+    ∃ κ : TrivialMarkovKernel A m,
+      ownP m ∗
+      ⌜m.μ = (μ.toMeasureWithMs ⊤).bind κ⌝ ∗
+      ∀ v : μ.support, ownP (κ v) -∗ K v
   )
 
 notation "𝒞" "⟨" μ "⟩" v ";" K => jointConditioning μ (fun v => iprop(K))
@@ -624,10 +626,477 @@ lemma CWPPure {α : Type} {m : Type → Type} [Monad m] [Interp.LawfulBernoulliI
   · rw [result_run_pure (m := m) x μ₀ hvalid, hU]
     exact own_entails_of_mem ha
 
+/-! ### Auxiliaries for `CWPSwap` -/
+
+section SwapAux
+
+open MeasureTheory ProbabilityTheory
+
+/-- `p ≤ S` from the σ-algebras and the measures on `p`'s sets. -/
+lemma PSpace.le_of_ms_le {p S : PSpace Ω} (h : p.ms ≤ S.ms)
+    (hμ : ∀ E, MeasurableSet[p.ms] E → S.μ E = p.μ E) : p ≤ S := by
+  refine ⟨h, ?_⟩
+  apply @Measure.ext Ω p.ms
+  intro u hu
+  exact (hμ u hu).symm.trans (Measure.le_preserves_measure (h := h) (μ := S.μ) (hu := hu)).symm
+
+/-- A space below `S` that measures no more than `f` sits below `S` trimmed to `f`. -/
+lemma PSpace.le_trim_of_le {p S : PSpace Ω} {f : MeasurableSpace Ω} (hf : f ≤ S.ms)
+    (hpS : p ≤ S) (hpf : p.ms ≤ f) : p ≤ @PSpace.trim Ω S f hf := by
+  refine PSpace.le_of_ms_le hpf fun E hE ↦ ?_
+  show (MeasureOnSpace.trim hf).μ E = p.μ E
+  rw [MeasureOnSpace.trim_eq hf (hpf E hE), MeasureOnSpace.le_preserves_measure hpS hE]
+
+/-- A set integral of a function the smaller space measures can be taken in either space. -/
+lemma PSpace.setLIntegral_of_le {s P : PSpace Ω} (hsP : s ≤ P) {g : Ω → ENNReal}
+    (hg : Measurable[s.ms] g) {A : Set Ω} (hA : MeasurableSet[s.ms] A) :
+    ∫⁻ x in A, g x ∂P.μ = ∫⁻ x in A, g x ∂s.μ := by
+  have htrim : s.μ = P.μ.trim hsP.1 := by
+    apply @Measure.ext Ω s.ms
+    intro u hu
+    rw [MeasureOnSpace.le_preserves_measure hsP hu,
+      @trim_measurableSet_eq Ω s.ms P.ms P.μ u hsP.1 hu]
+  rw [htrim, setLIntegral_trim hsP.1 hg hA]
+
+/-- **Reweighting an ambient along a factor.**  If `s = m ⊗ d` sits in `P`, then tilting `P`
+by `dν/dm` turns the `m`-factor into `ν` and leaves `d` alone. -/
+lemma PSpace.withDensity_rect {m d s P : PSpace Ω} (hs : s =ᵢ m ⊕ᵢ d) (hsP : s ≤ P)
+    (ν : Measure[m.ms] Ω) [IsProbabilityMeasure ν] (hac : ν ≪ m.μ)
+    {E : Set Ω} (hE : MeasurableSet[d.ms] E) {F : Set Ω} (hF : MeasurableSet[m.ms] F) :
+    (P.μ.withDensity (ν.rnDeriv m.μ)) (E ∩ F) = d.μ E * ν F := by
+  have hmp := m.2
+  have hmle : m.ms ≤ s.ms := (PSpace.le_of_isIndependentProduct_left hs).1
+  have hdle : d.ms ≤ s.ms := (PSpace.le_of_isIndependentProduct_right hs).1
+  have hfmeas : Measurable[m.ms] (ν.rnDeriv m.μ) := Measure.measurable_rnDeriv ν m.μ
+  have hEF : MeasurableSet[s.ms] (E ∩ F) := (hdle _ hE).inter (hmle _ hF)
+  rw [withDensity_apply _ (hsP.1 _ hEF),
+    PSpace.setLIntegral_of_le hsP (hfmeas.mono hmle le_rfl) hEF,
+    PSpace.lintegral_rect (independentProduct_comm hs) hfmeas hE hF,
+    ← withDensity_apply _ hF, Measure.withDensity_rnDeriv_eq ν m.μ hac]
+
+/-- **Mixing the reweighted ambients back.**  If `m` is the `w`-mixture of the `ν i`, then the
+ambient `P ≥ m` is the `w`-mixture of its tilts by `dν i/dm`. -/
+lemma PSpace.withDensity_mixture {ι : Type} [Countable ι] {m P : PSpace Ω} (hmP : m ≤ P)
+    (w : ι → ENNReal) (ν : ι → Measure[m.ms] Ω) [∀ i, IsProbabilityMeasure (ν i)]
+    (hac : ∀ i, ν i ≪ m.μ)
+    (hmix : ∀ F, MeasurableSet[m.ms] F → m.μ F = ∑' i, w i * ν i F)
+    {E : Set Ω} (hE : MeasurableSet[P.ms] E) :
+    P.μ E = ∑' i, w i * (P.μ.withDensity ((ν i).rnDeriv m.μ)) E := by
+  have hmp := m.2
+  have hPp := P.2
+  have hfm : ∀ i, Measurable[m.ms] ((ν i).rnDeriv m.μ) := fun i ↦ Measure.measurable_rnDeriv _ _
+  have hfP : ∀ i, Measurable[P.ms] ((ν i).rnDeriv m.μ) := fun i ↦ (hfm i).mono hmP.1 le_rfl
+  set g : Ω → ENNReal := fun x ↦ ∑' i, w i * (ν i).rnDeriv m.μ x with hg
+  have hgm : Measurable[m.ms] g := Measurable.ennreal_tsum fun i ↦ (hfm i).const_mul _
+  -- `g` is the density of `m.μ` against itself
+  have hg1 : g =ᵐ[m.μ] 1 := by
+    refine @ae_eq_of_forall_setLIntegral_eq_of_sigmaFinite Ω m.ms m.μ _ g 1 hgm
+      measurable_const ?_
+    intro F hF _
+    rw [hg, lintegral_tsum (fun i ↦ ((hfm i).const_mul _).aemeasurable)]
+    simp_rw [lintegral_const_mul _ (hfm _)]
+    have hterm : ∀ i, w i * ∫⁻ x in F, (ν i).rnDeriv m.μ x ∂m.μ = w i * ν i F := by
+      intro i
+      rw [← withDensity_apply _ hF, Measure.withDensity_rnDeriv_eq _ _ (hac i)]
+    rw [tsum_congr hterm, ← hmix F hF]
+    simp
+  have hg1P : g =ᵐ[P.μ] 1 := PSpace.ae_eq_of_le hmP hg1
+  symm
+  calc ∑' i, w i * (P.μ.withDensity ((ν i).rnDeriv m.μ)) E
+      = ∑' i, ∫⁻ x in E, w i * (ν i).rnDeriv m.μ x ∂P.μ := by
+        refine tsum_congr fun i ↦ ?_
+        rw [withDensity_apply _ hE, lintegral_const_mul _ (hfP i)]
+    _ = ∫⁻ x in E, g x ∂P.μ := by
+        rw [lintegral_tsum (fun i ↦ ((hfP i).const_mul _).aemeasurable)]
+    _ = ∫⁻ x in E, 1 ∂P.μ := lintegral_congr_ae (ae_restrict_of_ae hg1P)
+    _ = P.μ E := by simp
+
+/-- **Independence of a join, from a π-system.**  A frame `c` inside `S` that is independent
+of every `A ∩ F` (with `A` from `m₁`, `F` from `m₂`) is independent of all of `m₁ ⊔ m₂`. -/
+lemma PSpace.indep_sup_of_rect {S c : PSpace Ω} {m₁ m₂ : MeasurableSpace Ω}
+    (h₁ : m₁ ≤ S.ms) (h₂ : m₂ ≤ S.ms) (hc : c ≤ S)
+    (hbase : ∀ A, MeasurableSet[m₁] A → ∀ F, MeasurableSet[m₂] F → ∀ E,
+      MeasurableSet[c.ms] E → S.μ (A ∩ F ∩ E) = S.μ (A ∩ F) * c.μ E)
+    {E : Set Ω} (hE : MeasurableSet[c.ms] E) :
+    ∀ G, MeasurableSet[m₁ ⊔ m₂] G → S.μ (G ∩ E) = S.μ G * c.μ E := by
+  have hSp := S.2
+  have hcp := c.2
+  have hES : MeasurableSet[S.ms] E := hc.1 _ hE
+  have hcE : S.μ E = c.μ E := (MeasureOnSpace.le_preserves_measure hc hE).symm
+  have hle : m₁ ⊔ m₂ ≤ S.ms := sup_le h₁ h₂
+  intro G hG
+  refine MeasurableSpace.induction_on_inter (C := fun G _ ↦ S.μ (G ∩ E) = S.μ G * c.μ E)
+    (MeasurableSpace.generateFrom_supGenerator_eq_sup m₁ m₂).symm ?_ ?_ ?_ ?_ ?_ G hG
+  · rintro _ ⟨u, v, rfl, hu, hv⟩ _ ⟨u', v', rfl, hu', hv'⟩ _
+    exact ⟨u ∩ u', v ∩ v', by rw [Set.inter_inter_inter_comm], hu.inter hu', hv.inter hv'⟩
+  · simp
+  · rintro _ ⟨A, F, rfl, hA, hF⟩
+    exact hbase A hA F hF E hE
+  · intro t ht ih
+    have htS : MeasurableSet[S.ms] t := hle _ ht
+    have hdiff : tᶜ ∩ E = E \ (t ∩ E) := by ext; simp; tauto
+    rw [hdiff, measure_sdiff Set.inter_subset_right (htS.inter hES).nullMeasurableSet
+      (measure_ne_top _ _), ih, hcE, PSpace.measure_compl htS,
+      ENNReal.sub_mul (fun _ _ ↦ measure_ne_top _ _), one_mul]
+  · intro f hdisj hfm ih
+    have hfS : ∀ i, MeasurableSet[S.ms] (f i) := fun i ↦ hle _ (hfm i)
+    rw [Set.iUnion_inter, measure_iUnion (fun i j hij ↦ (hdisj hij).mono Set.inter_subset_left
+      Set.inter_subset_left) (fun i ↦ (hfS i).inter hES), measure_iUnion hdisj hfS,
+      ← ENNReal.tsum_mul_right]
+    exact tsum_congr ih
+
+/-- A trim of `S` that is independent of a frame `c ≤ S` composes with it inside `S`. -/
+lemma PSpace.mul_trim_le {S c : PSpace Ω} {f : MeasurableSpace Ω} (hf : f ≤ S.ms) (hc : c ≤ S)
+    (hrect : ∀ G, MeasurableSet[f] G → ∀ E, MeasurableSet[c.ms] E →
+      S.μ (G ∩ E) = S.μ G * c.μ E) :
+    PSp.mul (some (@PSpace.trim Ω S f hf)) (some c) ≤ (some S : PSp Ω) := by
+  have hsup : f ⊔ c.ms ≤ S.ms := sup_le hf hc.1
+  have hT : @PSpace.trim Ω S (f ⊔ c.ms) hsup =ᵢ (@PSpace.trim Ω S f hf) ⊕ᵢ c := by
+    refine ⟨rfl, fun G hG E hE ↦ ?_⟩
+    have hGE : MeasurableSet[f ⊔ c.ms] (G ∩ E) :=
+      ((le_sup_left : f ≤ f ⊔ c.ms) _ hG).inter ((le_sup_right : c.ms ≤ f ⊔ c.ms) _ hE)
+    show (MeasureOnSpace.trim hsup).μ (G ∩ E) = (MeasureOnSpace.trim hf).μ G * c.μ E
+    rw [MeasureOnSpace.trim_eq hsup hGE, MeasureOnSpace.trim_eq hf hG]
+    exact hrect G hG E hE
+  rw [mul_respect_independentProduct hT]
+  exact WithTop.coe_le_coe.2 (PSpace.trim_le hsup)
+
+set_option linter.style.haveILetI false in
+/-- Binding a PMF against a kernel, read off on the support. -/
+lemma bind_apply_support {β : Type} {ms : MeasurableSpace Ω} (μ : PMF β)
+    (κ : @Kernel β Ω ⊤ ms) {G : Set Ω} (hG : MeasurableSet[ms] G) :
+    ((μ.toMeasureWithMs ⊤).bind κ) G = ∑' i : μ.support, μ i * κ i G := by
+  letI : MeasurableSpace β := ⊤
+  haveI : MeasurableSingletonClass β := ⟨fun _ ↦ trivial⟩
+  rw [Measure.bind_apply hG (Kernel.measurable κ).aemeasurable, PMF.toMeasureWithMs,
+    ← PMF.restrict_toMeasure_support, lintegral_countable _ μ.support_countable]
+  refine tsum_congr fun i ↦ ?_
+  rw [PMF.toMeasure_apply_singleton μ i (measurableSet_singleton _), mul_comm]
+
+/-- The σ-algebra of a resource, read off its space. -/
+lemma msOf_of_val {x : BoundedFootprintSpace Bool} {p : PSpace Ω} (h : (x : PSp Ω) = some p) :
+    msOf x = p.ms := by
+  unfold msOf
+  rw [h]
+
+/-- The σ-algebra of a defined product is the join. -/
+lemma msOf_mul {x y : BoundedFootprintSpace Bool} {p q : PSpace Ω}
+    (hx : (x : PSp Ω) = some p) (hy : (y : PSp Ω) = some q) (hv : ✓(x * y)) :
+    msOf (x * y) = p.ms ⊔ q.ms := by
+  obtain ⟨z, hz⟩ : ∃ z : PSpace Ω, ((x * y : BoundedFootprintSpace Bool) : PSp Ω) = some z :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hv)
+  have hz' : PSp.mul (some p) (some q) = some z := by
+    rw [← hx, ← hy]; exact hz
+  rw [msOf_of_val hz]
+  exact (PSp.mul_inversion hz').1
+
+end SwapAux
+
+section SwapAuxBI
+
+/-- `P ⊢ fmk U`, checked on the resources that own `P`. -/
+lemma entails_fmk_of_own {P : FProp} {U : UpperSet (BoundedFootprintSpace Bool)}
+    (h : ∀ a, ✓a → (own a ⊢ P) → a ∈ U) : P ⊢ (fmk U : FProp) := by
+  induction P using Quotient.ind with
+  | _ P =>
+  intro a hva ha
+  exact h a hva (fun _ _ hb ↦ P.upper' hb ha)
+
+lemma own_mono {x y : BoundedFootprintSpace Bool} (h : x ≤ y) : own y ⊢ own x :=
+  fun _ _ ha ↦ le_trans h ha
+
+lemma own_mul_sep {x y : BoundedFootprintSpace Bool} : own (x * y) ⊢ iprop(own x ∗ own y) :=
+  fun _ _ ha ↦ ⟨x, y, ha, le_refl x, le_refl y⟩
+
+/-- Splitting `own M ∗ W` semantically: `M` and a resource owning `W`. -/
+lemma own_sep_entails_fmk {M : BoundedFootprintSpace Bool} {W : FProp}
+    {U : UpperSet (BoundedFootprintSpace Bool)}
+    (h : ∀ a R, ✓a → M * R ≤ a → (own R ⊢ W) → a ∈ U) :
+    iprop(own M ∗ W) ⊢ (fmk U : FProp) := by
+  induction W using Quotient.ind with
+  | _ W =>
+  rintro a hva ⟨b₁, b₂, hle, hb₁, hb₂⟩
+  exact h a b₂ hva (le_trans (mul_le_mul_right_le hb₁ b₂) hle) (fun _ _ hb ↦ W.upper' hb hb₂)
+
+end SwapAuxBI
+
+set_option linter.style.haveILetI false in
+open Interp Interp.ProbTree Interp.ProbTree.BoundedFootprintPsp ProbabilityTheory MeasureTheory in
+/-- `CWPSwap`, semantically.  Reweight the ambient along each fibre of the conditioning,
+run there, and mix the runs back: the runs' mixture is the real run (`run_psp_mixture`),
+every fibre's witness lives on the one σ-algebra `m ⊔ R ⊔ fresh` (the locality clause of
+`wp'`), and that σ-algebra is independent of the frame because `m ⊗ R` was and fresh
+randomness is independent of everything prior (`run_fresh`). -/
+lemma CWPSwap_core {α β : Type} {m' : Type → Type} [Interp.BernoulliInterpretable m']
+    [Inhabited α] {C : m' α} {μ : PMF β} {Q : β → RV α → FProp}
+    (m : PSpace Ω) (κ : TrivialMarkovKernel β m)
+    (hmix : m.μ = (μ.toMeasureWithMs ⊤).bind κ)
+    (hbf : HasBoundedFootprint (m : PSp Ω)) (R : BoundedFootprintSpace Bool)
+    (hfib : ∀ v ∈ μ.support, ∀ hk : HasBoundedFootprint ((κ v : PSpace Ω) : PSp Ω),
+      own (R * ⟨((κ v : PSpace Ω) : PSp Ω), hk⟩) ⊢ wp' C (Q v)) :
+    own ((⟨(m : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool) * R)
+      ⊢ wp' C (fun X ↦ 𝒞⟨μ⟩ v; Q v X) := by
+  set Cb : BernoulliM α := BernoulliInterpretable.interp C with hCb
+  set M : BoundedFootprintSpace Bool := ⟨(m : PSp Ω), hbf⟩ with hM
+  have hmp := m.2
+  intro a hva ha μ₀ c hvalid hle
+  have ha' : M * R ≤ a := ha
+  -- the ambient, and the spaces sitting in it
+  set P₀ : PSpace Ω := ValidPSp.toPSpace ⟨μ₀.psp, hvalid⟩ with hP₀
+  have hμ₀P : μ₀.psp = .some P₀ := (Option.some_get _).symm
+  have hvμ₀ : ✓(μ₀.toSpace) := hvalid
+  have hle_amb : ∀ {x : BoundedFootprintSpace Bool} {p : PSpace Ω},
+      x ≤ μ₀.toSpace → (x : PSp Ω) = .some p → p ≤ P₀ := by
+    intro x p hx hp
+    have h : (.some p : PSp Ω) ≤ .some P₀ := by rw [← hp, ← hμ₀P]; exact hx
+    exact WithTop.coe_le_coe.1 h
+  have hMRc : (M * R) * c ≤ μ₀.toSpace := le_trans (mul_le_mul_right_le ha' c) hle
+  have hMD : M * (R * c) ≤ μ₀.toSpace := by rw [← mul_assoc]; exact hMRc
+  have hvMRc : ✓((M * R) * c) := valid_mono hMRc hvμ₀
+  have hvMR : ✓(M * R) := valid_mul_l hvMRc
+  have hvR : ✓R := valid_mul_r hvMR
+  have hvc : ✓c := valid_mul_r hvMRc
+  have hvMD : ✓(M * (R * c)) := valid_mono hMD hvμ₀
+  have hvD : ✓(R * c) := valid_mul_r hvMD
+  obtain ⟨d, hd⟩ : ∃ d : PSpace Ω, ((R * c : BoundedFootprintSpace Bool) : PSp Ω) = .some d :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hvD)
+  obtain ⟨r, hr⟩ : ∃ r : PSpace Ω, (R : PSp Ω) = .some r :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hvR)
+  obtain ⟨c', hc'⟩ : ∃ c' : PSpace Ω, (c : PSp Ω) = .some c' :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hvc)
+  obtain ⟨s, hs⟩ : ∃ s : PSpace Ω, ((M * (R * c) : BoundedFootprintSpace Bool) : PSp Ω) = .some s :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hvMD)
+  obtain ⟨y, hy⟩ : ∃ y : PSpace Ω, ((M * R : BoundedFootprintSpace Bool) : PSp Ω) = .some y :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hvMR)
+  obtain ⟨w, hw⟩ : ∃ w : PSpace Ω, (((M * R) * c : BoundedFootprintSpace Bool) : PSp Ω) = .some w :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hvMRc)
+  have hsmd : s =ᵢ m ⊕ᵢ d := by
+    apply PSp.mul_inversion
+    have h := hs
+    rw [show ((M * (R * c) : BoundedFootprintSpace Bool) : PSp Ω)
+      = PSp.mul (M : PSp Ω) ((R * c : BoundedFootprintSpace Bool) : PSp Ω) from rfl, hd] at h
+    exact h
+  have hymr : y =ᵢ m ⊕ᵢ r := by
+    apply PSp.mul_inversion
+    have h := hy
+    rw [show ((M * R : BoundedFootprintSpace Bool) : PSp Ω)
+      = PSp.mul (M : PSp Ω) (R : PSp Ω) from rfl, hr] at h
+    exact h
+  have hwyc : w =ᵢ y ⊕ᵢ c' := by
+    apply PSp.mul_inversion
+    have h := hw
+    rw [show (((M * R) * c : BoundedFootprintSpace Bool) : PSp Ω)
+      = PSp.mul ((M * R : BoundedFootprintSpace Bool) : PSp Ω) (c : PSp Ω) from rfl, hy, hc'] at h
+    exact h
+  have hsP : s ≤ P₀ := hle_amb hMD hs
+  have hwP : w ≤ P₀ := hle_amb hMRc hw
+  have hyP : y ≤ P₀ := le_trans (PSpace.le_of_isIndependentProduct_left hwyc) hwP
+  have hcP : c' ≤ P₀ := le_trans (PSpace.le_of_isIndependentProduct_right hwyc) hwP
+  have hm_le_P : m ≤ P₀ := le_trans (PSpace.le_of_isIndependentProduct_left hsmd) hsP
+  have hmP : m.ms ≤ P₀.ms := hm_le_P.1
+  have hdP : d.ms ≤ P₀.ms := le_trans (PSpace.le_of_isIndependentProduct_right hsmd).1 hsP.1
+  have hdp := d.2
+  -- the fibres, as reweightings of the ambient
+  haveI : Countable μ.support := μ.support_countable.to_subtype
+  have hac : ∀ i : μ.support, κ.1 i ≪ m.μ := fun i ↦ kernel_fibre_ac κ hmix i.2
+  haveI hκp : ∀ i : μ.support, IsProbabilityMeasure (κ.1 i) :=
+    fun i ↦ κ.2.isProbabilityMeasure i
+  set ρ : μ.support → Measure[P₀.ms] Ω :=
+    fun i ↦ P₀.μ.withDensity ((κ.1 i).rnDeriv m.μ) with hρ
+  have hρrect : ∀ i E, MeasurableSet[d.ms] E → ∀ F, MeasurableSet[m.ms] F →
+      ρ i (E ∩ F) = d.μ E * κ.1 i F :=
+    fun i E hE F hF ↦ PSpace.withDensity_rect hsmd hsP (κ.1 i) (hac i) hE hF
+  haveI hρp : ∀ i, IsProbabilityMeasure (ρ i) := fun i ↦ ⟨by
+    have h := hρrect i Set.univ MeasurableSet.univ Set.univ MeasurableSet.univ
+    rwa [Set.inter_univ, hdp.measure_univ, (hκp i).measure_univ, one_mul] at h⟩
+  have hκmix : ∀ F, MeasurableSet[m.ms] F → m.μ F = ∑' i : μ.support, μ i * κ.1 i F := by
+    intro F hF; rw [hmix]; exact bind_apply_support μ κ.1 hF
+  have hP₀mix : ∀ E, MeasurableSet[P₀.ms] E → P₀.μ E = ∑' i : μ.support, μ i * ρ i E :=
+    fun E hE ↦ PSpace.withDensity_mixture hm_le_P (fun i : μ.support ↦ μ i)
+      (fun i : μ.support ↦ κ.1 i) hac hκmix hE
+  -- the reweighted footprints
+  obtain ⟨τ, hτ⟩ : ∃ τ : μ.support → BoundedFootprintPsp,
+      ∀ i, τ i = BoundedFootprintPsp.reweight μ₀ hvalid (ρ i) (hρp i) := ⟨_, fun _ ↦ rfl⟩
+  have hτpsp : ∀ i, (τ i).psp = .some ⟨⟨P₀.ms, ρ i⟩, hρp i⟩ := fun i ↦ by rw [hτ]; rfl
+  have hτvalid : ∀ i, ✓(τ i).psp := fun i ↦ by rw [hτ]; exact reweight_valid
+  have hτtree : ∀ i, toTree (τ i) (fun _ ↦ Cb) = toTree μ₀ (fun _ ↦ Cb) :=
+    fun i ↦ by rw [hτ]; exact toTree_reweight Cb
+  have hτfresh : ∀ i, freshMs (τ i) Cb = freshMs μ₀ Cb := fun i ↦ by rw [hτ]; rfl
+  have hτres : ∀ i, result (run Cb (τ i)) = result (run Cb μ₀) :=
+    fun i ↦ by rw [hτ]; exact result_run_reweight Cb
+  -- each fibre, with the frame, sits in its reweighted ambient
+  have hvm : ✓((m : PSp Ω)) := PSp.valid_def.mpr (Option.some_ne_none _)
+  have hk : ∀ i : μ.support, HasBoundedFootprint (((κ i : PSpace Ω)) : PSp Ω) := fun i ↦
+    hasBoundedFootprint_congr hvm (PSp.valid_def.mpr (Option.some_ne_none _)) rfl hbf
+  set K : μ.support → BoundedFootprintSpace Bool := fun i ↦ ⟨((κ i : PSpace Ω) : PSp Ω), hk i⟩
+    with hK
+  have hKD : ∀ i, K i * (R * c) ≤ (τ i).toSpace := by
+    intro i
+    have hsup : m.ms ⊔ d.ms ≤ P₀.ms := sup_le hmP hdP
+    have hX : @PSpace.trim Ω ⟨⟨P₀.ms, ρ i⟩, hρp i⟩ (m.ms ⊔ d.ms) hsup
+        =ᵢ (κ i : PSpace Ω) ⊕ᵢ d := by
+      refine ⟨rfl, fun F hF E hE ↦ ?_⟩
+      have h1 : ρ i (F ∩ E) = κ.1 i F * d.μ E := by
+        rw [Set.inter_comm, hρrect i E hE F hF, mul_comm]
+      have h2 := MeasureOnSpace.trim_eq (p := ⟨P₀.ms, ρ i⟩) hsup
+        (((le_sup_left : m.ms ≤ _) _ hF).inter ((le_sup_right : d.ms ≤ _) _ hE))
+      exact h2.trans h1
+    show PSp.mul (.some (κ i : PSpace Ω)) ((R * c : BoundedFootprintSpace Bool) : PSp Ω)
+      ≤ (τ i).psp
+    rw [hd, hτpsp]
+    exact (le_of_eq (mul_respect_independentProduct hX)).trans
+      (WithTop.coe_le_coe.2 (PSpace.trim_le (p := ⟨⟨P₀.ms, ρ i⟩, hρp i⟩) hsup))
+  have hRKc : ∀ i, (R * K i) * c ≤ (τ i).toSpace := by
+    intro i; rw [mul_comm R, mul_assoc]; exact hKD i
+  have hvRK : ∀ i, ✓(R * K i) := fun i ↦ valid_mul_l (valid_mono (hRKc i) (hτvalid i))
+  -- run every fibre
+  have hfib' : ∀ i : μ.support, ∃ b : BoundedFootprintSpace Bool,
+      b * c ≤ (run C (τ i)).1.toSpace ∧ ✓b ∧
+        msOf b ≤ msOf (R * K i) ⊔ freshMs (τ i) Cb ∧
+        (own b ⊢ Q i (result (run C (τ i)))) :=
+    fun i ↦ hfib i i.2 (hk i) (R * K i) (hvRK i) (le_refl (R * K i)) (τ i) c (hτvalid i) (hRKc i)
+  choose bv hbvc hbvv hbvms hbvQ using hfib'
+  -- the run, and the reweighted runs
+  obtain ⟨S, hS, -, hSsub, -, hSpres, -⟩ := run_const μ₀ Cb hvalid
+  choose Sf hSf _ hSfsub _ _ _ using fun i : μ.support ↦ run_const (τ i) Cb (hτvalid i)
+  have htreems : (toTree μ₀ (fun _ ↦ Cb)).ms = P₀.ms := by
+    rw [toTree_ms_eq, μ₀.sigmaAgrees hvalid]
+  have hP₀S : P₀.ms ≤ S.ms := htreems ▸ hSsub
+  have hP₀Sf : ∀ i, P₀.ms ≤ (Sf i).ms := fun i ↦ by
+    have h := hSfsub i
+    rw [hτtree, htreems] at h
+    exact h
+  -- the one σ-algebra every witness lives on
+  set 𝓜 : MeasurableSpace Ω := (m.ms ⊔ r.ms) ⊔ freshMs μ₀ Cb with h𝓜
+  have hy𝓜 : y.ms = m.ms ⊔ r.ms := hymr.1
+  have h𝓜S : 𝓜 ≤ S.ms :=
+    sup_le (hy𝓜 ▸ le_trans hyP.1 hP₀S) (run_fresh μ₀ Cb hvalid hS).1
+  have h𝓜Sf : ∀ i, 𝓜 ≤ (Sf i).ms := fun i ↦ by
+    refine sup_le (hy𝓜 ▸ le_trans hyP.1 (hP₀Sf i)) ?_
+    have h := (run_fresh (τ i) Cb (hτvalid i) (hSf i)).1
+    rwa [hτfresh] at h
+  have hmsRK : ∀ i, msOf (R * K i) = r.ms ⊔ m.ms := fun i ↦
+    msOf_mul (q := (κ i : PSpace Ω)) hr rfl (hvRK i)
+  have hbv𝓜 : ∀ i, msOf (bv i) ≤ 𝓜 := fun i ↦ by
+    refine le_trans (hbvms i) ?_
+    rw [hmsRK, hτfresh, sup_comm r.ms]
+  -- the witness: the run, trimmed to `𝓜`
+  set B : PSpace Ω := @PSpace.trim Ω S 𝓜 h𝓜S with hB
+  have hvS : ✓((run Cb μ₀).1.psp) := by rw [hS]; exact Option.some_ne_none _
+  have hbfB : HasBoundedFootprint ((B : PSp Ω)) :=
+    hasBoundedFootprint_mono hvS (by rw [hS]; exact WithTop.coe_le_coe.2 (PSpace.trim_le h𝓜S))
+      (hasBoundedFootprint_of_tree _)
+  have hP₀S' : P₀ ≤ S := PSpace.le_of_ms_le hP₀S fun E hE ↦ hSpres (htreems ▸ hE)
+  have hcS : c' ≤ S := le_trans hcP hP₀S'
+  have hmrS : m.ms ⊔ r.ms ≤ S.ms := by rw [← hy𝓜]; exact le_trans hyP.1 hP₀S
+  -- `𝓜` is independent of the frame: `m ⊗ R` was, and the fresh bits are
+  have hrect : ∀ G, MeasurableSet[𝓜] G → ∀ E, MeasurableSet[c'.ms] E →
+      S.μ (G ∩ E) = S.μ G * c'.μ E := by
+    intro G hG E hE
+    refine PSpace.indep_sup_of_rect hmrS (run_fresh μ₀ Cb hvalid hS).1 hcS ?_ hE G hG
+    intro A hA F hF E hE
+    have hAy : MeasurableSet[y.ms] A := by rw [hy𝓜]; exact hA
+    have hAP : MeasurableSet[P₀.ms] A := hyP.1 _ hAy
+    have hEP : MeasurableSet[P₀.ms] E := hcP.1 _ hE
+    have hfr : ∀ {F : Set Ω}, MeasurableSet[freshMs μ₀ Cb] F → ∀ {E : Set Ω},
+        MeasurableSet[P₀.ms] E → S.μ (F ∩ E) = S.μ F * P₀.μ E :=
+      (run_fresh μ₀ Cb hvalid hS).2
+    have h1 : S.μ (A ∩ F ∩ E) = S.μ F * P₀.μ (A ∩ E) := by
+      rw [show A ∩ F ∩ E = F ∩ (A ∩ E) by ext; simp only [Set.mem_inter_iff]; tauto]
+      exact hfr hF (hAP.inter hEP)
+    have h2 : S.μ (A ∩ F) = S.μ F * P₀.μ A := by
+      rw [Set.inter_comm]; exact hfr hF hAP
+    have hAEw : MeasurableSet[w.ms] (A ∩ E) :=
+      hwyc.1.symm.le _ (mem_sup_inter y.ms c'.ms hAy hE)
+    have h3 : P₀.μ (A ∩ E) = y.μ A * c'.μ E := by
+      rw [← MeasureOnSpace.le_preserves_measure hwP hAEw]
+      exact hwyc.2 A hAy E hE
+    have h4 : P₀.μ A = y.μ A := (MeasureOnSpace.le_preserves_measure hyP hAy).symm
+    rw [h1, h2, h3, h4, mul_assoc]
+  refine ⟨⟨(B : PSp Ω), hbfB⟩, ?_, PSp.valid_def.mpr (Option.some_ne_none _), ?_, ?_⟩
+  · show PSp.mul (.some B) (c : PSp Ω) ≤ (run Cb μ₀).1.psp
+    rw [hc', hS]
+    exact PSpace.mul_trim_le h𝓜S hcS hrect
+  · rw [msOf_of_val (p := B) rfl]
+    show (m.ms ⊔ r.ms) ⊔ freshMs μ₀ Cb ≤ msOf a ⊔ freshMs μ₀ Cb
+    refine sup_le_sup_right ?_ _
+    rw [← hy𝓜, ← msOf_of_val hy]
+    exact msOf_mono ha'
+  -- the conditioning: the reweighted runs, trimmed to `𝓜`, are its fibres
+  have hfib_meas : ∀ v, ∃ ν : Measure[𝓜] Ω, IsProbabilityMeasure ν ∧
+      ∀ hv : v ∈ μ.support, ν = (@PSpace.trim Ω (Sf ⟨v, hv⟩) 𝓜 (h𝓜Sf ⟨v, hv⟩)).μ := by
+    intro v
+    by_cases hv : v ∈ μ.support
+    · exact ⟨_, (@PSpace.trim Ω (Sf ⟨v, hv⟩) 𝓜 (h𝓜Sf ⟨v, hv⟩)).2, fun _ ↦ rfl⟩
+    · exact ⟨B.μ, B.2, fun h ↦ absurd h hv⟩
+  choose κ'f hκ'p hκ'f' using hfib_meas
+  have hκ'f : ∀ i : μ.support, κ'f i = (@PSpace.trim Ω (Sf i) 𝓜 (h𝓜Sf i)).μ :=
+    fun i ↦ hκ'f' i i.2
+  obtain ⟨κ', hκ'⟩ : ∃ κ' : TrivialMarkovKernel β B, ∀ v, κ'.1 v = κ'f v := by
+    letI : MeasurableSpace β := ⊤
+    exact ⟨⟨⟨κ'f, measurable_from_top⟩, ⟨hκ'p⟩⟩, fun _ ↦ rfl⟩
+  have hmix' : B.μ = (μ.toMeasureWithMs ⊤).bind κ' := by
+    apply @Measure.ext Ω 𝓜
+    intro G hG
+    refine Eq.trans ?_ (bind_apply_support μ κ'.1 hG).symm
+    show (MeasureOnSpace.trim h𝓜S).μ G = _
+    rw [MeasureOnSpace.trim_eq h𝓜S hG,
+      run_psp_mixture μ₀ hvalid Cb (fun i : μ.support ↦ μ i) ρ hρp hP₀mix hS
+        (fun i ↦ by rw [← hτ]; exact hSf i) (h𝓜S G hG)]
+    refine tsum_congr fun i ↦ ?_
+    rw [hκ' i, hκ'f i]
+    show _ = _ * (MeasureOnSpace.trim (h𝓜Sf i)).μ G
+    rw [MeasureOnSpace.trim_eq (h𝓜Sf i) hG]
+  have hτres' : ∀ i, result (run C (τ i)) = result (run C μ₀) := hτres
+  show own (⟨(B : PSp Ω), hbfB⟩ : BoundedFootprintSpace Bool)
+    ⊢ jointConditioning μ (fun v ↦ Q v (result (run C μ₀)))
+  unfold jointConditioning
+  refine entails_trans ?_ (exists_intro B)
+  refine entails_trans ?_ (exists_intro κ')
+  refine entails_trans sep_emp.2 (sep_mono ?_ ?_)
+  · unfold ownP
+    exact exists_intro (Ψ := fun h : HasBoundedFootprint ((B : PSp Ω)) ↦
+      own (⟨(B : PSp Ω), h⟩ : BoundedFootprintSpace Bool)) hbfB
+  refine entails_trans emp_sep.2 (sep_mono (pure_intro hmix') ?_)
+  refine forall_intro fun i ↦ wand_intro (entails_trans emp_sep.1 ?_)
+  unfold ownP
+  refine exists_elim fun hk' ↦ ?_
+  have hQ := hbvQ i
+  rw [hτres' i] at hQ
+  refine entails_trans (own_mono ?_) hQ
+  -- the fibre's witness sits below the trimmed reweighted run
+  obtain ⟨bp, hbp⟩ : ∃ bp : PSpace Ω, (bv i : PSp Ω) = .some bp :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp (hbvv i))
+  have hbpSf : bp ≤ Sf i := by
+    have h : bv i ≤ (run C (τ i)).1.toSpace := le_trans (le_mul_of_one_le PSp.one_le) (hbvc i)
+    have h' : (.some bp : PSp Ω) ≤ .some (Sf i) := by rw [← hbp, ← hSf i]; exact h
+    exact WithTop.coe_le_coe.1 h'
+  have hbpms : bp.ms ≤ 𝓜 := by rw [← msOf_of_val hbp]; exact hbv𝓜 i
+  show (bv i : PSp Ω) ≤ ((κ' i : PSpace Ω) : PSp Ω)
+  rw [hbp]
+  refine WithTop.coe_le_coe.2 (PSpace.le_of_ms_le (S := (κ' i : PSpace Ω)) hbpms fun E hE ↦ ?_)
+  show κ'.1 i E = bp.μ E
+  rw [hκ' i, hκ'f i]
+  show (MeasureOnSpace.trim (h𝓜Sf i)).μ E = _
+  rw [MeasureOnSpace.trim_eq (h𝓜Sf i) (hbpms E hE)]
+  exact (MeasureOnSpace.le_preserves_measure hbpSf hE).symm
+
 lemma CWPSwap {α β : Type} {m : Type → Type} [Monad m] [Interp.BernoulliInterpretable m] [Inhabited α]
   {C : m α} {μ : PMF β} {Q : β → RV α → FProp} :
-    iprop(𝒞⟨μ⟩ v; wp C (Q v)) ⊢ wp C (fun x ↦ 𝒞⟨μ⟩ v; Q v x) := by
-  sorry
+    iprop(𝒞⟨μ⟩ v; wp' C (Q v)) ⊢ wp' C (fun x ↦ 𝒞⟨μ⟩ v; Q v x) := by
+  unfold jointConditioning
+  refine exists_elim fun m₀ ↦ exists_elim fun κ ↦ ?_
+  refine pure_elim _ (entails_trans sep_elim_right sep_elim_left) fun hmix ↦ ?_
+  refine entails_trans (sep_mono_right sep_elim_right) ?_
+  unfold ownP
+  refine entails_trans sep_exists_right.1 (exists_elim fun hbf ↦ ?_)
+  refine own_sep_entails_fmk fun a R hva hle hR ↦ ?_
+  refine CWPSwap_core m₀ κ hmix hbf R (fun v hv hk ↦ ?_) a hva hle
+  refine entails_trans own_mul_sep (entails_trans (sep_mono hR (exists_intro
+    (Ψ := fun h : HasBoundedFootprint ((κ v : PSpace Ω) : PSp Ω) ↦
+      own (⟨((κ v : PSpace Ω) : PSp Ω), h⟩ : BoundedFootprintSpace Bool)) hk)) ?_)
+  exact wand_elim (forall_elim (Ψ := fun v : μ.support ↦
+    iprop(ownP (κ v) -∗ wp' C (Q v))) ⟨v, hv⟩)
 
 /-- A postcondition that cannot tell almost-surely-equal random variables apart.
 
