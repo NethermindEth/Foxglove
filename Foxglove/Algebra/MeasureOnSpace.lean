@@ -1746,6 +1746,44 @@ lemma PSpace.wsum_ms (μ : PMF A) (κ : A → PSpace Ω) :
 lemma PSpace.wsum_mu (μ : PMF A) (κ : A → PSpace Ω) :
     (PSpace.wsum μ κ).μ = PSpace.wsumMeasure μ κ := rfl
 
+/-- **Fibres glue.**  If each fibre `κ v` of a conditioning is independent of `c` inside its
+own ambient `s v`, then the mixture `wsum μ κ` is independent of `c`.
+
+This is what the fixed-σ-algebra kernel formulation cannot give: the mixture's σ-algebra is
+the *intersection* `⨅ v, (κ v).ms`, so a set it measures is measured by *every* fibre, and
+the per-fibre independence applies to all of them at once. -/
+theorem PSpace.wsum_indep [Inhabited Ω] (μ : PMF A) (κ s : A → PSpace Ω) (c : PSpace Ω)
+    (hfib : ∀ v ∈ μ.support, s v =ᵢ (κ v) ⊕ᵢ c) :
+    ∃ t : PSpace Ω, t =ᵢ (PSpace.wsum μ κ) ⊕ᵢ c := by
+  have hκle : ∀ v ∈ μ.support, PSpace.wsumSpace μ κ ≤ (s v).ms := fun v hv ↦
+    le_trans (PSpace.wsumSpace_le hv) (PSpace.le_of_isIndependentProduct_left (hfib v hv)).1
+  have hcle : ∀ v ∈ μ.support, c.ms ≤ (s v).ms := fun v hv ↦
+    (PSpace.le_of_isIndependentProduct_right (hfib v hv)).1
+  have hGle : PSpace.wsumSpace μ κ ⊔ c.ms ≤ PSpace.wsumSpace μ s :=
+    le_iInf₂ fun v hv ↦ sup_le (hκle v hv) (hcle v hv)
+  refine ⟨@PSpace.trim Ω (PSpace.wsum μ s) (PSpace.wsumSpace μ κ ⊔ c.ms) hGle, rfl, ?_⟩
+  intro E hE F hF
+  have hEs : MeasurableSet[PSpace.wsumSpace μ κ ⊔ c.ms] E :=
+    (le_sup_left : PSpace.wsumSpace μ κ ≤ PSpace.wsumSpace μ κ ⊔ c.ms) E hE
+  have hFs : MeasurableSet[PSpace.wsumSpace μ κ ⊔ c.ms] F :=
+    (le_sup_right : c.ms ≤ PSpace.wsumSpace μ κ ⊔ c.ms) F hF
+  have hEF : MeasurableSet[PSpace.wsumSpace μ κ ⊔ c.ms] (E ∩ F) := hEs.inter hFs
+  show (MeasureOnSpace.trim hGle).μ (E ∩ F) = _
+  rw [MeasureOnSpace.trim_eq hGle hEF]
+  show PSpace.wsumMeasure μ s (E ∩ F) = _
+  rw [PSpace.wsumMeasure_apply μ s (hGle _ hEF)]
+  have hterm : ∀ v : A, μ v * (s v).μ (E ∩ F) = μ v * ((κ v).μ E * c.μ F) := by
+    intro v
+    by_cases hv : v ∈ μ.support
+    · rw [(hfib v hv).2 E (PSpace.wsumSpace_le hv E hE) F hF]
+    · simp only [PMF.mem_support_iff, not_not] at hv
+      simp [hv]
+  rw [tsum_congr hterm]
+  simp only [← mul_assoc]
+  rw [ENNReal.tsum_mul_right]
+  show _ = PSpace.wsumMeasure μ κ E * _
+  rw [PSpace.wsumMeasure_apply μ κ hE]
+
 /-- The two-point weight distribution behind `wsum₂`: mass `r` on `true` and `1 - r` on
 `false`.  Mathlib's `PMF.bernoulli` is deprecated in favour of the *measure*-valued
 `ProbabilityTheory.bernoulliMeasure`, but `wsum` mixes over a `PMF`, so we keep a `PMF`
