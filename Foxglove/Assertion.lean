@@ -237,18 +237,9 @@ variable {P Q : FProp} {α β : Type}
          {v₀ : α}
          {E E₁ : RV α} {E₂ : RV β}
          {μ μ' μ₁ : PMF α} {μ₂ : PMF β}
-         {B₁ B₂ : RV Bool}
+         {K : α → FProp}
 
 section DistributionOwnershipRules
-
-/--
-Not relevant for Foxglove. I put `'` after its name, honestly, this can just go away.
--/
-private
-theorem AND_TO_STAR' (h : (⊢ P) ∨ (⊢ Q)) : P ∧ Q ⊢ P ∗ Q := by
-  rcases h with hP | hQ
-  · exact entails_trans and_elim_r (entails_trans emp_sep.2 (sep_mono_left hP))
-  · exact entails_trans and_elim_l (entails_trans sep_emp.2 (sep_mono_right hQ))
 
 open MeasureTheory in
 theorem DIST_INJ : E ~ μ ∧ E ~ μ' ⊢ ⌜μ = μ'⌝ := by
@@ -377,7 +368,7 @@ theorem liftPred_split {a b : Ω → Prop} : ⌈fun ω ↦ a ω ∧ b ω⌉ ⊢ 
       ⟨_, ⟨hbf₀, rfl⟩, le_refl (⟨(P₀ : PSp Ω), hbf₀⟩ : BoundedFootprintSpace Bool)⟩, ?_⟩
     exact MeasureTheory.measure_mono_null (fun ρ hρ ↦ hNsub fun hab ↦ hρ hab.2) hN₀
 
-theorem SURE_MERGE : ⌈B₁⌉ ∗ ⌈B₂⌉ ⊣⊢ ⌈B₁ ∧ B₂⌉ :=
+theorem SURE_MERGE {E₁ E₂ : RV Prop} : ⌈E₁⌉ ∗ ⌈E₂⌉ ⊣⊢ ⌈E₁ ∧ E₂⌉ :=
   ⟨liftPred_sep, liftPred_split⟩
 
 open MeasureTheory in
@@ -405,7 +396,7 @@ theorem PSpace.isIndependentProduct_of_zero_one_le {p y : PSpace Ω} (hpy : p �
 
 /-- A sure fact can be split off any assertion it holds alongside: its 0-1 trim (as in
 `liftPred_split`) is independent of the whole resource and multiplies with it to itself. -/
-theorem SURE_AND_STAR : ⌈B₁⌉ ∧ P ⊢ ⌈B₁⌉ ∗ P := by
+theorem SURE_AND_STAR {a : Ω → Prop} : ⌈a⌉ ∧ P ⊢ ⌈a⌉ ∗ P := by
   induction P using Quotient.ind
   intro m hv ⟨hE, hP⟩
   obtain ⟨q, ⟨W, hq⟩, hqm⟩ := hE
@@ -656,7 +647,7 @@ section JointConditioningRules
 
 variable {K K₁ K₂ : α → FProp}
 
-lemma C_TRUE : ⊢ (𝒞⟨μ⟩ _v; ftrue : FProp) := by
+lemma C_TRUE : ⊢ 𝒞⟨μ⟩ _v; ftrue := by
   unfold jointConditioning
   iexists (1 : PSpace Ω), unitKernel α
   isplitl []
@@ -942,7 +933,7 @@ theorem cond_elim {γ : Type} {ν : PMF γ} {Kc : γ → FProp} {r : BoundedFoot
 
 /-- Conditioning with a `False` continuation is `False`: the support is nonempty, and the
 fibre owned there would have to satisfy `False`. -/
-lemma C_FALSE : (𝒞⟨μ⟩ _v; ffalse : FProp) ⊢ ffalse := by
+lemma C_FALSE : 𝒞⟨μ⟩ _v; ffalse ⊢ ffalse := by
   intro r hv h
   have hown : own r ⊢ jointConditioning μ (fun _ ↦ ffalse) :=
     fun _ _ hry ↦ UpperSet.upper _ hry h
@@ -991,7 +982,7 @@ open MeasureTheory in
 /-- Conditioning on a Dirac distribution does nothing: its only fibre is the whole space, so
 the continuation is handed back what was owned (`⊢`); conversely, condition the trivial space
 (`⊣`). -/
-theorem C_UNIT_L : 𝒞⟨δ v₀⟩ _v; K v₀ ⊣⊢ K v₀ := by
+theorem C_UNIT_L : 𝒞⟨δ v₀⟩ v; K v ⊣⊢ K v₀ := by
   constructor
   · unfold jointConditioning
     iintro ⟨%m, %κ, Hown, %hmix, Hall⟩
@@ -1020,7 +1011,11 @@ theorem C_UNIT_L : 𝒞⟨δ v₀⟩ _v; K v₀ ⊣⊢ K v₀ := by
         show PSpace.μ 1 = (((δ v₀) : PMF α).toMeasureWithMs ⊤).bind (fun _ ↦ PSpace.μ 1)
         simp [PMF.toMeasureWithMs]
       · iintro %v Hv
-        iexact HK 
+        -- the only value in the support is `v₀`
+        obtain ⟨v, hv⟩ := v
+        rw [PMF.mem_support_pure_iff] at hv
+        subst hv
+        iexact HK
 
 set_option linter.style.haveILetI false in
 open MeasureTheory in
@@ -1234,8 +1229,7 @@ theorem C_UNIT_R : E ~ μ ⊣⊢ 𝒞⟨μ⟩ v; ⌈E = v⌉ := by
       ⟨_, ⟨hbfs, rfl⟩, le_refl (⟨(s : PSp Ω), hbfs⟩ : BoundedFootprintSpace Bool)⟩,
       ⟨ham, hlaw⟩⟩
 
-variable {μ₀ : PMF (α × β)} {κ : α → PMF β} {K : (α × β) → FProp}
-
+variable {μ₀ : PMF (α × β)} {κ : α → PMF β} {K : (α × β) → FProp} in
 set_option linter.style.haveILetI false in
 open MeasureTheory in
 /-- Conditioning twice is conditioning once on the joint law.  Unpack both conditionings
@@ -1494,17 +1488,18 @@ theorem C_SKOLEM {α X : Type} {μ : PMF α} {Q : (α × X) → FProp} :
         iexact Hv
   exact key r hv ⟨_, ⟨hbfs, rfl⟩, hsr⟩
 
+variable {f : β → α} in
 set_option linter.style.haveILetI false in
 open MeasureTheory in
 /-- Relabelling the values of a conditioning along a bijection of supports that preserves
 the weights.  Keep the space and pull the fibres back along `f`: the mixture over `μ'` is the
 mixture over `μ` reindexed by the bijection. -/
-theorem C_TRANSF {μ : PMF α} {μ' : PMF β} {f : β → α} {K : α → FProp}
-  (h₁ : Set.BijOn f μ'.support μ.support)
-  (h₂ : ∀ b ∈ μ'.support, μ' b = μ (f b)) :
-  𝒞⟨μ⟩ a; K a ⊢ 𝒞⟨μ'⟩ b; K (f b) := by
+theorem C_TRANSF
+  (h₁ : Set.BijOn f μ₂.support μ₁.support)
+  (h₂ : ∀ b ∈ μ₂.support, μ₂ b = μ₁ (f b)) :
+  𝒞⟨μ₁⟩ a; K a ⊢ 𝒞⟨μ₂⟩ b; K (f b) := by
   intro r hv hr
-  have hown : own r ⊢ jointConditioning μ (fun a ↦ K a) :=
+  have hown : own r ⊢ jointConditioning μ₁ (fun a ↦ K a) :=
     fun _ _ hry ↦ UpperSet.upper _ hry hr
   obtain ⟨s, hbfs, hsr, w, hsmix, hX⟩ := cond_elim hv hown
   -- the fibres pulled back along `f`
@@ -1513,16 +1508,16 @@ theorem C_TRANSF {μ : PMF α} {μ' : PMF β} {f : β → α} {K : α → FProp}
     letI : MeasurableSpace β := ⊤
     ⟨⟨fun b ↦ (w (f b)).1, measurable_from_top⟩, ⟨fun b ↦ (w (f b)).2⟩⟩
   -- they mix to `s` along `μ'`: reindex the sum over the support by the bijection
-  have hℓmix : s.μ = (μ'.toMeasureWithMs ⊤).bind ℓ.1 := by
+  have hℓmix : s.μ = (μ₂.toMeasureWithMs ⊤).bind ℓ.1 := by
     refine @Measure.ext Ω s.ms _ _ fun A hA ↦ ?_
     letI : MeasurableSpace α := ⊤
     rw [Measure.bind_apply hA (ProbabilityTheory.Kernel.measurable ℓ.1).aemeasurable, hsmix,
       Measure.bind_apply hA measurable_from_top.aemeasurable,
       pmf_lintegral_eq_tsum, pmf_lintegral_eq_tsum, ← h₁.equiv.tsum_eq]
     refine tsum_congr fun b ↦ ?_
-    show (w (f b)).1 A * μ (f b) = (w (f b)).1 A * μ' b
+    show (w (f b)).1 A * μ₁ (f b) = (w (f b)).1 A * μ₂ b
     rw [h₂ b b.2]
-  have hKb : ∀ b ∈ μ'.support, ownP (ℓ b) ⊢ K (f b) := by
+  have hKb : ∀ b ∈ μ₂.support, ownP (ℓ b) ⊢ K (f b) := by
     intro b hb
     obtain ⟨X, hXval, hXK⟩ := hX (f b) (h₁.mapsTo hb)
     unfold ownP
@@ -1530,7 +1525,7 @@ theorem C_TRANSF {μ : PMF α} {μ' : PMF β} {f : β → α} {K : α → FProp}
     rw [show (⟨((ℓ b : PSpace Ω) : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool) = X from
       Subtype.ext (by rw [hXval]; rfl)]
     exact hXK
-  have key : ownP s ⊢ 𝒞⟨μ'⟩ b; K (f b) := by
+  have key : ownP s ⊢ 𝒞⟨μ₂⟩ b; K (f b) := by
     unfold jointConditioning
     iintro Hown
     iexists s, ℓ
@@ -1544,7 +1539,170 @@ theorem C_TRANSF {μ : PMF α} {μ' : PMF β} {f : β → α} {K : α → FProp}
         iexact Hb
   exact key r hv ⟨_, ⟨hbfs, rfl⟩, hsr⟩
 
+variable {E : RV Prop} in
+set_option linter.style.haveILetI false in
+open MeasureTheory in
+/-- Sure facts are convex: if every fibre of a conditioning makes `a` sure, so does their
+mixture.  Each fibre's exceptional set has a measurable null cover on the conditioned space;
+the (countable) intersection of the covers is null under every fibre, hence under the mixture. -/
+theorem C_SURE_CONVEX : 𝒞⟨μ⟩ _v; ⌈E⌉ ⊢ ⌈E⌉ := by
+  intro r hv hr
+  have hown : own r ⊢ jointConditioning μ (fun _ ↦ ⌈E⌉) :=
+    fun _ _ hry ↦ UpperSet.upper _ hry hr
+  obtain ⟨s, hbfs, hsr, w, hsmix, hX⟩ := cond_elim hv hown
+  -- each fibre makes `a` sure
+  have hnull : ∀ v ∈ μ.support, (w v).1 {ρ | ¬ E ρ} = 0 := by
+    intro v hv'
+    obtain ⟨X, hXval, hXK⟩ := hX v hv'
+    have hXv : ✓X := by
+      show X.val ≠ (⊤ : PSp Ω)
+      rw [hXval]
+      exact WithTop.coe_ne_top
+    obtain ⟨q, ⟨P, hq⟩, hqX⟩ := hXK X hXv (le_refl X)
+    obtain ⟨e₁, _, hle, hownP, hpure⟩ := (Quotient.exact hq).2 X hXv hqX
+    obtain ⟨r₁, ⟨hbfP, hr₁⟩, he₁⟩ := hownP
+    have he₁X : e₁ ≤ X := le_trans (le_mul_of_one_le PSp.one_le) hle
+    have hPX : (P : PSp Ω) ≤ X.val :=
+      le_trans ((Quotient.exact hr₁).2 e₁ (valid_mono he₁X hXv) he₁) he₁X
+    rw [hXval] at hPX
+    exact PSpace.null_of_le (WithTop.coe_le_coe.1 hPX) hpure
+  -- measurable null covers on `s`, and their intersection over the support
+  have hcover : ∀ v ∈ μ.support, ∃ N, {ρ | ¬ E ρ} ⊆ N ∧ @MeasurableSet Ω s.ms N ∧
+      (w v).1 N = 0 :=
+    fun v hv' ↦ @exists_measurable_superset_of_null Ω s.ms _ _ (hnull v hv')
+  choose! N hNsub hNmeas hNnull using hcover
+  have := μ.support_countable.to_subtype
+  have hNi : @MeasurableSet Ω s.ms (⋂ v : μ.support, N v) :=
+    @MeasurableSet.iInter Ω _ s.ms _ _ fun v : μ.support ↦ hNmeas v.1 v.2
+  have hsN : s.μ (⋂ v : μ.support, N v) = 0 := by
+    letI : MeasurableSpace α := ⊤
+    rw [hsmix, Measure.bind_apply hNi measurable_from_top.aemeasurable]
+    refine (lintegral_congr_ae ?_).trans lintegral_zero
+    filter_upwards [ae_mem_support μ] with v hv'
+    exact measure_mono_null (Set.iInter_subset _ ⟨v, hv'⟩) (hNnull v hv')
+  have hs : s.μ {ρ | ¬ E ρ} = 0 :=
+    measure_mono_null (Set.subset_iInter fun v : μ.support ↦ hNsub v.1 v.2) hsN
+  exact ⟨_, ⟨s, rfl⟩, r, 1, by rw [mul_one], ⟨_, ⟨hbfs, rfl⟩, hsr⟩, hs⟩
+
+/-- A sure fact holding in every fibre can be pulled out of the conditioning: it is sure on the
+mixture (`C_SURE_CONVEX`), and a sure fact splits off anything it holds alongside
+(`SURE_AND_STAR`). -/
+theorem SURE_STR_CONVEX {K : α → FProp} {E : RV Prop} :
+  𝒞⟨μ⟩ v; (K v ∗ ⌈E⌉) ⊢ ⌈E⌉ ∗ 𝒞⟨μ⟩ v; K v := by
+  have hsure : 𝒞⟨μ⟩ v; (K v ∗ ⌈E⌉) ⊢ ⌈E⌉ :=
+    entails_trans (C_CONS fun _ ↦ sep_elim_right) C_SURE_CONVEX
+  have hcond : 𝒞⟨μ⟩ v; (K v ∗ ⌈E⌉) ⊢ 𝒞⟨μ⟩ v; K v := C_CONS fun _ ↦ sep_elim_left
+  exact entails_trans (and_intro hsure hcond) SURE_AND_STAR
+
+variable {Q : α × β → FProp} in
+theorem C_FOR_ALL :
+  𝒞⟨μ⟩ v; (∀ (x : β), Q (v, x)) ⊢ ∀ (x : β), 𝒞⟨μ⟩ v; Q (v, x) :=
+  forall_intro fun x ↦ C_CONS fun _ ↦ forall_elim x
+
+#check μ
+
+/--
+TODO(Preference?):
+4 options.
+- 0 `⌜μ X = 1⌝                   ∗ 𝒞⟨μ.toPMF⟩ v; K v ⊣⊢ 𝒞⟨μ.toPMF⟩ v; (⌜v ∈ X⌝ ∗ K v)`
+- 1 `⌜μ.toMeasureWithMs ⊤ X = 1⌝ ∗ 𝒞⟨μ⟩ v; K v ⊣⊢ 𝒞⟨μ⟩ v; (⌜v ∈ X⌝ ∗ K v)`
+- 2 `⌜∑' x : X, μ x = 1⌝         ∗ 𝒞⟨μ⟩ v; K v ⊣⊢ 𝒞⟨μ⟩ v; (⌜v ∈ X⌝ ∗ K v)`
+- 3 `⌜μ.support ⊆ X⌝             ∗ 𝒞⟨μ⟩ v; K v ⊣⊢ 𝒞⟨μ⟩ v; (⌜v ∈ X⌝ ∗ K v)`
+
+`0` looks the best (it keeps exactly `⌜μ X = 1⌝`) but it requires we use `μ : Measure`,
+which needs a bunch of 'context': `[MeasurableSpace α] [Countable α] [MeasurableSingletonClass α]`
+`{μ : MeasureTheory.Measure α} [MeasureTheory.IsProbabilityMeasure μ]`
+
+`1` is the current implementation which I believe gets closest to the paper, if we consider
+that `0` needs a lot of extra fluff, and two casts to `PMF`.
+
+`2` is in the current Bluebell model.
+
+`3` is the tersest, but drops the `_ = 1` bit from the paper.
+-/
+theorem C_PURE {X : Set α} :
+    ⌜μ.toMeasureWithMs ⊤ X = 1⌝ ∗ 𝒞⟨μ⟩ v; K v ⊣⊢ 𝒞⟨μ⟩ v; (⌜v ∈ X⌝ ∗ K v) := by
+  have hsupp : μ.toMeasureWithMs ⊤ X = 1 ↔ μ.support ⊆ X :=
+    @PMF.toMeasure_apply_eq_one_iff α ⊤ μ X MeasurableSpace.measurableSet_top
+  constructor
+  · unfold jointConditioning
+    iintro ⟨%hX, %m, %κ, Hown, %hmix, Hall⟩
+    iexists m, κ
+    isplitl [Hown]
+    · iexact Hown
+    · isplitl []
+      · ipureintro
+        exact hmix
+      · iintro %v Hv
+        isplitl []
+        · ipureintro
+          exact hsupp.1 hX v.2
+        · iapply Hall
+          iexact Hv
+  · -- every fibre is a valid resource, so its continuation's pure part holds
+    have hpure : 𝒞⟨μ⟩ v; (⌜v ∈ X⌝ ∗ K v) ⊢ ⌜μ.toMeasureWithMs ⊤ X = 1⌝ := by
+      intro r hv hr
+      have hown : own r ⊢ jointConditioning μ (fun v ↦ iprop(⌜v ∈ X⌝ ∗ K v)) :=
+        fun _ _ hry ↦ UpperSet.upper _ hry hr
+      obtain ⟨s, -, -, w, -, hX'⟩ := cond_elim hv hown
+      refine hsupp.2 fun v hv' ↦ ?_
+      obtain ⟨Y, hYval, hYK⟩ := hX' v hv'
+      have hYv : ✓Y := by
+        show Y.val ≠ (⊤ : PSp Ω)
+        rw [hYval]
+        exact WithTop.coe_ne_top
+      exact (entails_trans hYK sep_elim_left) Y hYv (le_refl Y)
+    refine pure_elim _ hpure fun hX ↦ ?_
+    iintro H
+    isplitl []
+    · ipureintro
+      exact hX
+    · iapply (C_CONS fun _ ↦ sep_elim_right)
+      iexact H
+
 end JointConditioningRules
+
+section OwnershipAndDistributions
+
+set_option linter.style.haveILetI false in
+open MeasureTheory in
+/-- On a fixed space, pushing `E` forward to `δ v` is the same as `E` being `v` off a null
+set: the two only differ in how they say "almost surely `v`". -/
+theorem law_dirac_iff {A : Type} {E : RV A} {v : A} (P : PSpace Ω) :
+    (almostMeasurable E (P : PSp Ω) ∧
+        @Measure.map Ω A P.ms ⊤ E P.μ = (δ v).toMeasureWithMs ⊤)
+      ↔ P.μ {ρ | ¬ E ρ = v} = 0 := by
+  have hP := P.isProbability
+  letI : MeasurableSpace A := ⊤
+  letI : MeasurableSpace Ω := P.ms
+  constructor
+  · rintro ⟨ham, hmap⟩
+    replace ham : @AEMeasurable Ω A ⊤ P.ms E P.μ := ham
+    have h := Measure.map_apply_of_aemeasurable ham
+      (s := {v}ᶜ) MeasurableSpace.measurableSet_top
+    rw [hmap] at h
+    show P.μ (E ⁻¹' {v}ᶜ) = 0
+    rw [← h]
+    simp [PMF.toMeasureWithMs, PMF.toMeasure_pure]
+  · intro h
+    -- `E` is a.e. the constant `v`, which is measurable, so it is a.e.-measurable
+    have hae : E =ᵐ[P.μ] (fun _ ↦ v) := h
+    refine ⟨⟨fun _ ↦ v, measurable_const, hae⟩, ?_⟩
+    rw [Measure.map_congr hae, Measure.map_const]
+    simp [PMF.toMeasureWithMs, PMF.toMeasure_pure]
+
+/-- Being Dirac-distributed is being almost surely equal to the value. -/
+theorem SURE_DIRAC {v : α} : E ~ δ v ⊣⊢ ⌈E = v⌉ := by
+  have h : (E ~ δ v) = ⌈fun ρ ↦ E ρ = v⌉ :=
+    ownP_pure_congr (fun P ↦ law_dirac_iff P)
+  rw [h]
+  exact ⟨entails_rfl, entails_rfl⟩
+
+theorem SURE_EQ_INJ {E : RV α} {v v' : α} :
+  ⌈(E = v)⌉ ∗ ⌈(E = v')⌉
+  ⊢ ⌜v = v'⌝ := sorry
+
+end OwnershipAndDistributions
 
 end Rules
 
@@ -1587,40 +1745,8 @@ theorem EDistInj
     _ = @Measure.map Ω A P'.ms ⊤ E P'.μ := PSpace.map_eq_of_le hPy hP'y ham ham'
     _ = @PMF.toMeasure A ⊤ μ' := hμ₂
 
-set_option linter.style.haveILetI false in
-open MeasureTheory in
-/-- On a fixed space, pushing `E` forward to `δ v` is the same as `E` being `v` off a null
-set: the two only differ in how they say "almost surely `v`". -/
-theorem law_dirac_iff {A : Type} {E : RV A} {v : A} (P : PSpace Ω) :
-    (almostMeasurable E (P : PSp Ω) ∧
-        @Measure.map Ω A P.ms ⊤ E P.μ = (δ v).toMeasureWithMs ⊤)
-      ↔ P.μ {ρ | ¬ E ρ = v} = 0 := by
-  have hP := P.isProbability
-  letI : MeasurableSpace A := ⊤
-  letI : MeasurableSpace Ω := P.ms
-  constructor
-  · rintro ⟨ham, hmap⟩
-    replace ham : @AEMeasurable Ω A ⊤ P.ms E P.μ := ham
-    have h := Measure.map_apply_of_aemeasurable ham
-      (s := {v}ᶜ) MeasurableSpace.measurableSet_top
-    rw [hmap] at h
-    show P.μ (E ⁻¹' {v}ᶜ) = 0
-    rw [← h]
-    simp [PMF.toMeasureWithMs, PMF.toMeasure_pure]
-  · intro h
-    -- `E` is a.e. the constant `v`, which is measurable, so it is a.e.-measurable
-    have hae : E =ᵐ[P.μ] (fun _ ↦ v) := h
-    refine ⟨⟨fun _ ↦ v, measurable_const, hae⟩, ?_⟩
-    rw [Measure.map_congr hae, Measure.map_const]
-    simp [PMF.toMeasureWithMs, PMF.toMeasure_pure]
-
-/-- Being Dirac-distributed is being almost surely equal to the value. -/
-theorem ESureDirac {A : Type} {E : RV A} {v : A}
-  : E ~ δ v ⊣⊢ ⌈fun ρ ↦ E ρ = v⌉ := by
-  have h : (E ~ δ v) = ⌈fun ρ ↦ E ρ = v⌉ :=
-    ownP_pure_congr (fun P ↦ law_dirac_iff P)
-  rw [h]
-  exact ⟨entails_rfl, entails_rfl⟩
+theorem very_sure {E : Ω → Prop} : E ~ δ True ⊣⊢ ⌈E⌉ := by
+  convert ESureDirac; simp
 
 /-- A sure fact is duplicable. -/
 theorem liftPred_dup {p : Ω → Prop} : ⌈p⌉ ⊢ ⌈p⌉ ∗ ⌈p⌉ := by

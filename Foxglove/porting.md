@@ -1,4 +1,4 @@
-# This file is worth reading, no robots desecrated it.
+# Porting bookkeeping (hand-written)
 
 ## Bluebell rules porting
 
@@ -17,21 +17,21 @@ Format:
 
 ### Distribution ownership rules
 
-- `AND-TO-STAR` | Rules.lean/And_To_Star | ~~Assertion.lean/AND_TO_STAR'~~
+- `AND-TO-STAR` | Rules.lean/And_To_Star | ~~Assertion.lean/AND_TO_STAR~~
 
 - `DIST-INJ` | Rules.lean/Dist_Inj | Assertion.lean/DIST_INJ
 
 - `SURE-MERGE` | Rules.lean/Sure_Merge | Assertion.lean/SURE_MERGE
 
-- `SURE-AND-STAR` | Rules.lean/Sure_And_Star | Assertion.lean/SURE_AND_STAR
+- `SURE-AND-STAR` | Rules.lean/Sure_And_Star | Assertion.lean/SURE_AND_STAR (dropped hyp)
 
-- `PROD-SPLIT` | Rules.lean/Prod_Split | Assertion.lean/PROD_SPLIT
+- `PROD-SPLIT` | Rules.lean/Prod_Split | Assertion.lean/PROD_SPLIT (style TODO pending | multi notation)
 
 ### Joint conditioning rules
 
 - `C-TRUE` | Rules.lean/C_True | Assertion.lean/C_TRUE
 
-- `C-TRUE` | Rules.lean/C_False | Assertion.lean/C_FALSE
+- `C-FALSE` | Rules.lean/C_False | Assertion.lean/C_FALSE
 
 - `C-CONS` | Rules.lean/C_Cons | Assertion.lean/C_CONS
 
@@ -50,3 +50,22 @@ Format:
 - `C-SKOLEM` | Rules.lean/C_Skolem | Assertion.lean/C_SKOLEM
 
 - `C-TRANSF` | Rules.lean/C_Transf | Assertion.lean/C_TRANSF (use the support explicitly)
+
+- `SURE-STR-CONVEX` | Rules.lean/Sure_Str_Convex | Assertion.lean/SURE_STR_CONVEX
+
+- `C-FOR-ALL` | Rules.lean/C_For_All | Assertion.lean/C_FOR_ALL
+
+- `C-PURE` | Rules.lean/C_Pure | Assertion.lean/C_PURE (style TODO pending)
+
+### Structural WP rules
+
+SKIPPED FOR NOW
+
+### Program WP rules
+
+SKIPPED FOR NOW
+
+### Ownership and distributions
+
+- `SURE-DIRAC` | Rules.lean/Sure_Dirac | Assertion.lean/SURE_DIRAC
+
