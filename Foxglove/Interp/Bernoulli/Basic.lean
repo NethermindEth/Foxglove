@@ -780,12 +780,129 @@ lemma followTape_isSome {α : Type} {tree : ProbTree α} {tape : BoolSeq}
     · exact ihl h₁.1 ha
     · exact ihr h₁.2 ha
 
+namespace ProbTree
+
+/-- The value a program reports on a tape: follow the flips the tape dictates. -/
+def runValue {α : Type} : BernoulliM α → Ω → α
+  | .pure a, _ => a
+  | .liftBind _ c, ρ => runValue (c (ρ 0)) (shift ρ)
+
+/-- The path a program takes on a tape: the bits it reads. -/
+def runPath {α : Type} : BernoulliM α → Ω → BoolSeq
+  | .pure _, _ => []
+  | .liftBind _ c, ρ => ρ 0 :: runPath (c (ρ 0)) (shift ρ)
+
+/-- **A program's value is determined by the bits it read.**  `runValue` and `runPath`
+recurse on the same program and consume the same bits, so a tape is pinned down as far as
+the value is concerned by the path. -/
+lemma runValue_eq_of_runPath_eq {α : Type} (m : BernoulliM α) :
+    ∀ {ρ ρ' : Ω}, runPath m ρ = runPath m ρ' → runValue m ρ = runValue m ρ' := by
+  induction m with
+  | pure a => intro ρ ρ' _; rfl
+  | liftBind op c ih =>
+    intro ρ ρ' h
+    rw [runPath, runPath] at h
+    obtain ⟨h0, htl⟩ := List.cons.inj h
+    rw [runValue, runValue, h0]
+    rw [h0] at htl
+    exact ih (ρ' 0) htl
+
+/-- The tape that spells out a path and reads `false` afterwards. -/
+def tapeOf (π : BoolSeq) : Ω := fun i ↦ π.getD i false
+
+@[simp]
+lemma tapeOf_nil : tapeOf [] = fun _ ↦ false := by
+  funext i
+  simp [tapeOf]
+
+@[simp]
+lemma shift_tapeOf_cons (b : Bool) (π : BoolSeq) : shift (tapeOf (b :: π)) = tapeOf π := by
+  funext i
+  rfl
+
+/-- Replaying the bits a program read makes it read them again. -/
+lemma runPath_tapeOf {α : Type} (m : BernoulliM α) :
+    ∀ ρ : Ω, runPath m (tapeOf (runPath m ρ)) = runPath m ρ := by
+  induction m with
+  | pure a => intro ρ; rfl
+  | liftBind op c ih =>
+    intro ρ
+    show tapeOf (ρ 0 :: runPath (c (ρ 0)) (shift ρ)) 0
+        :: runPath (c (tapeOf (ρ 0 :: runPath (c (ρ 0)) (shift ρ)) 0))
+          (shift (tapeOf (ρ 0 :: runPath (c (ρ 0)) (shift ρ))))
+      = ρ 0 :: runPath (c (ρ 0)) (shift ρ)
+    rw [show tapeOf (ρ 0 :: runPath (c (ρ 0)) (shift ρ)) 0 = ρ 0 from rfl, shift_tapeOf_cons, ih]
+
+/-- Replaying the bits a program read, followed by anything at all, makes it read them
+again: a program's path depends only on the bits it reads. -/
+lemma runPath_tapeOf_append {α : Type} (m : BernoulliM α) :
+    ∀ (ρ : Ω) (rest : BoolSeq), runPath m (tapeOf (runPath m ρ ++ rest)) = runPath m ρ := by
+  induction m with
+  | pure a => intro ρ rest; rfl
+  | liftBind op c ih =>
+    intro ρ rest
+    show tapeOf (ρ 0 :: (runPath (c (ρ 0)) (shift ρ) ++ rest)) 0
+        :: runPath (c (tapeOf (ρ 0 :: (runPath (c (ρ 0)) (shift ρ) ++ rest)) 0))
+          (shift (tapeOf (ρ 0 :: (runPath (c (ρ 0)) (shift ρ) ++ rest))))
+      = ρ 0 :: runPath (c (ρ 0)) (shift ρ)
+    rw [show tapeOf (ρ 0 :: (runPath (c (ρ 0)) (shift ρ) ++ rest)) 0 = ρ 0 from rfl,
+      shift_tapeOf_cons, ih]
+
+/-- A program reads the same bits on any tape that starts with the bits it read. -/
+lemma runPath_eq_of_mem_prefixEqEvent {α : Type} (m : BernoulliM α) :
+    ∀ {ρ ρ' : Ω}, ρ' ∈ prefixEqEvent (runPath m ρ) → runPath m ρ' = runPath m ρ := by
+  induction m with
+  | pure a => intro ρ ρ' _; rfl
+  | liftBind op c ih =>
+    intro ρ ρ' h
+    rw [runPath, mem_prefixEqEvent_cons] at h
+    show ρ' 0 :: runPath (c (ρ' 0)) (shift ρ') = ρ 0 :: runPath (c (ρ 0)) (shift ρ)
+    rw [h.1]
+    exact congrArg _ (ih (ρ 0) h.2)
+
+/-- Every tape starts with the bits a program reads on it. -/
+lemma mem_prefixEqEvent_runPath {α : Type} (m : BernoulliM α) :
+    ∀ ρ : Ω, ρ ∈ prefixEqEvent (runPath m ρ) := by
+  induction m with
+  | pure a => intro ρ; exact fun i ↦ i.elim0
+  | liftBind op c ih =>
+    intro ρ
+    show ρ ∈ prefixEqEvent (ρ 0 :: runPath (c (ρ 0)) (shift ρ))
+    rw [mem_prefixEqEvent_cons]
+    exact ⟨rfl, ih (ρ 0) (shift ρ)⟩
+
+/-- The tape that spells out a path starts with it. -/
+lemma mem_prefixEqEvent_tapeOf (π : BoolSeq) : tapeOf π ∈ prefixEqEvent π := by
+  intro i
+  simp [tapeOf, List.getD_eq_getElem?_getD]
+
+end ProbTree
+
+/-- **Pruning.**  The programs a footprint's atoms run, with every atom that carries no mass
+stopped: it gets a constant program instead, so that the run never refines it.  The constant
+is what the program would report on the all-`false` tape, which prunes `pure x` to itself.
+
+This is what makes the run from a reweighted footprint sit *below* the run from the
+footprint it came from, which is what sequencing needs: without it, a fibre's run would
+refine the atoms the fibre gives no mass, which the composite run refines differently. -/
+noncomputable def prunePrograms {α : Type} (bfpsp : BoundedFootprintPsp) (valid : ✓bfpsp.psp)
+    (programs : bfpsp.atoms → BernoulliM α) : bfpsp.atoms → BernoulliM α :=
+  fun X ↦ if (ProbSpace.ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).μ X.1 = 0
+    then .pure (ProbTree.runValue (programs X) (fun _ ↦ false)) else programs X
+
+/-- `pure x` is pruned to itself. -/
+lemma prunePrograms_pure {α : Type} (bfpsp : BoundedFootprintPsp) (valid : ✓bfpsp.psp)
+    (x : α) : prunePrograms bfpsp valid (fun _ ↦ (.pure x : BernoulliM α)) = fun _ ↦ .pure x := by
+  funext X
+  unfold prunePrograms
+  split_ifs <;> rfl
+
 noncomputable def bigStep {α} [Inhabited α] (bfpsp : BoundedFootprintPsp)
                           (programs : bfpsp.atoms → BernoulliM α) :
                           (Σ bfpsp : BoundedFootprintPsp, bfpsp.atoms → α) :=
   if valid : ✓bfpsp.psp
   then
-    let tree := toTree bfpsp programs
+    let tree := toTree bfpsp (prunePrograms bfpsp valid programs)
     -- `(ValidPSpΩ.toPSpace ⟨bfpsp.psp, valid⟩).ms = tree.ms`
     let tree' := fixpoint ⟨tree, (ProbSpace.ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).μ.cast tree.ms⟩
     Sigma.mk
@@ -1309,6 +1426,16 @@ lemma choose_atomOf_eq {W : TreeWithMeasure α} [IsProbabilityMeasure W.2]
   · exact (prefixFree W.1 hq hq1 h).symm
   · exact prefixFree W.1 hq1 hq h
 
+/-- The unit footprint's one atom carries all the mass, so nothing is pruned. -/
+lemma prunePrograms_one (programs : (1 : BoundedFootprintPsp).atoms → BernoulliM α) :
+    prunePrograms 1 ProbSpace.BoundedFootprintPsp.valid_one programs = programs := by
+  funext X
+  unfold prunePrograms
+  rw [ite_eq_right]
+  have hX : X.1 = Set.univ := X.2
+  rw [hX]
+  exact (PSpace.unit : PSpace Ω).2.measure_univ.trans_ne one_ne_zero
+
 /-- The unit footprint has a single atom, read to depth `0`, so `toTree` stops at the root:
 the whole program sits at a single leaf. -/
 lemma toTree_one (m : BernoulliM α) :
@@ -1376,7 +1503,7 @@ lemma outputPSp_interp [Inhabited α] (m : BernoulliM α)
     outputPSp (interp_psp m) = .some (PSpace.map g (⟨⟨t.ms, μ⟩, hμ⟩ : PSpace Ω)) := by
   rw [interp_psp_def, bigStep, dite_eq_left ProbSpace.BoundedFootprintPsp.valid_one]
   refine outputPSp_bigStep_body _ _ fixpoint_done ?_ hg
-  rw [toTree_one]
+  rw [prunePrograms_one, toTree_one]
   exact hW
 
 /-! ### Identifying the pushforward -/
@@ -1586,7 +1713,7 @@ end Reading
 invents σ-algebra: `toTree_ms_eq`.  If on top of that the tree is already `done` -- which is
 exactly the case for the constant program `pure x` -- `fixpoint` is the identity, so the run
 hands the footprint's space straight back (`bigStep_psp_of_done`) and every atom reports `x`
-(`result_bigStep_of_done`).  Together these are what `CWPPure` needs. -/
+(`result_bigStep_of_done`).  Together these are what `WPPure` needs. -/
 
 section Pure
 
@@ -1701,10 +1828,10 @@ lemma ofTree_psp [Inhabited α] (W : TreeWithMeasure α) (hW : IsProbabilityMeas
 /-- **Running a finished program leaves the footprint's space alone.** -/
 lemma bigStep_psp_of_done [Inhabited α] (bfpsp : BoundedFootprintPsp)
     (programs : bfpsp.atoms → BernoulliM α) (valid : ✓bfpsp.psp)
-    (hdone : (toTree bfpsp programs).done = true) :
+    (hdone : (toTree bfpsp (prunePrograms bfpsp valid programs)).done = true) :
     (bigStep bfpsp programs).1.psp = bfpsp.psp := by
   set P : PSpace Ω := ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩ with hP
-  have hms : (toTree bfpsp programs).ms = P.ms := by
+  have hms : (toTree bfpsp (prunePrograms bfpsp valid programs)).ms = P.ms := by
     rw [toTree_ms_eq, hP, bfpsp.sigmaAgrees valid]
   have hsome : bfpsp.psp = .some P := (Option.some_get _).symm
   rw [bigStep, dite_eq_left valid]
@@ -1729,8 +1856,8 @@ lemma result_bigStep_body [Inhabited α] (W : TreeWithMeasure α)
 
 lemma result_bigStep_of_done [Inhabited α] (bfpsp : BoundedFootprintPsp)
     (programs : bfpsp.atoms → BernoulliM α) (valid : ✓bfpsp.psp)
-    (hdone : (toTree bfpsp programs).done = true) {g : Ω → α}
-    (hg : ProbTree.Reports (toTree bfpsp programs) g) :
+    (hdone : (toTree bfpsp (prunePrograms bfpsp valid programs)).done = true) {g : Ω → α}
+    (hg : ProbTree.Reports (toTree bfpsp (prunePrograms bfpsp valid programs)) g) :
     result (bigStep bfpsp programs) = g := by
   rw [bigStep, dite_eq_left valid]
   refine result_bigStep_body _ _ ProbTree.fixpoint_done ?_
@@ -1742,7 +1869,8 @@ lemma run_pure_psp [Inhabited α] {m : Type → Type} [Monad m] [LawfulBernoulli
     (run (pure x : m α) μ₀).1.psp = μ₀.psp := by
   rw [run]
   simp only [LawfulBernoulliInterpretable.interp_pure]
-  exact bigStep_psp_of_done μ₀ _ valid (toTree_pure_done μ₀ x)
+  exact bigStep_psp_of_done μ₀ _ valid
+    (by rw [prunePrograms_pure]; exact toTree_pure_done μ₀ x)
 
 /-- `pure x` reports `x`, whatever the tape. -/
 lemma result_run_pure [Inhabited α] {m : Type → Type} [Monad m]
@@ -1750,7 +1878,33 @@ lemma result_run_pure [Inhabited α] {m : Type → Type} [Monad m]
     result (run (pure x : m α) μ₀) = fun _ ↦ x := by
   rw [run]
   simp only [LawfulBernoulliInterpretable.interp_pure]
-  exact result_bigStep_of_done μ₀ _ valid (toTree_pure_done μ₀ x) (reports_toTree_pure μ₀ x)
+  exact result_bigStep_of_done μ₀ _ valid
+    (by rw [prunePrograms_pure]; exact toTree_pure_done μ₀ x)
+    (by rw [prunePrograms_pure]; exact reports_toTree_pure μ₀ x)
+
+/-- The value a run reports is constant on the atoms of the space it lands in, so its
+preimages are measurable there: each is a union of atoms, and there are finitely many. -/
+lemma result_measurableSet (W : TreeWithMeasure α) (hW : IsProbabilityMeasure W.2)
+    (f : (@ofTree α W hW).atoms → α) (S : Set α) :
+    MeasurableSet[W.1.ms]
+      (result (⟨@ofTree α W hW, f⟩ : Σ b : BoundedFootprintPsp, b.atoms → α) ⁻¹' S) := by
+  have hEq : result (⟨@ofTree α W hW, f⟩ : Σ b : BoundedFootprintPsp, b.atoms → α) ⁻¹' S
+      = ⋃ (X : (@ofTree α W hW).atoms) (_ : f X ∈ S), X.1 := by
+    ext ρ
+    simp only [Set.mem_preimage, Set.mem_iUnion, exists_prop]
+    constructor
+    · intro h
+      exact ⟨(@ofTree α W hW).atomOf ρ, h, mem_atomOf _ ρ⟩
+    · rintro ⟨X, hX, hρ⟩
+      show f ((@ofTree α W hW).atomOf ρ) ∈ S
+      rw [atomOf_eq _ hρ]
+      exact hX
+  have hfin : (@ofTree α W hW).atoms.Finite :=
+    Set.Finite.image _ (Finset.finite_toSet W.1.prefixes)
+  haveI : Countable (@ofTree α W hW).atoms := hfin.countable.to_subtype
+  rw [hEq]
+  exact MeasurableSet.iUnion fun X ↦ MeasurableSet.iUnion fun _ ↦
+    MeasurableSpace.measurableSet_generateFrom X.2
 
 end Pure
 
@@ -1760,13 +1914,13 @@ end Pure
 needs.  `wp` quantifies over every footprint, so what is needed here is a program run from an
 arbitrary one.
 
-`toTree` puts a copy of the program at each atom, so what the run produces is, at each atom,
-the same tree carrying the same law.  `run_const` records the three consequences: the output
-space refines the input (`ms_le_fixpoint`) and leaves its measure alone
-(`fixpoint_preserves`), the value reported is `treeValue`, and that value is distributed as
-the program's own law **independently of everything the footprint could already measure**
-(`fixpoint_constTree_inter`).  The last is what lets a program's result be owned alongside a
-frame. -/
+`toTree` puts a copy of the program at each atom that carries mass (`prunePrograms`), so what
+the run produces is, at each such atom, the same tree carrying the same law.  `run_const`
+records the consequences: the output space refines the input (`ms_le_fixpoint`) and leaves
+its measure alone (`fixpoint_preserves`), the value reported is `leafValue`, and that value is
+distributed as the program's own law **independently of everything the footprint could
+already measure** (`fixpoint_pruned_inter`).  The last is what lets a program's result be
+owned alongside a frame. -/
 
 namespace ProbTree
 
@@ -1822,22 +1976,6 @@ lemma flipWeight_eq_bernoulliWeights (p : I) (b : Bool) :
   cases b
   · simp [ENNReal.coe_sub]
   · simp
-
-/-- The value a program reports on a tape: follow the flips the tape dictates. -/
-def runValue : BernoulliM α → Ω → α
-  | .pure a, _ => a
-  | .liftBind _ c, ρ => runValue (c (ρ 0)) (shift ρ)
-
-/-- A tree every leaf of which is the same program. -/
-def IsConstTree (m : BernoulliM α) : ProbTree α → Prop
-  | .leaf n => n = m
-  | .node l r => IsConstTree m l ∧ IsConstTree m r
-
-/-- The value such a tree reports: run `m` on what is left of the tape after the path the
-tape took through the tree. -/
-def treeValue (m : BernoulliM α) : ProbTree α → Ω → α
-  | .leaf _, ρ => runValue m ρ
-  | .node l r, ρ => if ρ 0 then treeValue m l (shift ρ) else treeValue m r (shift ρ)
 
 /-- Running a program from a leaf reports `runValue`. -/
 lemma reports_fixpoint_rootTree (m : BernoulliM α) :
@@ -1926,58 +2064,6 @@ lemma ms_le_fixpoint' (t : ProbTree α) (ν : Measure[t.ms] Ω) :
     t.ms ≤ (fixpoint ⟨t, ν⟩).1.ms :=
   ms_le_fixpoint t.depth t ν le_rfl
 
-/-- A tree of copies of `m` reports `treeValue m`: the path through the tree, then `m`'s own
-report on what is left of the tape. -/
-lemma reports_fixpoint_constTree {m : BernoulliM α} :
-    ∀ {t : ProbTree α}, IsConstTree m t → ∀ (ν : Measure[t.ms] Ω),
-      Reports (fixpoint ⟨t, ν⟩).1 (treeValue m t) := by
-  intro t
-  induction t with
-  | leaf n =>
-    rintro rfl ν
-    rw [congrArg Sigma.fst (fixpoint_leaf n ν)]
-    exact reports_fixpoint_rootTree n
-  | node l r ihl ihr =>
-    rintro ⟨hl, hr⟩ ν
-    rw [congrArg Sigma.fst (fixpoint_node ν)]
-    exact reports_node (ihl hl _) (ihr hr _)
-
-/-- **Fresh randomness, from any footprint.**  Running the same program at every leaf makes
-the value it reports independent of everything the tree could already measure, with the law
-the program has on its own. -/
-lemma fixpoint_constTree_inter {m : BernoulliM α} :
-    ∀ {t : ProbTree α}, IsConstTree m t → ∀ (ν : Measure[t.ms] Ω) (a : α)
-      {E : Set Ω}, MeasurableSet[t.ms] E →
-      (fixpoint ⟨t, ν⟩).2 (treeValue m t ⁻¹' {a} ∩ E)
-        = (fixpoint (rootTree m)).2 (runValue m ⁻¹' {a}) * ν E := by
-  intro t
-  induction t with
-  | leaf n =>
-    rintro rfl ν a E hE
-    rw [ms_leaf] at hE
-    refine Eq.trans (measure_congr_tree (fixpoint_leaf n ν) _) ?_
-    rcases MeasurableSpace.measurableSet_bot_iff.mp hE with rfl | rfl
-    · show (ν Set.univ • (fixpoint (rootTree n)).2) _ = _
-      simp
-    · show (ν Set.univ • (fixpoint (rootTree n)).2) _ = _
-      rw [Set.inter_univ, Measure.smul_apply, smul_eq_mul, mul_comm]
-      rfl
-  | node l r ihl ihr =>
-    rintro ⟨hl, hr⟩ ν a E hE
-    have hGm : MeasurableSet[(fixpoint (⟨ProbTree.node l r, ν⟩ : TreeWithMeasure α)).1.ms]
-        (treeValue m (ProbTree.node l r) ⁻¹' {a} ∩ E) :=
-      ((reports_fixpoint_constTree (t := ProbTree.node l r) ⟨hl, hr⟩
-          ν).measurableSet_preimage {a}).inter
-        (ms_le_fixpoint' (ProbTree.node l r) ν E hE)
-    rw [congrArg Sigma.fst (fixpoint_node ν)] at hGm
-    refine Eq.trans (measure_congr_tree (fixpoint_node ν) _) ?_
-    show joinMeasure _ _ _ = _
-    rw [joinMeasure_apply _ _ hGm, Set.preimage_inter, Set.preimage_inter]
-    simp only [treeValue, preimage_consFlip_ite, Bool.false_eq_true, ↓reduceIte]
-    rw [ihl hl _ a (by simpa using measurable_consFlip (l := l) (r := r) true hE),
-      ihr hr _ a (by simpa using measurable_consFlip (l := l) (r := r) false hE),
-      ← mul_add, ← joinMeasure_apply _ _ hE, joinMeasure_branchMeasure]
-
 /-! ### Running does not disturb what was already known -/
 
 lemma step'_preserves : ∀ (t : ProbTree α) (ν : Measure[t.ms] Ω) (path : BoolSeq)
@@ -2039,72 +2125,12 @@ lemma fixpoint_preserves' {t : ProbTree α} (ν : Measure[t.ms] Ω) {E : Set Ω}
     (hE : MeasurableSet[t.ms] E) : (fixpoint ⟨t, ν⟩).2 E = ν E :=
   fixpoint_preserves t.depth t ν le_rfl E hE
 
-/-! ### Running a program from an arbitrary footprint -/
-
-lemma isConstTree_toTree_go (bfpsp : BoundedFootprintPsp) (m : BernoulliM α) (path : BoolSeq) :
-    IsConstTree m (toTree.go bfpsp (fun _ ↦ m) path) := by
-  induction path using toTree.go.induct bfpsp with
-  | case1 path leafy =>
-    rw [toTree.go]
-    simp only [leafy, ↓reduceDIte]
-    rfl
-  | case2 path leafy ihl ihr =>
-    rw [toTree.go]
-    simp only [leafy, ↓reduceDIte]
-    exact ⟨ihl, ihr⟩
-
-lemma isConstTree_toTree (bfpsp : BoundedFootprintPsp) (m : BernoulliM α) :
-    IsConstTree m (toTree bfpsp (fun _ ↦ m)) := by
-  rw [toTree]; exact isConstTree_toTree_go bfpsp m []
-
-set_option linter.style.haveILetI false in
-/-- **Running a program from an arbitrary footprint.**  The output space refines the input
-and leaves its measure alone, the value reported is `treeValue`, and that value is
-distributed as the program's own law, *independently of everything the footprint could
-already measure*. -/
-lemma run_const [Inhabited α] (bfpsp : BoundedFootprintPsp) (m : BernoulliM α)
-    (valid : ✓bfpsp.psp) :
-    ∃ S : PSpace Ω,
-      (run m bfpsp).1.psp = .some S ∧
-      result (run m bfpsp) = treeValue m (toTree bfpsp (fun _ ↦ m)) ∧
-      (toTree bfpsp (fun _ ↦ m)).ms ≤ S.ms ∧
-      (∀ a : α, MeasurableSet[S.ms] (treeValue m (toTree bfpsp (fun _ ↦ m)) ⁻¹' {a})) ∧
-      (∀ {E : Set Ω}, MeasurableSet[(toTree bfpsp (fun _ ↦ m)).ms] E →
-        S.μ E = (ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).μ E) ∧
-      (∀ (a : α) {E : Set Ω}, MeasurableSet[(toTree bfpsp (fun _ ↦ m)).ms] E →
-        S.μ (treeValue m (toTree bfpsp (fun _ ↦ m)) ⁻¹' {a} ∩ E)
-          = (fixpoint (rootTree m)).2 (runValue m ⁻¹' {a})
-            * (ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).μ E) := by
-  have ht : IsConstTree m (toTree bfpsp (fun _ ↦ m)) := isConstTree_toTree bfpsp m
-  have hms : (toTree bfpsp (fun _ ↦ m)).ms = (ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).ms := by
-    rw [toTree_ms_eq, bfpsp.sigmaAgrees valid]
-  have hcast : ∀ {E : Set Ω}, MeasurableSet[(toTree bfpsp (fun _ ↦ m)).ms] E →
-      ((ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).μ.cast (toTree bfpsp (fun _ ↦ m)).ms) E
-        = (ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).μ E := fun hE ↦
-    Measure.le_preserves_measure (h := le_of_eq hms)
-      (μ := (ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).μ) (hu := hE)
-  refine ⟨⟨⟨_, (fixpoint (⟨toTree bfpsp (fun _ ↦ m),
-      (ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).μ.cast
-        (toTree bfpsp (fun _ ↦ m)).ms⟩ : TreeWithMeasure α)).2⟩, inferInstance⟩,
-    ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · rw [run, interp_bernoulliM, bigStep, dite_eq_left valid]
-    exact ofTree_psp' _ _
-  · rw [run, interp_bernoulliM, bigStep, dite_eq_left valid]
-    exact result_bigStep_body _ _ fixpoint_done (reports_fixpoint_constTree ht _)
-  · exact ms_le_fixpoint' _ _
-  · intro a
-    exact (reports_fixpoint_constTree ht _).measurableSet_preimage {a}
-  · intro E hE
-    exact (fixpoint_preserves' _ hE).trans (hcast hE)
-  · intro a E hE
-    exact (fixpoint_constTree_inter ht _ a hE).trans (by rw [hcast hE])
-
-
 /-! ### The law of a program -/
 
 /-- **The law of a program**: the mass its own run puts on each value. -/
 def lawOf (t : BernoulliM α) (a : α) : ℝ≥0∞ :=
   (fixpoint (rootTree t)).2 (runValue t ⁻¹' {a})
+
 
 lemma lawOf_pure (a a' : α) :
     lawOf (PFunctor.FreeM.pure a : BernoulliM α) a' = if a' = a then 1 else 0 := by
@@ -2274,6 +2300,46 @@ lemma shift_shiftBy (n : ℕ) (ρ : Ω) : shift (shiftBy n ρ) = shiftBy (n + 1)
   (shiftBy_succ n ρ).symm
 
 /-- A tape extending `p` extends `p ++ [b]` exactly when its next bit is `b`. -/
+lemma shiftBy_shift (n : ℕ) (ρ : Ω) : shiftBy n (shift ρ) = shiftBy (n + 1) ρ := rfl
+
+lemma shiftBy_shiftBy (n k : ℕ) (ρ : Ω) : shiftBy n (shiftBy k ρ) = shiftBy (k + n) ρ := by
+  funext i
+  show ρ (i + n + k) = ρ (i + (k + n))
+  congr 1
+  omega
+
+/-- The value of a sequenced program: run the first, then the continuation on the tape left
+after the bits the first one read. -/
+lemma runValue_bind {β : Type} (q : α → BernoulliM β) :
+    ∀ (p : BernoulliM α) (ρ : Ω), runValue (p >>= q) ρ
+      = runValue (q (runValue p ρ)) (shiftBy (runPath p ρ).length ρ) := by
+  intro p
+  induction p with
+  | pure a => intro ρ; rfl
+  | liftBind op c ih =>
+    intro ρ
+    show runValue ((c (ρ 0)) >>= q) (shift ρ) = _
+    rw [ih (ρ 0) (shift ρ)]
+    show _ = runValue (q (runValue (c (ρ 0)) (shift ρ)))
+      (shiftBy ((ρ 0 :: runPath (c (ρ 0)) (shift ρ)).length) ρ)
+    rw [List.length_cons, shiftBy_shift]
+
+/-- The path of a sequenced program: the first program's path, then the continuation's. -/
+lemma runPath_bind {β : Type} (q : α → BernoulliM β) :
+    ∀ (p : BernoulliM α) (ρ : Ω), runPath (p >>= q) ρ
+      = runPath p ρ ++ runPath (q (runValue p ρ)) (shiftBy (runPath p ρ).length ρ) := by
+  intro p
+  induction p with
+  | pure a => intro ρ; rfl
+  | liftBind op c ih =>
+    intro ρ
+    show ρ 0 :: runPath ((c (ρ 0)) >>= q) (shift ρ) = _
+    rw [ih (ρ 0) (shift ρ)]
+    show _ = (ρ 0 :: runPath (c (ρ 0)) (shift ρ)) ++
+      runPath (q (runValue (c (ρ 0)) (shift ρ)))
+        (shiftBy ((ρ 0 :: runPath (c (ρ 0)) (shift ρ)).length) ρ)
+    rw [List.cons_append, List.length_cons, shiftBy_shift]
+
 lemma mem_prefixEqEvent_append (q : BoolSeq) {ρ : Ω} (hρ : ρ ∈ prefixEqEvent q) (b : Bool)
     (hb : ρ q.length = b) : ρ ∈ prefixEqEvent (q ++ [b]) := by
   intro i
@@ -2285,24 +2351,51 @@ lemma mem_prefixEqEvent_append (q : BoolSeq) {ρ : Ω} (hρ : ρ ∈ prefixEqEve
     rw [hval, hlen]
     exact hb
 
-/-- What a footprint's tree reports on a tape: run the program on the tape left after the
-tape's own atom prefix. -/
-lemma treeValue_toTree_go (bfpsp : BoundedFootprintPsp) (m : BernoulliM α) :
+/-! ### Pruned trees
+
+`bigStep` runs `m` at the atoms that carry mass and a constant at the rest.  What such a tree
+reports is the *leaf's own* program on the rest of the tape, `leafValue`, and the massless
+leaves contribute nothing to any measure, which is all the fresh-randomness argument
+(`fixpoint_pruned_inter`) ever needs from a leaf. -/
+
+/-- The value a tree reports: the path through the tree, then the leaf's own program on what
+is left of the tape. -/
+def leafValue : ProbTree α → Ω → α
+  | .leaf n, ρ => runValue n ρ
+  | .node l r, ρ => if ρ 0 then leafValue l (shift ρ) else leafValue r (shift ρ)
+
+/-- Running any tree reports `leafValue`. -/
+lemma reports_fixpoint_leafValue : ∀ (t : ProbTree α) (ν : Measure[t.ms] Ω),
+    Reports (fixpoint ⟨t, ν⟩).1 (leafValue t) := by
+  intro t
+  induction t with
+  | leaf n =>
+    intro ν
+    rw [congrArg Sigma.fst (fixpoint_leaf n ν)]
+    exact reports_fixpoint_rootTree n
+  | node l r ihl ihr =>
+    intro ν
+    rw [congrArg Sigma.fst (fixpoint_node ν)]
+    exact reports_node (ihl _) (ihr _)
+
+/-- The leaf value of `toTree.go`, at a tape through its path: the atom's own program on the
+tape left after the atom's prefix. -/
+lemma leafValue_toTree_go (bfpsp : BoundedFootprintPsp) (programs : bfpsp.atoms → BernoulliM α) :
     ∀ (p : BoolSeq), (∀ X : bfpsp.atoms, bfpsp.prefixes X <+: p → bfpsp.prefixes X = p) →
       ∀ ρ : Ω, ρ ∈ prefixEqEvent p →
-        treeValue m (toTree.go bfpsp (fun _ ↦ m) p) (shiftBy p.length ρ)
-          = runValue m (shiftBy (bfpsp.prefixes (bfpsp.atomOf ρ)).length ρ) := by
+        leafValue (toTree.go bfpsp programs p) (shiftBy p.length ρ)
+          = runValue (programs (bfpsp.atomOf ρ))
+              (shiftBy (bfpsp.prefixes (bfpsp.atomOf ρ)).length ρ) := by
   intro p
   induction p using toTree.go.induct bfpsp with
   | case1 p leafy =>
     intro hp ρ hρ
     rw [toTree.go]
     simp only [leafy, ↓reduceDIte]
-    obtain ⟨X, hX⟩ := leafy
-    have hpX : bfpsp.prefixes X = p := hp X hX
-    have hρX : ρ ∈ X.1 := by
-      rw [atom_eq_prefixEqEvent bfpsp X, hpX]; exact hρ
-    rw [show bfpsp.atomOf ρ = X from atomOf_eq bfpsp hρX, hpX]
+    have hpC : bfpsp.prefixes leafy.choose = p := hp _ leafy.choose_spec
+    have hρC : ρ ∈ leafy.choose.1 := by
+      rw [atom_eq_prefixEqEvent bfpsp leafy.choose, hpC]; exact hρ
+    rw [show bfpsp.atomOf ρ = leafy.choose from atomOf_eq bfpsp hρC, hpC]
     rfl
   | case2 p leafy ihl ihr =>
     intro hp ρ hρ
@@ -2329,21 +2422,920 @@ lemma treeValue_toTree_go (bfpsp : BoundedFootprintPsp) (m : BernoulliM α) :
       rw [shift_shiftBy, ← hlen true]
       exact ihl (hstep true) ρ (mem_prefixEqEvent_append p hρ true hb)
 
-/-- The value a footprint's run reports, read off the footprint alone: no tree involved, so
-it is invariant under anything that leaves the atoms and prefixes alone. -/
-def footprintValue (bfpsp : BoundedFootprintPsp) (m : BernoulliM α) : Ω → α :=
-  fun ρ ↦ runValue m (shiftBy (bfpsp.prefixes (bfpsp.atomOf ρ)).length ρ)
-
-lemma treeValue_toTree (bfpsp : BoundedFootprintPsp) (m : BernoulliM α) :
-    treeValue m (toTree bfpsp (fun _ ↦ m)) = footprintValue bfpsp m := by
-  funext ρ
+lemma leafValue_toTree (bfpsp : BoundedFootprintPsp) (programs : bfpsp.atoms → BernoulliM α)
+    (ρ : Ω) :
+    leafValue (toTree bfpsp programs) ρ
+      = runValue (programs (bfpsp.atomOf ρ))
+          (shiftBy (bfpsp.prefixes (bfpsp.atomOf ρ)).length ρ) := by
   rw [toTree]
-  simpa [footprintValue] using treeValue_toTree_go bfpsp m [] (fun _ h ↦ List.prefix_nil.mp h) ρ (by simp)
+  simpa using leafValue_toTree_go bfpsp programs [] (fun _ h ↦ List.prefix_nil.mp h) ρ (by simp)
+
+/-- What a run reports, as the leaf value of the pruned tree it unfolds. -/
+lemma result_run_eq_leafValue [Inhabited α] (b : BoundedFootprintPsp) (m : BernoulliM α)
+    (h : ✓b.psp) :
+    result (run m b) = leafValue (toTree b (prunePrograms b h (fun _ ↦ m))) := by
+  rw [run, interp_bernoulliM, bigStep, dite_eq_left h]
+  exact result_bigStep_body _ _ fixpoint_done (reports_fixpoint_leafValue _ _)
+
+/-- A tree is `m` at the leaves that carry mass and `pure c` at the rest. -/
+def IsPruned (m : BernoulliM α) (c : α) : (t : ProbTree α) → Measure[t.ms] Ω → Prop
+  | .leaf n, ν => n = m ∨ (n = .pure c ∧ ν Set.univ = 0)
+  | .node l r, ν =>
+    IsPruned m c l (branchMeasure true ν) ∧ IsPruned m c r (branchMeasure false ν)
+
+/-- **Fresh randomness, from a pruned tree.**  As `fixpoint_constTree_inter`; a massless
+leaf contributes nothing on either side. -/
+lemma fixpoint_pruned_inter {m : BernoulliM α} {c : α} :
+    ∀ {t : ProbTree α} (ν : Measure[t.ms] Ω), IsPruned m c t ν → ∀ (a : α)
+      {E : Set Ω}, MeasurableSet[t.ms] E →
+      (fixpoint ⟨t, ν⟩).2 (leafValue t ⁻¹' {a} ∩ E) = lawOf m a * ν E := by
+  intro t
+  induction t with
+  | leaf n =>
+    intro ν hp a E hE
+    rw [ms_leaf] at hE
+    simp only [IsPruned] at hp
+    rcases hp with rfl | ⟨rfl, h0⟩
+    · refine Eq.trans (measure_congr_tree (fixpoint_leaf _ ν) _) ?_
+      rcases MeasurableSpace.measurableSet_bot_iff.mp hE with rfl | rfl
+      · show (ν Set.univ • (fixpoint (rootTree _)).2) _ = _
+        simp
+      · show (ν Set.univ • (fixpoint (rootTree _)).2) _ = _
+        rw [Set.inter_univ, Measure.smul_apply, smul_eq_mul, mul_comm]
+        rfl
+    · rw [measure_congr_tree (fixpoint_of_done (t := ⟨.leaf (.pure c), ν⟩) rfl) _]
+      show ν _ = _
+      rw [measure_mono_null (Set.subset_univ _) h0, measure_mono_null (Set.subset_univ _) h0,
+        mul_zero]
+  | node l r ihl ihr =>
+    intro ν hp a E hE
+    simp only [IsPruned] at hp
+    have hGm : MeasurableSet[(fixpoint (⟨ProbTree.node l r, ν⟩ : TreeWithMeasure α)).1.ms]
+        (leafValue (ProbTree.node l r) ⁻¹' {a} ∩ E) :=
+      ((reports_fixpoint_leafValue (ProbTree.node l r) ν).measurableSet_preimage {a}).inter
+        (ms_le_fixpoint' (ProbTree.node l r) ν E hE)
+    rw [congrArg Sigma.fst (fixpoint_node ν)] at hGm
+    refine Eq.trans (measure_congr_tree (fixpoint_node ν) _) ?_
+    show joinMeasure _ _ _ = _
+    rw [joinMeasure_apply _ _ hGm, Set.preimage_inter, Set.preimage_inter]
+    simp only [leafValue, preimage_consFlip_ite, Bool.false_eq_true, ↓reduceIte]
+    rw [ihl _ hp.1 a (by simpa using measurable_consFlip (l := l) (r := r) true hE),
+      ihr _ hp.2 a (by simpa using measurable_consFlip (l := l) (r := r) false hE),
+      ← mul_add, ← joinMeasure_apply _ _ hE, joinMeasure_branchMeasure]
+
+/-- The branch measure of a cylinder of the branch is the measure of the cylinder with the
+branch's bit in front. -/
+lemma branchMeasure_prefixEqEvent {l r : ProbTree α} (b : Bool)
+    (ν : Measure[(ProbTree.node l r).ms] Ω) {q : BoolSeq}
+    (hq : q ∈ (if b then l else r).prefixes) :
+    branchMeasure b ν (prefixEqEvent q) = ν (prefixEqEvent (b :: q)) := by
+  rw [branchMeasure_apply' b ν (measurableSet_prefixEqEvent hq)]
+  congr 1
+  ext ρ
+  simp only [Set.mem_inter_iff, Set.mem_preimage, mem_prefixEqEvent_cons, prefixEqEvent_nil,
+    Set.mem_univ, and_true]
+  constructor
+  · rintro ⟨h1, h2⟩
+    rw [descend_of_eq h2] at h1
+    exact ⟨h2, h1⟩
+  · rintro ⟨h2, h1⟩
+    rw [descend_of_eq h2]
+    exact ⟨h1, h2⟩
+
+/-- What `bigStep` builds is pruned: `m` where the footprint's atom carries mass and the
+constant elsewhere.  Stated for `toTree.go` at every path, with the measure handed down the
+tree as `step'` hands it: a cylinder of the subtree weighs what the cylinder with the path
+in front weighs in the footprint. -/
+lemma isPruned_toTree_go (bfpsp : BoundedFootprintPsp) (valid : ✓bfpsp.psp)
+    (m : BernoulliM α) :
+    ∀ (p : BoolSeq), (∀ X : bfpsp.atoms, bfpsp.prefixes X <+: p → bfpsp.prefixes X = p) →
+      ∀ W : TreeWithMeasure α,
+        W.1 = toTree.go bfpsp (prunePrograms bfpsp valid (fun _ ↦ m)) p →
+        (∀ q ∈ W.1.prefixes, W.2 (prefixEqEvent q)
+          = (ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).μ (prefixEqEvent (p ++ q))) →
+        IsPruned m (runValue m (fun _ ↦ false)) W.1 W.2 := by
+  intro p
+  induction p using toTree.go.induct bfpsp with
+  | case1 p leafy =>
+    rintro hp ⟨t, ν⟩ hW hν
+    rw [toTree.go] at hW
+    simp only [leafy, ↓reduceDIte] at hW
+    subst hW
+    have hpC : bfpsp.prefixes leafy.choose = p := hp _ leafy.choose_spec
+    have hC : leafy.choose.1 = prefixEqEvent p := by
+      rw [atom_eq_prefixEqEvent bfpsp leafy.choose, hpC]
+    have hmass : ν Set.univ = (ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).μ leafy.choose.1 := by
+      rw [hC, ← prefixEqEvent_nil, hν [] (by simp), List.append_nil]
+    simp only [IsPruned, prunePrograms]
+    split_ifs with h0
+    · exact Or.inr ⟨rfl, hmass.trans h0⟩
+    · exact Or.inl rfl
+  | case2 p leafy ihl ihr =>
+    rintro hp ⟨t, ν⟩ hW hν
+    rw [toTree.go] at hW
+    simp only [leafy, ↓reduceDIte] at hW
+    subst hW
+    have hstep : ∀ b : Bool, ∀ X : bfpsp.atoms,
+        bfpsp.prefixes X <+: p ++ [b] → bfpsp.prefixes X = p ++ [b] := by
+      intro b X hX
+      by_cases hle : (bfpsp.prefixes X).length ≤ p.length
+      · exact absurd ⟨X, List.prefix_of_prefix_length_le hX (List.prefix_append _ _) hle⟩ leafy
+      · exact hX.eq_of_length (by have := hX.length_le; simp at this ⊢; omega)
+    simp only [IsPruned]
+    constructor
+    · refine ihl (hstep true) ⟨_, branchMeasure true ν⟩ rfl fun q hq ↦ ?_
+      rw [branchMeasure_prefixEqEvent true ν hq, hν (true :: q) (mem_prefixes_node true hq)]
+      simp
+    · refine ihr (hstep false) ⟨_, branchMeasure false ν⟩ rfl fun q hq ↦ ?_
+      rw [branchMeasure_prefixEqEvent false ν hq, hν (false :: q) (mem_prefixes_node false hq)]
+      simp
+
+lemma isPruned_toTree (bfpsp : BoundedFootprintPsp) (valid : ✓bfpsp.psp) (m : BernoulliM α) :
+    IsPruned m (runValue m (fun _ ↦ false))
+      (toTree bfpsp (prunePrograms bfpsp valid (fun _ ↦ m)))
+      ((ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).μ.cast
+        (toTree bfpsp (prunePrograms bfpsp valid (fun _ ↦ m))).ms) := by
+  have hms : (toTree bfpsp (prunePrograms bfpsp valid (fun _ ↦ m))).ms
+      = (ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).ms := by
+    rw [toTree_ms_eq, bfpsp.sigmaAgrees valid]
+  refine isPruned_toTree_go bfpsp valid m [] (fun _ h ↦ List.prefix_nil.mp h)
+    ⟨toTree bfpsp (prunePrograms bfpsp valid (fun _ ↦ m)), _⟩ rfl fun q hq ↦ ?_
+  rw [List.nil_append]
+  exact Measure.le_preserves_measure (h := le_of_eq hms)
+    (μ := (ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).μ) (hu := measurableSet_prefixEqEvent hq)
+
+set_option linter.style.haveILetI false in
+/-- **Running a program from an arbitrary footprint.**  The output space refines the input
+and leaves its measure alone, the value reported is measurable in it, and that value is
+distributed as the program's own law, *independently of everything the footprint could
+already measure*.
+
+The tree the run unfolds is `m` at the atoms that carry mass and a constant at the rest, so
+the value reported is `m`'s own value only on the former; the clauses are therefore stated
+for `result` itself. -/
+lemma run_const [Inhabited α] (bfpsp : BoundedFootprintPsp) (m : BernoulliM α)
+    (valid : ✓bfpsp.psp) :
+    ∃ S : PSpace Ω,
+      (run m bfpsp).1.psp = .some S ∧
+      (ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).ms ≤ S.ms ∧
+      (∀ a : α, MeasurableSet[S.ms] (result (run m bfpsp) ⁻¹' {a})) ∧
+      (∀ {E : Set Ω}, MeasurableSet[(ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).ms] E →
+        S.μ E = (ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).μ E) ∧
+      (∀ (a : α) {E : Set Ω}, MeasurableSet[(ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).ms] E →
+        S.μ (result (run m bfpsp) ⁻¹' {a} ∩ E)
+          = lawOf m a * (ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).μ E) := by
+  set T := toTree bfpsp (prunePrograms bfpsp valid (fun _ ↦ m)) with hT
+  have hms : T.ms = (ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).ms := by
+    rw [hT, toTree_ms_eq, bfpsp.sigmaAgrees valid]
+  have hcast : ∀ {E : Set Ω}, MeasurableSet[T.ms] E →
+      ((ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).μ.cast T.ms) E
+        = (ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).μ E := fun hE ↦
+    Measure.le_preserves_measure (h := le_of_eq hms)
+      (μ := (ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).μ) (hu := hE)
+  have hpsp : (run m bfpsp).1.psp = .some ⟨⟨_, (fixpoint (⟨T,
+      (ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).μ.cast T.ms⟩ : TreeWithMeasure α)).2⟩,
+        inferInstance⟩ := by
+    rw [run, interp_bernoulliM, bigStep, dite_eq_left valid]
+    exact ofTree_psp' _ _
+  refine ⟨_, hpsp, ?_, ?_, ?_, ?_⟩
+  · exact le_trans (le_of_eq hms.symm) (ms_le_fixpoint' T _)
+  · intro a
+    rw [run, interp_bernoulliM, bigStep, dite_eq_left valid]
+    exact result_measurableSet _ _ _ {a}
+  · intro E hE
+    rw [← hms] at hE
+    exact (fixpoint_preserves' _ hE).trans (hcast hE)
+  · intro a E hE
+    rw [← hms] at hE
+    rw [result_run_eq_leafValue bfpsp m valid]
+    exact (fixpoint_pruned_inter _ (isPruned_toTree bfpsp valid m) a hE).trans
+      (by rw [hcast hE])
+
+/-! ### Atoms, as the fibres of `atomOf`
+
+A footprint's σ-algebra is generated by its atoms, which partition the tapes, so a set it
+measures is a union of atoms: `ms_le_comap_atomOf`.  Conversely a union of atoms is
+measurable, the atoms being countable (their prefixes are distinct lists of bits). -/
+
+instance countable_atoms (b : BoundedFootprintPsp) : Countable b.atoms :=
+  b.prefixes_injective.countable
+
+lemma preimage_atomOf_eq (b : BoundedFootprintPsp) (Q : Set b.atoms) :
+    b.atomOf ⁻¹' Q = ⋃ X ∈ Q, X.1 := by
+  ext ρ
+  simp only [Set.mem_preimage, Set.mem_iUnion, exists_prop]
+  refine ⟨fun h ↦ ⟨_, h, b.mem_atomOf ρ⟩, ?_⟩
+  rintro ⟨X, hX, hρ⟩
+  rw [b.atomOf_eq hρ]
+  exact hX
+
+lemma measurableSet_preimage_atomOf (b : BoundedFootprintPsp) (h : ✓b.psp) (Q : Set b.atoms) :
+    MeasurableSet[(ValidPSp.toPSpace ⟨b.psp, h⟩).ms] (b.atomOf ⁻¹' Q) := by
+  rw [preimage_atomOf_eq]
+  exact MeasurableSet.biUnion Q.to_countable fun X _ ↦ b.measurable X.1 X.2 h
+
+lemma measure_preimage_atomOf_null' (b : BoundedFootprintPsp) (h : ✓b.psp)
+    (ν : Measure[(ValidPSp.toPSpace ⟨b.psp, h⟩).ms] Ω) (Q : Set b.atoms)
+    (hQ : ∀ X ∈ Q, ν X.1 = 0) : ν (b.atomOf ⁻¹' Q) = 0 := by
+  rw [preimage_atomOf_eq]
+  exact (measure_biUnion_null_iff Q.to_countable).2 hQ
+
+lemma measure_preimage_atomOf_null (b : BoundedFootprintPsp) (h : ✓b.psp) (Q : Set b.atoms)
+    (hQ : ∀ X ∈ Q, (ValidPSp.toPSpace ⟨b.psp, h⟩).μ X.1 = 0) :
+    (ValidPSp.toPSpace ⟨b.psp, h⟩).μ (b.atomOf ⁻¹' Q) = 0 :=
+  measure_preimage_atomOf_null' b h _ Q hQ
+
+/-- Every set the footprint measures is a union of atoms. -/
+lemma ms_le_comap_atomOf (b : BoundedFootprintPsp) (h : ✓b.psp) :
+    (ValidPSp.toPSpace ⟨b.psp, h⟩).ms ≤ MeasurableSpace.comap b.atomOf ⊤ := by
+  rw [b.sigmaAgrees h]
+  refine MeasurableSpace.generateFrom_le fun X hX ↦
+    ⟨{⟨X, hX⟩}, MeasurableSpace.measurableSet_top, b.preimage_atomOf ⟨X, hX⟩⟩
+
+/-- A measurable set that contains a tape contains its whole atom. -/
+lemma atom_subset_of_mem (b : BoundedFootprintPsp) (h : ✓b.psp) {E : Set Ω}
+    (hE : MeasurableSet[(ValidPSp.toPSpace ⟨b.psp, h⟩).ms] E) {ρ : Ω} (hρ : ρ ∈ E) :
+    (b.atomOf ρ).1 ⊆ E := by
+  obtain ⟨Q, -, rfl⟩ := ms_le_comap_atomOf b h E hE
+  intro ρ' hρ'
+  show b.atomOf ρ' ∈ Q
+  rw [b.atomOf_eq hρ']
+  exact hρ
+
+/-! ### The path a run ends at
+
+`fullPath t ρ` is the root-to-leaf path of the finished tree that the tape `ρ` lands in:
+the path through `t`, then the leaf's own path.  It names the atoms of the footprint a run
+produces (`ofTree`), which is what sequencing needs. -/
+
+/-- The root-to-leaf path a tape ends at once a tree is run. -/
+def fullPath : ProbTree α → Ω → BoolSeq
+  | .leaf n, ρ => runPath n ρ
+  | .node l r, ρ => ρ 0 :: (if ρ 0 then fullPath l (shift ρ) else fullPath r (shift ρ))
+
+lemma runPath_mem_prefixes_fixpoint_rootTree (m : BernoulliM α) :
+    ∀ ρ : Ω, runPath m ρ ∈ (fixpoint (rootTree m)).1.prefixes := by
+  induction m with
+  | pure a =>
+    intro ρ
+    rw [fixpoint_rootTree_pure]
+    exact mem_prefixes_leaf.mpr rfl
+  | liftBind op c ih =>
+    intro ρ
+    rw [fixpoint_rootTree_liftBind op c]
+    show ρ 0 :: runPath (c (ρ 0)) (shift ρ) ∈ (ProbTree.node _ _).prefixes
+    cases h0 : ρ 0
+    · exact mem_prefixes_node false (by simpa using ih false (shift ρ))
+    · exact mem_prefixes_node true (by simpa using ih true (shift ρ))
+
+lemma fullPath_mem_prefixes_fixpoint : ∀ (t : ProbTree α) (ν : Measure[t.ms] Ω) (ρ : Ω),
+    fullPath t ρ ∈ (fixpoint ⟨t, ν⟩).1.prefixes := by
+  intro t
+  induction t with
+  | leaf n =>
+    intro ν ρ
+    rw [congrArg Sigma.fst (fixpoint_leaf n ν)]
+    exact runPath_mem_prefixes_fixpoint_rootTree n ρ
+  | node l r ihl ihr =>
+    intro ν ρ
+    rw [congrArg Sigma.fst (fixpoint_node ν)]
+    show ρ 0 :: (if ρ 0 then fullPath l (shift ρ) else fullPath r (shift ρ))
+      ∈ (ProbTree.node _ _).prefixes
+    cases h0 : ρ 0
+    · simp only [Bool.false_eq_true, ↓reduceIte]
+      exact mem_prefixes_node false (by simpa using ihr _ (shift ρ))
+    · simp only [↓reduceIte]
+      exact mem_prefixes_node true (by simpa using ihl _ (shift ρ))
+
+lemma mem_prefixEqEvent_fullPath : ∀ (t : ProbTree α) (ρ : Ω),
+    ρ ∈ prefixEqEvent (fullPath t ρ) := by
+  intro t
+  induction t with
+  | leaf n => intro ρ; exact mem_prefixEqEvent_runPath n ρ
+  | node l r ihl ihr =>
+    intro ρ
+    show ρ ∈ prefixEqEvent (ρ 0 :: (if ρ 0 then fullPath l (shift ρ) else fullPath r (shift ρ)))
+    rw [mem_prefixEqEvent_cons]
+    refine ⟨rfl, ?_⟩
+    cases h0 : ρ 0
+    · simp only [Bool.false_eq_true, ↓reduceIte]; exact ihr (shift ρ)
+    · simp only [↓reduceIte]; exact ihl (shift ρ)
+
+/-- The atom a run lands a tape in is the event of the path the tape ends at. -/
+lemma prefixes_ofTree_atomOf (W : TreeWithMeasure α) [IsProbabilityMeasure W.2]
+    {t : ProbTree α} {ν : Measure[t.ms] Ω} (hW : W = fixpoint ⟨t, ν⟩) (ρ : Ω) :
+    (ofTree W).prefixes ((ofTree W).atomOf ρ) = fullPath t ρ := by
+  subst hW
+  exact choose_atomOf_eq (fullPath_mem_prefixes_fixpoint t ν ρ) (mem_prefixEqEvent_fullPath t ρ)
+
+/-- The path a footprint's tree ends at: the atom's prefix, then the atom's program's path on
+the tape left after it. -/
+lemma fullPath_toTree_go (bfpsp : BoundedFootprintPsp) (programs : bfpsp.atoms → BernoulliM α) :
+    ∀ (p : BoolSeq), (∀ X : bfpsp.atoms, bfpsp.prefixes X <+: p → bfpsp.prefixes X = p) →
+      ∀ ρ : Ω, ρ ∈ prefixEqEvent p →
+        p ++ fullPath (toTree.go bfpsp programs p) (shiftBy p.length ρ)
+          = bfpsp.prefixes (bfpsp.atomOf ρ)
+            ++ runPath (programs (bfpsp.atomOf ρ))
+              (shiftBy (bfpsp.prefixes (bfpsp.atomOf ρ)).length ρ) := by
+  intro p
+  induction p using toTree.go.induct bfpsp with
+  | case1 p leafy =>
+    intro hp ρ hρ
+    rw [toTree.go]
+    simp only [leafy, ↓reduceDIte]
+    have hpC : bfpsp.prefixes leafy.choose = p := hp _ leafy.choose_spec
+    have hρC : ρ ∈ leafy.choose.1 := by
+      rw [atom_eq_prefixEqEvent bfpsp leafy.choose, hpC]; exact hρ
+    rw [show bfpsp.atomOf ρ = leafy.choose from atomOf_eq bfpsp hρC, hpC]
+    rfl
+  | case2 p leafy ihl ihr =>
+    intro hp ρ hρ
+    rw [toTree.go]
+    simp only [leafy, ↓reduceDIte]
+    have hstep : ∀ b : Bool, ∀ X : bfpsp.atoms,
+        bfpsp.prefixes X <+: p ++ [b] → bfpsp.prefixes X = p ++ [b] := by
+      intro b X hX
+      by_cases hle : (bfpsp.prefixes X).length ≤ p.length
+      · exact absurd ⟨X, List.prefix_of_prefix_length_le hX (List.prefix_append _ _) hle⟩ leafy
+      · exact hX.eq_of_length (by have := hX.length_le; simp at this ⊢; omega)
+    have hlen : ∀ b : Bool, (p ++ [b]).length = p.length + 1 := by simp
+    show p ++ ((shiftBy p.length ρ) 0 :: (if (shiftBy p.length ρ) 0 then _ else _)) = _
+    have h0 : (shiftBy p.length ρ) 0 = ρ p.length := by
+      show ρ (0 + p.length) = _
+      congr 1
+      omega
+    rw [h0]
+    cases hb : ρ p.length
+    · simp only [Bool.false_eq_true, ↓reduceIte]
+      rw [shift_shiftBy, ← hlen false, List.append_cons]
+      exact ihr (hstep false) ρ (mem_prefixEqEvent_append p hρ false hb)
+    · simp only [↓reduceIte]
+      rw [shift_shiftBy, ← hlen true, List.append_cons]
+      exact ihl (hstep true) ρ (mem_prefixEqEvent_append p hρ true hb)
+
+lemma fullPath_toTree (bfpsp : BoundedFootprintPsp) (programs : bfpsp.atoms → BernoulliM α)
+    (ρ : Ω) :
+    fullPath (toTree bfpsp programs) ρ
+      = bfpsp.prefixes (bfpsp.atomOf ρ)
+        ++ runPath (programs (bfpsp.atomOf ρ))
+          (shiftBy (bfpsp.prefixes (bfpsp.atomOf ρ)).length ρ) := by
+  rw [toTree]
+  simpa using fullPath_toTree_go bfpsp programs [] (fun _ h ↦ List.prefix_nil.mp h) ρ (by simp)
+
+/-- The path a tree reads past its own: the leaf's own path on what is left of the tape. -/
+def leafPath : ProbTree α → Ω → BoolSeq
+  | .leaf n, ρ => runPath n ρ
+  | .node l r, ρ => if ρ 0 then leafPath l (shift ρ) else leafPath r (shift ρ)
+
+lemma leafPath_toTree_go (bfpsp : BoundedFootprintPsp) (programs : bfpsp.atoms → BernoulliM α) :
+    ∀ (p : BoolSeq), (∀ X : bfpsp.atoms, bfpsp.prefixes X <+: p → bfpsp.prefixes X = p) →
+      ∀ ρ : Ω, ρ ∈ prefixEqEvent p →
+        leafPath (toTree.go bfpsp programs p) (shiftBy p.length ρ)
+          = runPath (programs (bfpsp.atomOf ρ))
+              (shiftBy (bfpsp.prefixes (bfpsp.atomOf ρ)).length ρ) := by
+  intro p
+  induction p using toTree.go.induct bfpsp with
+  | case1 p leafy =>
+    intro hp ρ hρ
+    rw [toTree.go]
+    simp only [leafy, ↓reduceDIte]
+    have hpC : bfpsp.prefixes leafy.choose = p := hp _ leafy.choose_spec
+    have hρC : ρ ∈ leafy.choose.1 := by
+      rw [atom_eq_prefixEqEvent bfpsp leafy.choose, hpC]; exact hρ
+    rw [show bfpsp.atomOf ρ = leafy.choose from atomOf_eq bfpsp hρC, hpC]
+    rfl
+  | case2 p leafy ihl ihr =>
+    intro hp ρ hρ
+    rw [toTree.go]
+    simp only [leafy, ↓reduceDIte]
+    have hstep : ∀ b : Bool, ∀ X : bfpsp.atoms,
+        bfpsp.prefixes X <+: p ++ [b] → bfpsp.prefixes X = p ++ [b] := by
+      intro b X hX
+      by_cases hle : (bfpsp.prefixes X).length ≤ p.length
+      · exact absurd ⟨X, List.prefix_of_prefix_length_le hX (List.prefix_append _ _) hle⟩ leafy
+      · exact hX.eq_of_length (by have := hX.length_le; simp at this ⊢; omega)
+    have hlen : ∀ b : Bool, (p ++ [b]).length = p.length + 1 := by simp
+    show (if (shiftBy p.length ρ) 0 then _ else _) = _
+    have h0 : (shiftBy p.length ρ) 0 = ρ p.length := by
+      show ρ (0 + p.length) = _
+      congr 1
+      omega
+    rw [h0]
+    cases hb : ρ p.length
+    · simp only [Bool.false_eq_true, ↓reduceIte]
+      rw [shift_shiftBy, ← hlen false]
+      exact ihr (hstep false) ρ (mem_prefixEqEvent_append p hρ false hb)
+    · simp only [↓reduceIte]
+      rw [shift_shiftBy, ← hlen true]
+      exact ihl (hstep true) ρ (mem_prefixEqEvent_append p hρ true hb)
+
+lemma leafPath_toTree (bfpsp : BoundedFootprintPsp) (programs : bfpsp.atoms → BernoulliM α)
+    (ρ : Ω) :
+    leafPath (toTree bfpsp programs) ρ
+      = runPath (programs (bfpsp.atomOf ρ))
+          (shiftBy (bfpsp.prefixes (bfpsp.atomOf ρ)).length ρ) := by
+  rw [toTree]
+  simpa using leafPath_toTree_go bfpsp programs [] (fun _ h ↦ List.prefix_nil.mp h) ρ (by simp)
+
+/-! ### Continuing a tree
+
+`bindLeaves f t` continues every leaf of `t` with `f`.  Running it is running `t` and then
+continuing each leaf the run ends at (`fixpoint_bindLeaves`), which is the big-step shape of
+sequencing. -/
+
+/-- Continue every leaf with `f`. -/
+def bindLeaves {β : Type} (f : α → BernoulliM β) : ProbTree α → ProbTree β
+  | .leaf n => .leaf (n >>= f)
+  | .node l r => .node (bindLeaves f l) (bindLeaves f r)
+
+lemma prefixes_bindLeaves {β : Type} (f : α → BernoulliM β) :
+    ∀ t : ProbTree α, (bindLeaves f t).prefixes = t.prefixes
+  | .leaf _ => rfl
+  | .node l r => by
+    simp only [bindLeaves, prefixes, prefixes_bindLeaves f l, prefixes_bindLeaves f r]
+
+lemma ms_bindLeaves {β : Type} (f : α → BernoulliM β) (t : ProbTree α) :
+    (bindLeaves f t).ms = t.ms := by
+  show MeasurableSpace.generateFrom _ = MeasurableSpace.generateFrom _
+  rw [events, events, prefixes_bindLeaves]
+
+/-- Relabel every leaf by the root-to-leaf path that reaches it, read from `p`. -/
+def mapLeavesAt {β : Type} (g : BoolSeq → BernoulliM β) : ProbTree α → BoolSeq → ProbTree β
+  | .leaf _, p => .leaf (g p)
+  | .node l r, p => .node (mapLeavesAt g l (p ++ [true])) (mapLeavesAt g r (p ++ [false]))
+
+/-- A path of a subtree, with its branch bit in front, is a path of the node. -/
+lemma cons_mem_prefixes_node {l r : ProbTree α} (b : Bool) (q : BoolSeq) :
+    b :: q ∈ (ProbTree.node l r).prefixes ↔ q ∈ (if b then l else r).prefixes := by
+  rw [mem_prefixes_node_iff]
+  cases b <;> simp
+
+/-- `toTree` over a footprint whose atoms below `p` are the leaves of a tree `t` is `t`
+relabelled: the footprint's prefixes below `p` are exactly `p ++ q` for the paths `q` of `t`,
+and no atom's prefix is a proper prefix of `p`. -/
+lemma toTree_go_eq {β γ : Type} (bfpsp : BoundedFootprintPsp)
+    (programs : bfpsp.atoms → BernoulliM β) :
+    ∀ (t : ProbTree γ) (p : BoolSeq),
+      (∀ X : bfpsp.atoms, bfpsp.prefixes X <+: p → bfpsp.prefixes X = p) →
+      (∀ q, (∃ X : bfpsp.atoms, bfpsp.prefixes X = p ++ q) ↔ q ∈ t.prefixes) →
+      toTree.go bfpsp programs p
+        = mapLeavesAt (fun q ↦ programs (bfpsp.atomOf (tapeOf q))) t p := by
+  intro t
+  induction t with
+  | leaf n =>
+    intro p hp hq
+    have leafy : ∃ X : bfpsp.atoms, bfpsp.prefixes X <+: p := by
+      obtain ⟨X, hX⟩ := (hq []).mpr (mem_prefixes_leaf.mpr rfl)
+      exact ⟨X, by rw [hX, List.append_nil]⟩
+    rw [toTree.go]
+    simp only [leafy, ↓reduceDIte]
+    show ProbTree.leaf _ = ProbTree.leaf (programs (bfpsp.atomOf (tapeOf p)))
+    have hpC : bfpsp.prefixes leafy.choose = p := hp _ leafy.choose_spec
+    have hC : bfpsp.atomOf (tapeOf p) = leafy.choose := by
+      refine atomOf_eq bfpsp ?_
+      rw [atom_eq_prefixEqEvent bfpsp leafy.choose, hpC]
+      exact mem_prefixEqEvent_tapeOf p
+    rw [hC]
+  | node l r ihl ihr =>
+    intro p hp hq
+    have leafy : ¬ ∃ X : bfpsp.atoms, bfpsp.prefixes X <+: p := by
+      rintro ⟨X, hX⟩
+      have h := (hq []).mp ⟨X, by rw [List.append_nil]; exact hp X hX⟩
+      rw [mem_prefixes_node_iff] at h
+      rcases h with ⟨_, _, h⟩ | ⟨_, _, h⟩ <;> cases h
+    rw [toTree.go]
+    simp only [leafy, ↓reduceDIte]
+    have hstep : ∀ b : Bool, ∀ X : bfpsp.atoms,
+        bfpsp.prefixes X <+: p ++ [b] → bfpsp.prefixes X = p ++ [b] := by
+      intro b X hX
+      by_cases hle : (bfpsp.prefixes X).length ≤ p.length
+      · exact absurd ⟨X, List.prefix_of_prefix_length_le hX (List.prefix_append _ _) hle⟩ leafy
+      · exact hX.eq_of_length (by have := hX.length_le; simp at this ⊢; omega)
+    have hq' : ∀ b : Bool, ∀ q, (∃ X : bfpsp.atoms, bfpsp.prefixes X = p ++ [b] ++ q)
+        ↔ q ∈ (if b then l else r).prefixes := by
+      intro b q
+      rw [List.append_assoc, List.singleton_append, hq (b :: q), cons_mem_prefixes_node]
+    show ProbTree.node _ _ = ProbTree.node _ _
+    rw [ihl (p ++ [true]) (hstep true) (hq' true), ihr (p ++ [false]) (hstep false) (hq' false)]
+
+/-- The atoms of `ofTree W` are exactly the leaves of `W`. -/
+lemma exists_prefixes_ofTree_iff (W : TreeWithMeasure α) [IsProbabilityMeasure W.2]
+    (q : BoolSeq) :
+    (∃ X : (ofTree W).atoms, (ofTree W).prefixes X = q) ↔ q ∈ W.1.prefixes := by
+  constructor
+  · rintro ⟨X, rfl⟩
+    exact X.2.choose_spec.1
+  · intro hq
+    exact ⟨(ofTree W).atomOf (tapeOf q), choose_atomOf_eq hq (mem_prefixEqEvent_tapeOf q)⟩
+
+/-- `toTree` over the footprint a run produces is the finished tree, relabelled at its
+leaves. -/
+lemma toTree_ofTree {β : Type} (W : TreeWithMeasure α) [IsProbabilityMeasure W.2]
+    (programs : (ofTree W).atoms → BernoulliM β) :
+    toTree (ofTree W) programs
+      = mapLeavesAt (fun q ↦ programs ((ofTree W).atomOf (tapeOf q))) W.1 [] := by
+  rw [toTree]
+  exact toTree_go_eq (ofTree W) programs W.1 [] (fun _ h ↦ List.prefix_nil.mp h)
+    (fun q ↦ by rw [List.nil_append]; exact exists_prefixes_ofTree_iff W q)
+
+/-! ### Trees that agree off null leaves -/
+
+/-- Two trees of the same shape whose leaves agree wherever the measure has mass. -/
+def AgreeOffNull : (t t' : ProbTree α) → Measure[t.ms] Ω → Prop
+  | .leaf n, .leaf n', ν => n = n' ∨ ν Set.univ = 0
+  | .node l r, .node l' r', ν =>
+    AgreeOffNull l l' (branchMeasure true ν) ∧ AgreeOffNull r r' (branchMeasure false ν)
+  | .leaf _, .node _ _, _ => False
+  | .node _ _, .leaf _, _ => False
+
+lemma AgreeOffNull.prefixes_eq : ∀ {t t' : ProbTree α} {ν : Measure[t.ms] Ω},
+    AgreeOffNull t t' ν → t.prefixes = t'.prefixes
+  | .leaf _, .leaf _, _, _ => rfl
+  | .node l r, .node l' r', ν, h => by
+    simp only [AgreeOffNull] at h
+    simp only [prefixes, h.1.prefixes_eq, h.2.prefixes_eq]
+  | .leaf _, .node _ _, _, h => h.elim
+  | .node _ _, .leaf _, _, h => h.elim
+
+lemma AgreeOffNull.ms_eq {t t' : ProbTree α} {ν : Measure[t.ms] Ω} (h : AgreeOffNull t t' ν) :
+    t.ms = t'.ms := by
+  show MeasurableSpace.generateFrom _ = MeasurableSpace.generateFrom _
+  rw [events, events, h.prefixes_eq]
+
+/-- Two trees that agree off null leaves run to the same measure, on every set both runs
+measure: a leaf without mass contributes nothing however it is continued. -/
+lemma fixpoint_agreeOffNull :
+    ∀ {t t' : ProbTree α} (ν : Measure[t.ms] Ω) (ν' : Measure[t'.ms] Ω),
+      AgreeOffNull t t' ν → (∀ E, MeasurableSet[t.ms] E → ν E = ν' E) →
+      ∀ E, MeasurableSet[(fixpoint ⟨t, ν⟩).1.ms] E →
+        MeasurableSet[(fixpoint ⟨t', ν'⟩).1.ms] E →
+        (fixpoint ⟨t, ν⟩).2 E = (fixpoint ⟨t', ν'⟩).2 E := by
+  intro t
+  induction t with
+  | leaf n =>
+    intro t' ν ν' hag hν E _ _
+    cases t' with
+    | leaf n' =>
+      simp only [AgreeOffNull] at hag
+      have huniv : ν Set.univ = ν' Set.univ :=
+        hν _ (by rw [ms_leaf]; exact @MeasurableSet.univ _ ⊥)
+      rw [measure_congr_tree (fixpoint_leaf n ν) E, measure_congr_tree (fixpoint_leaf n' ν') E]
+      show (ν Set.univ • (fixpoint (rootTree n)).2) E
+        = (ν' Set.univ • (fixpoint (rootTree n')).2) E
+      rcases hag with rfl | h0
+      · rw [huniv]
+      · rw [Measure.smul_apply, Measure.smul_apply, ← huniv, h0, zero_smul, zero_smul]
+    | node l' r' => exact hag.elim
+  | node l r ihl ihr =>
+    intro t' ν ν' hag hν E hE hE'
+    cases t' with
+    | leaf n' => exact hag.elim
+    | node l' r' =>
+      simp only [AgreeOffNull] at hag
+      have hbr : ∀ b : Bool, ∀ S, MeasurableSet[(if b then l else r).ms] S →
+          branchMeasure b ν S = branchMeasure b ν' S := by
+        intro b S hS
+        have hS' : MeasurableSet[(if b then l' else r').ms] S := by
+          cases b
+          · show MeasurableSet[r'.ms] S
+            rw [← hag.2.ms_eq]; exact hS
+          · show MeasurableSet[l'.ms] S
+            rw [← hag.1.ms_eq]; exact hS
+        rw [branchMeasure_apply' b ν hS, branchMeasure_apply' b ν' hS']
+        exact hν _ ((measurable_descend b hS).inter (measurableSet_prefixEqEvent_singleton b))
+      rw [congrArg Sigma.fst (fixpoint_node ν)] at hE
+      rw [congrArg Sigma.fst (fixpoint_node ν')] at hE'
+      rw [measure_congr_tree (fixpoint_node ν) E, measure_congr_tree (fixpoint_node ν') E]
+      show joinMeasure _ _ E = joinMeasure _ _ E
+      rw [joinMeasure_apply _ _ hE, joinMeasure_apply _ _ hE']
+      have hT : MeasurableSet[(fixpoint ⟨l, branchMeasure true ν⟩).1.ms]
+          (consFlip true ⁻¹' E) := by
+        simpa using measurable_consFlip (l := (fixpoint ⟨l, branchMeasure true ν⟩).1)
+          (r := (fixpoint ⟨r, branchMeasure false ν⟩).1) true hE
+      have hT' : MeasurableSet[(fixpoint ⟨l', branchMeasure true ν'⟩).1.ms]
+          (consFlip true ⁻¹' E) := by
+        simpa using measurable_consFlip (l := (fixpoint ⟨l', branchMeasure true ν'⟩).1)
+          (r := (fixpoint ⟨r', branchMeasure false ν'⟩).1) true hE'
+      have hF : MeasurableSet[(fixpoint ⟨r, branchMeasure false ν⟩).1.ms]
+          (consFlip false ⁻¹' E) := by
+        simpa using measurable_consFlip (l := (fixpoint ⟨l, branchMeasure true ν⟩).1)
+          (r := (fixpoint ⟨r, branchMeasure false ν⟩).1) false hE
+      have hF' : MeasurableSet[(fixpoint ⟨r', branchMeasure false ν'⟩).1.ms]
+          (consFlip false ⁻¹' E) := by
+        simpa using measurable_consFlip (l := (fixpoint ⟨l', branchMeasure true ν'⟩).1)
+          (r := (fixpoint ⟨r', branchMeasure false ν'⟩).1) false hE'
+      rw [ihl (t' := l') (branchMeasure true ν) (branchMeasure true ν') hag.1 (hbr true) _ hT hT',
+        ihr (t' := r') (branchMeasure false ν) (branchMeasure false ν') hag.2 (hbr false) _ hF hF']
+
+/-- Two `toTree`s over the same footprint agree off null leaves when their programs agree at
+the atoms that carry mass. -/
+lemma agreeOffNull_toTree_go (bfpsp : BoundedFootprintPsp) (valid : ✓bfpsp.psp)
+    (P₁ P₂ : bfpsp.atoms → BernoulliM α)
+    (ν : Measure[(ValidPSp.toPSpace ⟨bfpsp.psp, valid⟩).ms] Ω)
+    (hP : ∀ X : bfpsp.atoms, ν X.1 ≠ 0 → P₁ X = P₂ X) :
+    ∀ (p : BoolSeq), (∀ X : bfpsp.atoms, bfpsp.prefixes X <+: p → bfpsp.prefixes X = p) →
+      ∀ W : TreeWithMeasure α, W.1 = toTree.go bfpsp P₁ p →
+        (∀ q ∈ W.1.prefixes, W.2 (prefixEqEvent q) = ν (prefixEqEvent (p ++ q))) →
+        AgreeOffNull W.1 (toTree.go bfpsp P₂ p) W.2 := by
+  intro p
+  induction p using toTree.go.induct bfpsp with
+  | case1 p leafy =>
+    rintro hp ⟨t, μ⟩ hW hμ
+    rw [toTree.go]
+    simp only [leafy, ↓reduceDIte]
+    rw [toTree.go] at hW
+    simp only [leafy, ↓reduceDIte] at hW
+    subst hW
+    have hpC : bfpsp.prefixes leafy.choose = p := hp _ leafy.choose_spec
+    have hC : leafy.choose.1 = prefixEqEvent p := by
+      rw [atom_eq_prefixEqEvent bfpsp leafy.choose, hpC]
+    have hmass : μ Set.univ = ν leafy.choose.1 := by
+      rw [hC, ← prefixEqEvent_nil, hμ [] (by simp), List.append_nil]
+    simp only [AgreeOffNull]
+    by_cases h0 : ν leafy.choose.1 = 0
+    · exact Or.inr (hmass.trans h0)
+    · exact Or.inl (hP _ h0)
+  | case2 p leafy ihl ihr =>
+    rintro hp ⟨t, μ⟩ hW hμ
+    rw [toTree.go]
+    simp only [leafy, ↓reduceDIte]
+    rw [toTree.go] at hW
+    simp only [leafy, ↓reduceDIte] at hW
+    subst hW
+    have hstep : ∀ b : Bool, ∀ X : bfpsp.atoms,
+        bfpsp.prefixes X <+: p ++ [b] → bfpsp.prefixes X = p ++ [b] := by
+      intro b X hX
+      by_cases hle : (bfpsp.prefixes X).length ≤ p.length
+      · exact absurd ⟨X, List.prefix_of_prefix_length_le hX (List.prefix_append _ _) hle⟩ leafy
+      · exact hX.eq_of_length (by have := hX.length_le; simp at this ⊢; omega)
+    simp only [AgreeOffNull]
+    constructor
+    · refine ihl (hstep true) ⟨_, branchMeasure true μ⟩ rfl fun q hq ↦ ?_
+      rw [branchMeasure_prefixEqEvent true μ hq, hμ (true :: q) (mem_prefixes_node true hq)]
+      simp
+    · refine ihr (hstep false) ⟨_, branchMeasure false μ⟩ rfl fun q hq ↦ ?_
+      rw [branchMeasure_prefixEqEvent false μ hq, hμ (false :: q) (mem_prefixes_node false hq)]
+      simp
+
+/-! ### Running a tree, then continuing it -/
+
+lemma fixpoint_congr {t t' : ProbTree α} (ht : t = t') (μ : Measure[t.ms] Ω)
+    (μ' : Measure[t'.ms] Ω) (hμ : ∀ E, MeasurableSet[t.ms] E → μ E = μ' E) :
+    fixpoint ⟨t, μ⟩ = fixpoint ⟨t', μ'⟩ := by
+  subst ht
+  rw [measure_ext hμ]
+
+/-- `fixpoint_node`, at a measure given only through its values. -/
+lemma fixpoint_node_of_agree {l r : ProbTree α} (ν : Measure[(ProbTree.node l r).ms] Ω)
+    (μₗ : Measure[l.ms] Ω) (μᵣ : Measure[r.ms] Ω)
+    (hν : ∀ E, MeasurableSet[(ProbTree.node l r).ms] E → ν E = joinMeasure μₗ μᵣ E) :
+    fixpoint ⟨.node l r, ν⟩
+      = ⟨.node (fixpoint ⟨l, μₗ⟩).1 (fixpoint ⟨r, μᵣ⟩).1,
+         joinMeasure (fixpoint ⟨l, μₗ⟩).2 (fixpoint ⟨r, μᵣ⟩).2⟩ := by
+  rw [measure_ext hν, fixpoint_node, branchMeasure_joinMeasure_true,
+    branchMeasure_joinMeasure_false]
+
+/-- A measure on a tree, moved to a tree of the same σ-algebra.  The trees may carry
+different value types: a continued tree has the σ-algebra of the tree it continues. -/
+lemma cast_apply_of_ms_eq {β : Type} {t : ProbTree α} {t' : ProbTree β} (h : t'.ms = t.ms)
+    (μ : Measure[t.ms] Ω) {E : Set Ω} (hE : MeasurableSet[t'.ms] E) :
+    (μ.cast t'.ms) E = μ E :=
+  Measure.le_preserves_measure (h := le_of_eq h) (μ := μ) (hu := hE)
+
+/-- Running `n >>= f` from the root is running `n`, then continuing every leaf with `f`. -/
+lemma fixpoint_rootTree_bind {β : Type} (f : α → BernoulliM β) :
+    ∀ (n : BernoulliM α) (ν : Measure[(bindLeaves f (fixpoint (rootTree n)).1).ms] Ω),
+      (∀ E, MeasurableSet[(fixpoint (rootTree n)).1.ms] E → ν E = (fixpoint (rootTree n)).2 E) →
+      fixpoint (rootTree (n >>= f)) = fixpoint ⟨bindLeaves f (fixpoint (rootTree n)).1, ν⟩ := by
+  intro n
+  induction n with
+  | pure a =>
+    intro ν hν
+    rw [show ((PFunctor.FreeM.pure a : BernoulliM α) >>= f) = f a from rfl]
+    refine fixpoint_congr ?_ (rootTree (f a)).2 ν fun E hE ↦ ?_
+    · rw [congrArg Sigma.fst (fixpoint_rootTree_pure a)]
+      rfl
+    · rw [ms_leaf] at hE
+      rcases MeasurableSpace.measurableSet_bot_iff.mp hE with rfl | rfl
+      · simp
+      · rw [rootTree_univ, hν Set.univ (@MeasurableSet.univ Ω _),
+          measure_congr_tree (fixpoint_rootTree_pure a) Set.univ]
+        exact (rootTree_univ _).symm
+  | liftBind op c ih =>
+    intro ν hν
+    rw [show ((PFunctor.FreeM.liftBind op c : BernoulliM α) >>= f)
+        = PFunctor.FreeM.liftBind op (fun u ↦ c u >>= f) from rfl,
+      fixpoint_rootTree_liftBind op (fun u ↦ c u >>= f)]
+    have hfst : (fixpoint (rootTree (PFunctor.FreeM.liftBind op c))).1
+        = ProbTree.node (fixpoint (rootTree (c true))).1 (fixpoint (rootTree (c false))).1 :=
+      congrArg Sigma.fst (fixpoint_rootTree_liftBind op c)
+    have hsnd : ∀ G, (fixpoint (rootTree (PFunctor.FreeM.liftBind op c))).2 G
+        = joinMeasure (flipWeight op.1 true • (fixpoint (rootTree (c true))).2)
+            (flipWeight op.1 false • (fixpoint (rootTree (c false))).2) G :=
+      fun G ↦ measure_congr_tree (fixpoint_rootTree_liftBind op c) G
+    have ht : bindLeaves f (fixpoint (rootTree (PFunctor.FreeM.liftBind op c))).1
+        = ProbTree.node (bindLeaves f (fixpoint (rootTree (c true))).1)
+            (bindLeaves f (fixpoint (rootTree (c false))).1) := by
+      rw [hfst]; rfl
+    have hmsL := ms_bindLeaves f (fixpoint (rootTree (c true))).1
+    have hmsR := ms_bindLeaves f (fixpoint (rootTree (c false))).1
+    have hmsN : (ProbTree.node (bindLeaves f (fixpoint (rootTree (c true))).1)
+        (bindLeaves f (fixpoint (rootTree (c false))).1)).ms
+        = (bindLeaves f (fixpoint (rootTree (PFunctor.FreeM.liftBind op c))).1).ms := by
+      rw [ht]
+    have hmsN' : (ProbTree.node (bindLeaves f (fixpoint (rootTree (c true))).1)
+        (bindLeaves f (fixpoint (rootTree (c false))).1)).ms
+        = (ProbTree.node (fixpoint (rootTree (c true))).1 (fixpoint (rootTree (c false))).1).ms := by
+      show MeasurableSpace.generateFrom _ = MeasurableSpace.generateFrom _
+      rw [events, events]
+      simp only [prefixes, prefixes_bindLeaves]
+    -- the continued first runs, at measures that agree with the first runs'
+    have hcL : ∀ E, MeasurableSet[(fixpoint (rootTree (c true))).1.ms] E →
+        ((fixpoint (rootTree (c true))).2.cast
+          (bindLeaves f (fixpoint (rootTree (c true))).1).ms) E
+          = (fixpoint (rootTree (c true))).2 E := by
+      intro E hE
+      exact cast_apply_of_ms_eq hmsL _ (by rw [hmsL]; exact hE)
+    have hcR : ∀ E, MeasurableSet[(fixpoint (rootTree (c false))).1.ms] E →
+        ((fixpoint (rootTree (c false))).2.cast
+          (bindLeaves f (fixpoint (rootTree (c false))).1).ms) E
+          = (fixpoint (rootTree (c false))).2 E := by
+      intro E hE
+      exact cast_apply_of_ms_eq hmsR _ (by rw [hmsR]; exact hE)
+    have ihT := ih true _ hcL
+    have ihF := ih false _ hcR
+    -- the measure on the node, as the join of the scaled continued first runs
+    have hjoin : ∀ E, MeasurableSet[(ProbTree.node (bindLeaves f (fixpoint (rootTree (c true))).1)
+        (bindLeaves f (fixpoint (rootTree (c false))).1)).ms] E →
+        (ν.cast (ProbTree.node (bindLeaves f (fixpoint (rootTree (c true))).1)
+          (bindLeaves f (fixpoint (rootTree (c false))).1)).ms) E
+        = joinMeasure
+            (flipWeight op.1 true • (fixpoint (rootTree (c true))).2.cast
+              (bindLeaves f (fixpoint (rootTree (c true))).1).ms)
+            (flipWeight op.1 false • (fixpoint (rootTree (c false))).2.cast
+              (bindLeaves f (fixpoint (rootTree (c false))).1).ms) E := by
+      intro E hE
+      have hE'' : MeasurableSet[(ProbTree.node (fixpoint (rootTree (c true))).1
+          (fixpoint (rootTree (c false))).1).ms] E := by
+        rw [← hmsN']; exact hE
+      have hT : MeasurableSet[(bindLeaves f (fixpoint (rootTree (c true))).1).ms]
+          (consFlip true ⁻¹' E) := by
+        simpa using measurable_consFlip (l := bindLeaves f (fixpoint (rootTree (c true))).1)
+          (r := bindLeaves f (fixpoint (rootTree (c false))).1) true hE
+      have hF : MeasurableSet[(bindLeaves f (fixpoint (rootTree (c false))).1).ms]
+          (consFlip false ⁻¹' E) := by
+        simpa using measurable_consFlip (l := bindLeaves f (fixpoint (rootTree (c true))).1)
+          (r := bindLeaves f (fixpoint (rootTree (c false))).1) false hE
+      rw [cast_apply_of_ms_eq hmsN ν hE, hν E (by rw [hfst]; exact hE''), hsnd,
+        joinMeasure_apply _ _ hE'', joinMeasure_apply _ _ hE, Measure.smul_apply,
+        Measure.smul_apply, Measure.smul_apply, Measure.smul_apply,
+        cast_apply_of_ms_eq hmsL (fixpoint (rootTree (c true))).2 hT,
+        cast_apply_of_ms_eq hmsR (fixpoint (rootTree (c false))).2 hF]
+    rw [fixpoint_congr ht ν (ν.cast _)
+        (fun E hE ↦ (cast_apply_of_ms_eq hmsN ν (by rw [hmsN]; exact hE)).symm),
+      fixpoint_node_of_agree _ _ _ hjoin,
+      fixpoint_smul (flipWeight op.1 true) ((fixpoint (rootTree (c true))).2.cast
+        (bindLeaves f (fixpoint (rootTree (c true))).1).ms),
+      fixpoint_smul (flipWeight op.1 false) ((fixpoint (rootTree (c false))).2.cast
+        (bindLeaves f (fixpoint (rootTree (c false))).1).ms),
+      ihT, ihF]
+
+/-- **Running, then continuing.**  Running a tree continued by `f` is running the tree and
+then continuing every leaf the run ends at with `f`. -/
+lemma fixpoint_bindLeaves {β : Type} (f : α → BernoulliM β) :
+    ∀ (t : ProbTree α) (ν : Measure[t.ms] Ω) (ν' : Measure[(bindLeaves f t).ms] Ω),
+      (∀ E, MeasurableSet[t.ms] E → ν' E = ν E) →
+      ∀ (ν'' : Measure[(bindLeaves f (fixpoint ⟨t, ν⟩).1).ms] Ω),
+        (∀ E, MeasurableSet[(fixpoint ⟨t, ν⟩).1.ms] E → ν'' E = (fixpoint ⟨t, ν⟩).2 E) →
+        fixpoint ⟨bindLeaves f t, ν'⟩ = fixpoint ⟨bindLeaves f (fixpoint ⟨t, ν⟩).1, ν''⟩ := by
+  intro t
+  induction t with
+  | leaf n =>
+    intro ν ν' hν' ν'' hν''
+    have hfst : (fixpoint ⟨ProbTree.leaf n, ν⟩).1 = (fixpoint (rootTree n)).1 := by
+      rw [fixpoint_leaf n ν]
+    have hsnd : ∀ G, (fixpoint ⟨ProbTree.leaf n, ν⟩).2 G = ν Set.univ * (fixpoint (rootTree n)).2 G :=
+      fun G ↦ (measure_congr_tree (fixpoint_leaf n ν) G).trans (by
+        show (ν Set.univ • (fixpoint (rootTree n)).2) G = _
+        rw [Measure.smul_apply, smul_eq_mul])
+    have huniv : ν' Set.univ = ν Set.univ := hν' _ (by rw [ms_leaf]; exact @MeasurableSet.univ _ ⊥)
+    have hms := ms_bindLeaves f (fixpoint (rootTree n)).1
+    have ht : bindLeaves f (fixpoint ⟨ProbTree.leaf n, ν⟩).1 = bindLeaves f (fixpoint (rootTree n)).1 := by
+      rw [hfst]
+    have hmsN : (bindLeaves f (fixpoint (rootTree n)).1).ms
+        = (bindLeaves f (fixpoint ⟨ProbTree.leaf n, ν⟩).1).ms := by rw [ht]
+    have hcn : ∀ E, MeasurableSet[(fixpoint (rootTree n)).1.ms] E →
+        ((fixpoint (rootTree n)).2.cast (bindLeaves f (fixpoint (rootTree n)).1).ms) E
+          = (fixpoint (rootTree n)).2 E := by
+      intro E hE
+      exact cast_apply_of_ms_eq hms _ (by rw [hms]; exact hE)
+    have hbind := fixpoint_rootTree_bind f n _ hcn
+    have hagree : ∀ E, MeasurableSet[(bindLeaves f (fixpoint ⟨ProbTree.leaf n, ν⟩).1).ms] E →
+        ν'' E = (ν Set.univ • (fixpoint (rootTree n)).2.cast
+          (bindLeaves f (fixpoint (rootTree n)).1).ms) E := by
+      intro E hE
+      have hE' : MeasurableSet[(bindLeaves f (fixpoint (rootTree n)).1).ms] E := by
+        rw [hmsN]; exact hE
+      have hE'' : MeasurableSet[(fixpoint (rootTree n)).1.ms] E := by
+        rw [← hms]; exact hE'
+      rw [hν'' E (by rw [hfst]; exact hE''), hsnd, Measure.smul_apply, smul_eq_mul,
+        cast_apply_of_ms_eq hms (fixpoint (rootTree n)).2 hE']
+    rw [fixpoint_congr ht ν'' _ hagree,
+      fixpoint_smul (ν Set.univ) ((fixpoint (rootTree n)).2.cast
+        (bindLeaves f (fixpoint (rootTree n)).1).ms),
+      ← hbind]
+    show fixpoint ⟨ProbTree.leaf (n >>= f), ν'⟩ = _
+    rw [fixpoint_leaf (n >>= f) ν']
+    exact congrArg (fun k : ℝ≥0∞ ↦ (⟨(fixpoint (rootTree (n >>= f))).1,
+      k • (fixpoint (rootTree (n >>= f))).2⟩ : TreeWithMeasure β)) huniv
+  | node l r ihl ihr =>
+    intro ν ν' hν' ν'' hν''
+    have hfst : (fixpoint ⟨ProbTree.node l r, ν⟩).1
+        = ProbTree.node (fixpoint ⟨l, branchMeasure true ν⟩).1 (fixpoint ⟨r, branchMeasure false ν⟩).1 :=
+      congrArg Sigma.fst (fixpoint_node ν)
+    have hsnd : ∀ G, (fixpoint ⟨ProbTree.node l r, ν⟩).2 G
+        = joinMeasure (fixpoint ⟨l, branchMeasure true ν⟩).2 (fixpoint ⟨r, branchMeasure false ν⟩).2 G :=
+      fun G ↦ measure_congr_tree (fixpoint_node ν) G
+    have ht : bindLeaves f (fixpoint ⟨ProbTree.node l r, ν⟩).1
+        = ProbTree.node (bindLeaves f (fixpoint ⟨l, branchMeasure true ν⟩).1)
+            (bindLeaves f (fixpoint ⟨r, branchMeasure false ν⟩).1) := by
+      rw [hfst]; rfl
+    have hmsL := ms_bindLeaves f (fixpoint ⟨l, branchMeasure true ν⟩).1
+    have hmsR := ms_bindLeaves f (fixpoint ⟨r, branchMeasure false ν⟩).1
+    have hmsN : (ProbTree.node (bindLeaves f (fixpoint ⟨l, branchMeasure true ν⟩).1)
+        (bindLeaves f (fixpoint ⟨r, branchMeasure false ν⟩).1)).ms
+        = (bindLeaves f (fixpoint ⟨ProbTree.node l r, ν⟩).1).ms := by rw [ht]
+    have hmsN' : (ProbTree.node (bindLeaves f (fixpoint ⟨l, branchMeasure true ν⟩).1)
+        (bindLeaves f (fixpoint ⟨r, branchMeasure false ν⟩).1)).ms
+        = (ProbTree.node (fixpoint ⟨l, branchMeasure true ν⟩).1
+            (fixpoint ⟨r, branchMeasure false ν⟩).1).ms := by
+      show MeasurableSpace.generateFrom _ = MeasurableSpace.generateFrom _
+      rw [events, events]
+      simp only [prefixes, prefixes_bindLeaves]
+    -- the branch measures of `ν'` agree with those of `ν`
+    have hbr : ∀ b : Bool, ∀ S, MeasurableSet[(if b then l else r).ms] S →
+        branchMeasure (l := bindLeaves f l) (r := bindLeaves f r) b ν' S = branchMeasure b ν S := by
+      intro b S hS
+      have hS' : MeasurableSet[(if b then bindLeaves f l else bindLeaves f r).ms] S := by
+        cases b
+        · show MeasurableSet[(bindLeaves f r).ms] S
+          rw [ms_bindLeaves]; exact hS
+        · show MeasurableSet[(bindLeaves f l).ms] S
+          rw [ms_bindLeaves]; exact hS
+      rw [branchMeasure_apply' b ν' hS', branchMeasure_apply' b ν hS]
+      exact hν' _ ((measurable_descend b hS).inter (measurableSet_prefixEqEvent_singleton b))
+    -- the continued sub-runs, at measures that agree with the sub-runs'
+    have hcL : ∀ E, MeasurableSet[(fixpoint ⟨l, branchMeasure true ν⟩).1.ms] E →
+        ((fixpoint ⟨l, branchMeasure true ν⟩).2.cast
+          (bindLeaves f (fixpoint ⟨l, branchMeasure true ν⟩).1).ms) E
+          = (fixpoint ⟨l, branchMeasure true ν⟩).2 E := by
+      intro E hE
+      exact cast_apply_of_ms_eq hmsL _ (by rw [hmsL]; exact hE)
+    have hcR : ∀ E, MeasurableSet[(fixpoint ⟨r, branchMeasure false ν⟩).1.ms] E →
+        ((fixpoint ⟨r, branchMeasure false ν⟩).2.cast
+          (bindLeaves f (fixpoint ⟨r, branchMeasure false ν⟩).1).ms) E
+          = (fixpoint ⟨r, branchMeasure false ν⟩).2 E := by
+      intro E hE
+      exact cast_apply_of_ms_eq hmsR _ (by rw [hmsR]; exact hE)
+    have ihT := ihl (branchMeasure true ν) (branchMeasure true ν') (hbr true) _ hcL
+    have ihF := ihr (branchMeasure false ν) (branchMeasure false ν') (hbr false) _ hcR
+    -- the measure on the node, as the join of the continued sub-runs
+    have hjoin : ∀ E, MeasurableSet[(ProbTree.node (bindLeaves f (fixpoint ⟨l, branchMeasure true ν⟩).1)
+        (bindLeaves f (fixpoint ⟨r, branchMeasure false ν⟩).1)).ms] E →
+        (ν''.cast (ProbTree.node (bindLeaves f (fixpoint ⟨l, branchMeasure true ν⟩).1)
+          (bindLeaves f (fixpoint ⟨r, branchMeasure false ν⟩).1)).ms) E
+        = joinMeasure
+            ((fixpoint ⟨l, branchMeasure true ν⟩).2.cast
+              (bindLeaves f (fixpoint ⟨l, branchMeasure true ν⟩).1).ms)
+            ((fixpoint ⟨r, branchMeasure false ν⟩).2.cast
+              (bindLeaves f (fixpoint ⟨r, branchMeasure false ν⟩).1).ms) E := by
+      intro E hE
+      have hE'' : MeasurableSet[(ProbTree.node (fixpoint ⟨l, branchMeasure true ν⟩).1
+          (fixpoint ⟨r, branchMeasure false ν⟩).1).ms] E := by
+        rw [← hmsN']; exact hE
+      have hT : MeasurableSet[(bindLeaves f (fixpoint ⟨l, branchMeasure true ν⟩).1).ms]
+          (consFlip true ⁻¹' E) := by
+        simpa using measurable_consFlip (l := bindLeaves f (fixpoint ⟨l, branchMeasure true ν⟩).1)
+          (r := bindLeaves f (fixpoint ⟨r, branchMeasure false ν⟩).1) true hE
+      have hF : MeasurableSet[(bindLeaves f (fixpoint ⟨r, branchMeasure false ν⟩).1).ms]
+          (consFlip false ⁻¹' E) := by
+        simpa using measurable_consFlip (l := bindLeaves f (fixpoint ⟨l, branchMeasure true ν⟩).1)
+          (r := bindLeaves f (fixpoint ⟨r, branchMeasure false ν⟩).1) false hE
+      rw [cast_apply_of_ms_eq hmsN ν'' hE, hν'' E (by rw [hfst]; exact hE''), hsnd,
+        joinMeasure_apply _ _ hE'', joinMeasure_apply _ _ hE,
+        cast_apply_of_ms_eq hmsL (fixpoint ⟨l, branchMeasure true ν⟩).2 hT,
+        cast_apply_of_ms_eq hmsR (fixpoint ⟨r, branchMeasure false ν⟩).2 hF]
+    show fixpoint ⟨ProbTree.node (bindLeaves f l) (bindLeaves f r), ν'⟩ = _
+    rw [fixpoint_node ν', ihT, ihF,
+      fixpoint_congr ht ν'' (ν''.cast _)
+        (fun E hE ↦ (cast_apply_of_ms_eq hmsN ν'' (by rw [hmsN]; exact hE)).symm),
+      fixpoint_node_of_agree _ _ _ hjoin]
 
 /-! ### Reweighting a footprint
 
-Changing a footprint's measure while keeping its atoms and prefixes.  `footprintValue` is
-then invariant by `rfl`, and `toTree` by `toTree_congr`. -/
+Changing a footprint's measure while keeping its atoms and prefixes.  `toTree` is then
+invariant (`toTree_reweight`), and so is everything read off the atoms and prefixes alone;
+what changes is which atoms the run prunes. -/
 
 /-- A footprint with its measure replaced. -/
 def BoundedFootprintPsp.reweight (b : BoundedFootprintPsp) (h : ✓b.psp)
@@ -2364,186 +3356,196 @@ lemma reweight_valid {b : BoundedFootprintPsp} {h : ✓b.psp}
     {ν : Measure[(ValidPSp.toPSpace ⟨b.psp, h⟩).ms] Ω} {hν : IsProbabilityMeasure ν} :
     ✓(BoundedFootprintPsp.reweight b h ν hν).psp := Option.some_ne_none _
 
-lemma footprintValue_reweight {b : BoundedFootprintPsp} {h : ✓b.psp}
-    {ν : Measure[(ValidPSp.toPSpace ⟨b.psp, h⟩).ms] Ω} {hν : IsProbabilityMeasure ν}
-    (m : BernoulliM α) :
-    footprintValue (BoundedFootprintPsp.reweight b h ν hν) m = footprintValue b m := rfl
-
-/-- `toTree` only reads the atoms and their prefixes. -/
-lemma toTree_go_congr (b b' : BoundedFootprintPsp) (m : BernoulliM α)
-    (hb : b.atoms = b'.atoms)
-    (hp : ∀ (S : Set Ω) (hS : S ∈ b.atoms) (hS' : S ∈ b'.atoms),
-      b.prefixes ⟨S, hS⟩ = b'.prefixes ⟨S, hS'⟩) :
-    ∀ p : BoolSeq, toTree.go b (fun _ ↦ m) p = toTree.go b' (fun _ ↦ m) p := by
-  have mem' : ∀ S : Set Ω, S ∈ b.atoms → S ∈ b'.atoms := fun S h ↦ by rw [← hb]; exact h
-  have mem : ∀ S : Set Ω, S ∈ b'.atoms → S ∈ b.atoms := fun S h ↦ by rw [hb]; exact h
-  intro p
-  induction p using toTree.go.induct b with
-  | case1 p leafy =>
-    have leafy' : ∃ X : b'.atoms, b'.prefixes X <+: p := by
-      obtain ⟨X, hX⟩ := leafy
-      exact ⟨⟨X.1, mem' X.1 X.2⟩, by rw [← hp X.1 X.2 (mem' X.1 X.2)]; exact hX⟩
-    rw [toTree.go]
-    simp only [leafy, ↓reduceDIte]
-    conv_rhs => rw [toTree.go]
-    simp only [leafy', ↓reduceDIte]
-  | case2 p leafy ihl ihr =>
-    have leafy' : ¬ ∃ X : b'.atoms, b'.prefixes X <+: p := by
-      rintro ⟨X, hX⟩
-      exact leafy ⟨⟨X.1, mem X.1 X.2⟩, by rw [hp X.1 (mem X.1 X.2) X.2]; exact hX⟩
-    rw [toTree.go]
-    simp only [leafy, ↓reduceDIte]
-    conv_rhs => rw [toTree.go]
-    simp only [leafy', ↓reduceDIte]
-    rw [ihl, ihr]
-
-lemma toTree_congr (b b' : BoundedFootprintPsp) (m : BernoulliM α)
-    (hb : b.atoms = b'.atoms)
-    (hp : ∀ (S : Set Ω) (hS : S ∈ b.atoms) (hS' : S ∈ b'.atoms),
-      b.prefixes ⟨S, hS⟩ = b'.prefixes ⟨S, hS'⟩) :
-    toTree b (fun _ ↦ m) = toTree b' (fun _ ↦ m) := by
-  rw [toTree, toTree]
-  exact toTree_go_congr b b' m hb hp []
-
-lemma toTree_reweight {b : BoundedFootprintPsp} {h : ✓b.psp}
-    {ν : Measure[(ValidPSp.toPSpace ⟨b.psp, h⟩).ms] Ω} {hν : IsProbabilityMeasure ν}
-    (m : BernoulliM α) :
-    toTree (BoundedFootprintPsp.reweight b h ν hν) (fun _ ↦ m) = toTree b (fun _ ↦ m) :=
-  toTree_congr _ _ m rfl (fun _ _ _ ↦ rfl)
-
-/-! ### The run of a mixture is the mixture of the runs -/
-
-lemma fixpoint_measure_congr {t t' : ProbTree α} (ht : t = t') (μ : Measure[t.ms] Ω)
-    (μ' : Measure[t'.ms] Ω) (hμ : ∀ E, MeasurableSet[t.ms] E → μ E = μ' E) (E : Set Ω) :
-    (fixpoint ⟨t, μ⟩).2 E = (fixpoint ⟨t', μ'⟩).2 E := by
-  subst ht
-  rw [measure_ext hμ]
-
-lemma fixpoint_fst_tree_congr {t t' : ProbTree α} (ht : t = t') (μ : Measure[t.ms] Ω)
-    (μ' : Measure[t'.ms] Ω) : (fixpoint ⟨t, μ⟩).1 = (fixpoint ⟨t', μ'⟩).1 := by
-  subst ht
-  exact fixpoint_fst_congr' μ μ'
+/-! ### The space a run lands in -/
 
 /-- The space a run lands in, with the tree spelled out. -/
 lemma run_psp_eq [Inhabited α] (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α) :
     (run m b).1.psp
-      = .some ⟨⟨(fixpoint (⟨toTree b (fun _ ↦ m),
-            (ValidPSp.toPSpace ⟨b.psp, h⟩).μ.cast (toTree b (fun _ ↦ m)).ms⟩
-              : TreeWithMeasure α)).1.ms,
-          (fixpoint (⟨toTree b (fun _ ↦ m),
-            (ValidPSp.toPSpace ⟨b.psp, h⟩).μ.cast (toTree b (fun _ ↦ m)).ms⟩
-              : TreeWithMeasure α)).2⟩, inferInstance⟩ := by
+      = .some ⟨⟨(fixpoint (⟨toTree b (prunePrograms b h (fun _ ↦ m)),
+            (ValidPSp.toPSpace ⟨b.psp, h⟩).μ.cast
+              (toTree b (prunePrograms b h (fun _ ↦ m))).ms⟩ : TreeWithMeasure α)).1.ms,
+          (fixpoint (⟨toTree b (prunePrograms b h (fun _ ↦ m)),
+            (ValidPSp.toPSpace ⟨b.psp, h⟩).μ.cast
+              (toTree b (prunePrograms b h (fun _ ↦ m))).ms⟩ : TreeWithMeasure α)).2⟩,
+          inferInstance⟩ := by
   rw [run, interp_bernoulliM, bigStep, dite_eq_left h]
   exact ofTree_psp' _ _
 
-/-- The measure a run lands with, computed at any tree the footprint builds and any measure
-agreeing with the footprint's. -/
-lemma run_psp_apply [Inhabited α] (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α)
-    {T : ProbTree α} (hT : toTree b (fun _ ↦ m) = T)
-    {S : PSpace Ω} (hS : (run m b).1.psp = .some S)
-    (ρ : Measure[T.ms] Ω)
-    (hρ : ∀ F, MeasurableSet[T.ms] F → ρ F = (ValidPSp.toPSpace ⟨b.psp, h⟩).μ F)
-    (E : Set Ω) : S.μ E = (fixpoint (⟨T, ρ⟩ : TreeWithMeasure α)).2 E := by
-  have hms : (toTree b (fun _ ↦ m)).ms = (ValidPSp.toPSpace ⟨b.psp, h⟩).ms := by
-    rw [toTree_ms_eq, b.sigmaAgrees h]
-  have hval := Option.some_injective _ ((run_psp_eq b h m).symm.trans hS)
-  rw [← hval]
-  show (fixpoint (⟨toTree b (fun _ ↦ m),
-    (ValidPSp.toPSpace ⟨b.psp, h⟩).μ.cast (toTree b (fun _ ↦ m)).ms⟩
-      : TreeWithMeasure α)).2 E = _
-  refine fixpoint_measure_congr hT _ ρ (fun F hF ↦ ?_) E
-  rw [Measure.le_preserves_measure (h := le_of_eq hms)
-    (μ := (ValidPSp.toPSpace ⟨b.psp, h⟩).μ) (hu := hF), hρ F (hT ▸ hF)]
-
-/-- **Running a mixture.**  If a footprint's measure is a weighted mixture, the space the run
-lands in is the same mixture of the spaces the reweighted runs land in. -/
-lemma run_psp_mixture {ι : Type} [Inhabited α] (b : BoundedFootprintPsp) (h : ✓b.psp)
-    (m : BernoulliM α) (w : ι → ℝ≥0∞)
-    (ν : ι → Measure[(ValidPSp.toPSpace ⟨b.psp, h⟩).ms] Ω)
-    (hν : ∀ i, IsProbabilityMeasure (ν i))
-    (hmix : ∀ E, MeasurableSet[(ValidPSp.toPSpace ⟨b.psp, h⟩).ms] E →
-      (ValidPSp.toPSpace ⟨b.psp, h⟩).μ E = ∑' i, w i * ν i E)
-    {S : PSpace Ω} (hS : (run m b).1.psp = .some S)
-    {S' : ι → PSpace Ω}
-    (hS' : ∀ i, (run m (BoundedFootprintPsp.reweight b h (ν i) (hν i))).1.psp = .some (S' i))
-    {E : Set Ω} (hE : MeasurableSet[S.ms] E) :
-    S.μ E = ∑' i, w i * (S' i).μ E := by
-  have hms : (toTree b (fun _ ↦ m)).ms = (ValidPSp.toPSpace ⟨b.psp, h⟩).ms := by
-    rw [toTree_ms_eq, b.sigmaAgrees h]
-  have hcast : ∀ (ρ : Measure[(ValidPSp.toPSpace ⟨b.psp, h⟩).ms] Ω) (F : Set Ω),
-      MeasurableSet[(toTree b (fun _ ↦ m)).ms] F →
-      (ρ.cast (toTree b (fun _ ↦ m)).ms) F = ρ F := fun ρ F hF ↦
-    Measure.le_preserves_measure (h := le_of_eq hms) (μ := ρ) (hu := hF)
-  -- the mixture run
-  have hmain := run_psp_apply b h m rfl hS
-    ((ValidPSp.toPSpace ⟨b.psp, h⟩).μ.cast (toTree b (fun _ ↦ m)).ms)
-    (fun F hF ↦ hcast _ F hF) E
-  -- each reweighted run, at the same tree
-  have hpart : ∀ i, (S' i).μ E
-      = (fixpoint (⟨toTree b (fun _ ↦ m), (ν i).cast (toTree b (fun _ ↦ m)).ms⟩
-          : TreeWithMeasure α)).2 E := fun i ↦
-    run_psp_apply (BoundedFootprintPsp.reweight b h (ν i) (hν i)) reweight_valid m
-      (toTree_reweight m) (hS' i) _ (fun F hF ↦ hcast (ν i) F hF) E
-  rw [hmain]
-  rw [fixpoint_sum (toTree b (fun _ ↦ m))
-      ((ValidPSp.toPSpace ⟨b.psp, h⟩).μ.cast (toTree b (fun _ ↦ m)).ms)
-      (fun i ↦ (w i) • ((ν i).cast (toTree b (fun _ ↦ m)).ms))
-      (fun F hF ↦ by
-        rw [hcast _ F hF, hmix F (hms ▸ hF)]
-        exact tsum_congr fun i ↦ by rw [Measure.smul_apply, smul_eq_mul, hcast (ν i) F hF])
-      E (by
-        have hval := Option.some_injective _ ((run_psp_eq b h m).symm.trans hS)
-        rw [← hval] at hE
-        exact hE)]
-  refine tsum_congr fun i ↦ ?_
-  rw [hpart i]
-  refine Eq.trans (measure_congr_tree (fixpoint_smul (w i) _) E) ?_
-  show (w i • (fixpoint (⟨toTree b (fun _ ↦ m), (ν i).cast (toTree b (fun _ ↦ m)).ms⟩
-    : TreeWithMeasure α)).2) E = _
-  rw [Measure.smul_apply, smul_eq_mul]
 /-! ### The randomness a run adds
 
 `runValue` records what a program reports; `runPath` records *how it got there* -- the bits
 it actually read.  The σ-algebra that generates is the randomness the run contributes on top
 of the footprint it started from. -/
 
-/-- The path a program takes on a tape: the bits it reads. -/
-def runPath : BernoulliM α → Ω → BoolSeq
-  | .pure _, _ => []
-  | .liftBind _ c, ρ => ρ 0 :: runPath (c (ρ 0)) (shift ρ)
-
 /-- The path a run takes from a footprint: the program's own path on the tape left after the
-tape's atom prefix.  Like `footprintValue`, this reads only the atoms and their prefixes. -/
+tape's atom prefix.  This reads only the atoms and their prefixes. -/
 def footprintPath (b : BoundedFootprintPsp) (m : BernoulliM α) : Ω → BoolSeq :=
   fun ρ ↦ runPath m (shiftBy (b.prefixes (b.atomOf ρ)).length ρ)
 
-/-- The randomness a run adds, as a σ-algebra. -/
-def freshMs (b : BoundedFootprintPsp) (m : BernoulliM α) : MeasurableSpace Ω :=
-  MeasurableSpace.comap (footprintPath b m) ⊤
+/-- The tapes in the atoms a footprint gives no mass: the ones a run from it does not touch. -/
+def deadAtoms (b : BoundedFootprintPsp) (h : ✓b.psp) : Set Ω :=
+  {ρ | (ValidPSp.toPSpace ⟨b.psp, h⟩).μ (b.atomOf ρ).1 = 0}
+
+lemma deadAtoms_measurableSet (b : BoundedFootprintPsp) (h : ✓b.psp) :
+    MeasurableSet[(ValidPSp.toPSpace ⟨b.psp, h⟩).ms] (deadAtoms b h) :=
+  measurableSet_preimage_atomOf b h {X | (ValidPSp.toPSpace ⟨b.psp, h⟩).μ X.1 = 0}
+
+lemma deadAtoms_null (b : BoundedFootprintPsp) (h : ✓b.psp) :
+    (ValidPSp.toPSpace ⟨b.psp, h⟩).μ (deadAtoms b h) = 0 :=
+  measure_preimage_atomOf_null b h {X | (ValidPSp.toPSpace ⟨b.psp, h⟩).μ X.1 = 0} fun _ hX ↦ hX
+
+/-- The path a *pruned* run takes from a footprint: `none` on the atoms that carry no mass,
+which the run does not refine, and the program's own path on the rest.  Recording the dead
+atoms as `none` rather than as an empty path keeps them measurable for the run, which is what
+lets a fibre's run, which prunes more, be compared with the run it came from. -/
+noncomputable def prunedPath (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α) :
+    Ω → Option BoolSeq :=
+  fun ρ ↦ if ρ ∈ deadAtoms b h then none else some (footprintPath b m ρ)
+
+/-- The randomness a run adds, as a σ-algebra: the pruned path.  On a footprint that is not a
+probability space nothing runs, and nothing is fresh. -/
+noncomputable def freshMs (b : BoundedFootprintPsp) (m : BernoulliM α) : MeasurableSpace Ω :=
+  if h : ✓b.psp then MeasurableSpace.comap (prunedPath b h m) ⊤ else ⊥
+
+lemma freshMs_of_valid (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α) :
+    freshMs b m = MeasurableSpace.comap (prunedPath b h m) ⊤ := by
+  rw [freshMs, dite_eq_left h]
 
 lemma footprintPath_reweight {b : BoundedFootprintPsp} {h : ✓b.psp}
     {ν : Measure[(ValidPSp.toPSpace ⟨b.psp, h⟩).ms] Ω} {hν : IsProbabilityMeasure ν}
     (m : BernoulliM α) :
     footprintPath (BoundedFootprintPsp.reweight b h ν hν) m = footprintPath b m := rfl
 
-lemma freshMs_reweight {b : BoundedFootprintPsp} {h : ✓b.psp}
-    {ν : Measure[(ValidPSp.toPSpace ⟨b.psp, h⟩).ms] Ω} {hν : IsProbabilityMeasure ν}
-    (m : BernoulliM α) :
-    freshMs (BoundedFootprintPsp.reweight b h ν hν) m = freshMs b m := rfl
+/-- The pruned path, read off the pruned tree. -/
+lemma prunedPath_eq_leafPath (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α) :
+    prunedPath b h m = fun ρ ↦ if ρ ∈ deadAtoms b h then none
+      else some (leafPath (toTree b (prunePrograms b h (fun _ ↦ m))) ρ) := by
+  funext ρ
+  unfold prunedPath
+  split_ifs with h0
+  · rfl
+  · rw [leafPath_toTree]
+    have h0' : ¬ (ValidPSp.toPSpace ⟨b.psp, h⟩).μ (b.atomOf ρ).1 = 0 := h0
+    unfold prunePrograms
+    rw [ite_eq_right h0']
+    rfl
 
-/-- Reweighting a footprint does not change what a run from it reports. -/
+/-- The preimage under a function that is constant on `N` and `g` elsewhere. -/
+lemma preimage_ite_mem {β : Type} (N : Set Ω) (c : β) (g : Ω → β) (O : Set β) :
+    (fun ρ ↦ if ρ ∈ N then c else g ρ) ⁻¹' O
+      = (N ∩ {_ρ | c ∈ O}) ∪ (Nᶜ ∩ g ⁻¹' O) := by
+  ext ρ
+  by_cases hρ : ρ ∈ N <;> simp [hρ]
+
+/-- A function that is constant where `p` holds and `g` elsewhere generates no more than
+`{p}` and `g` do.  The decidability of `p` is left to unification, so that this applies to an
+`if` however its decidability was found. -/
+lemma comap_ite_le {β : Type} (p : Ω → Prop) {_ : DecidablePred p} (c : β) (g : Ω → β) :
+    MeasurableSpace.comap (fun ρ ↦ if p ρ then c else g ρ) ⊤
+      ≤ MeasurableSpace.generateFrom {{ρ | p ρ}} ⊔ MeasurableSpace.comap g ⊤ := by
+  rintro _ ⟨O, -, rfl⟩
+  have hN : MeasurableSet[MeasurableSpace.generateFrom {{ρ | p ρ}} ⊔ MeasurableSpace.comap g ⊤]
+      {ρ | p ρ} :=
+    (le_sup_left : MeasurableSpace.generateFrom {{ρ | p ρ}} ≤ _) _
+      (MeasurableSpace.measurableSet_generateFrom (Set.mem_singleton _))
+  have hg : MeasurableSet[MeasurableSpace.generateFrom {{ρ | p ρ}} ⊔ MeasurableSpace.comap g ⊤]
+      (g ⁻¹' O) :=
+    (le_sup_right : MeasurableSpace.comap g ⊤ ≤ _) _ ⟨O, MeasurableSpace.measurableSet_top, rfl⟩
+  have hpre : (fun ρ ↦ if p ρ then c else g ρ) ⁻¹' O
+      = ({ρ | p ρ} ∩ {_ρ | c ∈ O}) ∪ ({ρ | p ρ}ᶜ ∩ g ⁻¹' O) := by
+    ext ρ
+    by_cases hρ : p ρ <;> simp [hρ]
+  rw [hpre]
+  refine MeasurableSet.union (MeasurableSet.inter hN ?_) (MeasurableSet.inter hN.compl hg)
+  by_cases hc : c ∈ O
+  · simp only [hc, Set.ofPred_true]
+    exact @MeasurableSet.univ Ω (MeasurableSpace.generateFrom {{ρ | p ρ}} ⊔ MeasurableSpace.comap g ⊤)
+  · simp only [hc, Set.ofPred_false]
+    exact @MeasurableSet.empty Ω (MeasurableSpace.generateFrom {{ρ | p ρ}} ⊔ MeasurableSpace.comap g ⊤)
+
+/-- The value a run reports is part of the randomness it adds: on an atom that carries mass
+it is the program's value along the path read, and on the rest it is a constant, as is the
+path.  Needed for the locality clause of `wp` in `WPDist`. -/
+lemma comap_result_le_freshMs [Inhabited α] (b : BoundedFootprintPsp) (m : BernoulliM α) :
+    MeasurableSpace.comap (result (run m b)) ⊤ ≤ freshMs b m := by
+  unfold freshMs
+  split_ifs with h
+  · -- the value reported is the program run on the tape that spells out the pruned path
+    have hres : result (run m b) = fun ρ ↦ (prunedPath b h m ρ).elim
+        (runValue m (fun _ ↦ false)) (fun π ↦ runValue m (tapeOf π)) := by
+      rw [result_run_eq_leafValue b m h]
+      funext ρ
+      rw [leafValue_toTree]
+      by_cases h0 : ρ ∈ deadAtoms b h
+      · have h0' : (ValidPSp.toPSpace ⟨b.psp, h⟩).μ (b.atomOf ρ).1 = 0 := h0
+        simp only [prunePrograms, prunedPath, h0, h0', ↓reduceIte]
+        rfl
+      · have h0' : ¬ (ValidPSp.toPSpace ⟨b.psp, h⟩).μ (b.atomOf ρ).1 = 0 := h0
+        simp only [prunePrograms, prunedPath, h0, h0', ↓reduceIte]
+        exact runValue_eq_of_runPath_eq m (runPath_tapeOf m _).symm
+    rw [hres]
+    rintro _ ⟨T, -, rfl⟩
+    exact ⟨(fun o : Option BoolSeq ↦ o.elim (runValue m (fun _ ↦ false))
+      (fun π ↦ runValue m (tapeOf π))) ⁻¹' T, MeasurableSpace.measurableSet_top, rfl⟩
+  · -- nothing runs, and a constant measures nothing
+    classical
+    have hres : result (run m b) = fun _ ↦ default := by
+      rw [run, interp_bernoulliM, bigStep, dite_eq_right h]
+      rfl
+    rw [hres]
+    rintro _ ⟨T, -, rfl⟩
+    rw [Set.preimage_const]
+    split_ifs
+    · exact @MeasurableSet.univ Ω ⊥
+    · exact @MeasurableSet.empty Ω ⊥
+
+/-- The dead atoms are measurable for the randomness a run adds: they are where the pruned
+path is `none`. -/
+lemma deadAtoms_measurableSet_freshMs (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α) :
+    MeasurableSet[freshMs b m] (deadAtoms b h) := by
+  rw [freshMs_of_valid b h m]
+  refine ⟨{none}, MeasurableSpace.measurableSet_top, ?_⟩
+  ext ρ
+  simp only [Set.mem_preimage, Set.mem_singleton_iff, prunedPath]
+  by_cases hd : ρ ∈ deadAtoms b h
+  · simp [hd]
+  · simp [hd]
+
+/-- Reweighting a footprint prunes at the atoms the new measure gives no mass, and nowhere
+else differs from the original run's pruned path, as long as the new measure is absolutely
+continuous w.r.t. the old one on the atoms. -/
+lemma prunedPath_reweight (b : BoundedFootprintPsp) (h : ✓b.psp)
+    (ν : Measure[(ValidPSp.toPSpace ⟨b.psp, h⟩).ms] Ω) (hν : IsProbabilityMeasure ν)
+    (m : BernoulliM α)
+    (hac : ∀ ρ, (ValidPSp.toPSpace ⟨b.psp, h⟩).μ (b.atomOf ρ).1 = 0 → ν (b.atomOf ρ).1 = 0) :
+    prunedPath (BoundedFootprintPsp.reweight b h ν hν) reweight_valid m
+      = fun ρ ↦ if ν (b.atomOf ρ).1 = 0 then none else prunedPath b h m ρ := by
+  funext ρ
+  unfold prunedPath
+  by_cases hρ : ν (b.atomOf ρ).1 = 0
+  · have h1 : ρ ∈ deadAtoms (BoundedFootprintPsp.reweight b h ν hν) reweight_valid := hρ
+    rw [ite_eq_left h1, ite_eq_left hρ]
+  · have h1 : ρ ∉ deadAtoms (BoundedFootprintPsp.reweight b h ν hν) reweight_valid := hρ
+    have hdead : ρ ∉ deadAtoms b h := fun hd ↦ hρ (hac ρ hd)
+    rw [ite_eq_right h1, ite_eq_right hρ, ite_eq_right hdead]
+    rfl
+
+/-- Reweighting a footprint changes what a run from it reports only on the atoms that one of
+the two measures gives no mass: there the pruned programs differ. -/
 lemma result_run_reweight [Inhabited α] {b : BoundedFootprintPsp} {h : ✓b.psp}
     {ν : Measure[(ValidPSp.toPSpace ⟨b.psp, h⟩).ms] Ω} {hν : IsProbabilityMeasure ν}
-    (m : BernoulliM α) :
-    result (run m (BoundedFootprintPsp.reweight b h ν hν)) = result (run m b) := by
-  obtain ⟨_, _, hres, -⟩ := run_const (BoundedFootprintPsp.reweight b h ν hν) m reweight_valid
-  obtain ⟨_, _, hres', -⟩ := run_const b m h
-  rw [hres, hres', toTree_reweight]
+    (m : BernoulliM α) {ρ : Ω}
+    (hρ : (ValidPSp.toPSpace ⟨b.psp, h⟩).μ (b.atomOf ρ).1 ≠ 0) (hρ' : ν (b.atomOf ρ).1 ≠ 0) :
+    result (run m (BoundedFootprintPsp.reweight b h ν hν)) ρ = result (run m b) ρ := by
+  rw [result_run_eq_leafValue _ m reweight_valid, result_run_eq_leafValue b m h,
+    leafValue_toTree, leafValue_toTree]
+  simp only [prunePrograms]
+  split_ifs with h1 <;> first | rfl | exact absurd h1 hρ'
 
 /-! ### The randomness a run adds is fresh
 
-`fixpoint_constTree_inter`, for the path a program reads rather than the value it reports:
-the bits a run reads past the footprint are independent of everything the footprint could
+`fixpoint_pruned_inter`, for the path a program reads rather than the value it reports: the
+bits a run reads past the footprint are independent of everything the footprint could
 already measure. -/
 
 /-- `g` is constant on each atom of `t`. -/
@@ -2601,108 +3603,62 @@ lemma constOnAtoms_fixpoint_rootTree (m : BernoulliM α) :
       (fun q hq ρ hρ ρ' hρ' ↦ congrArg (true :: ·) (ih true q hq ρ hρ ρ' hρ'))
       (fun q hq ρ hρ ρ' hρ' ↦ congrArg (false :: ·) (ih false q hq ρ hρ ρ' hρ'))
 
-/-- The path such a tree reads: the path through the tree, then `m`'s own path on what is
-left of the tape. -/
-def treePath (m : BernoulliM α) : ProbTree α → Ω → BoolSeq
-  | .leaf _, ρ => runPath m ρ
-  | .node l r, ρ => if ρ 0 then treePath m l (shift ρ) else treePath m r (shift ρ)
-
-lemma constOnAtoms_fixpoint_constTree {m : BernoulliM α} :
-    ∀ {t : ProbTree α}, IsConstTree m t → ∀ (ν : Measure[t.ms] Ω),
-      ConstOnAtoms (fixpoint ⟨t, ν⟩).1 (treePath m t) := by
+/-- Running any tree reads a path that is constant on the atoms it ends at. -/
+lemma constOnAtoms_fixpoint_leafPath : ∀ (t : ProbTree α) (ν : Measure[t.ms] Ω),
+    ConstOnAtoms (fixpoint ⟨t, ν⟩).1 (leafPath t) := by
   intro t
   induction t with
   | leaf n =>
-    rintro rfl ν
+    intro ν
     rw [congrArg Sigma.fst (fixpoint_leaf n ν)]
     exact constOnAtoms_fixpoint_rootTree n
   | node l r ihl ihr =>
-    rintro ⟨hl, hr⟩ ν
+    intro ν
     rw [congrArg Sigma.fst (fixpoint_node ν)]
-    exact constOnAtoms_node (ihl hl _) (ihr hr _)
+    exact constOnAtoms_node (ihl _) (ihr _)
 
-/-- **Fresh paths, from any footprint.** -/
-lemma fixpoint_constTree_inter_path {m : BernoulliM α} :
-    ∀ {t : ProbTree α}, IsConstTree m t → ∀ (ν : Measure[t.ms] Ω) (S : Set BoolSeq)
+/-- The law of the path a program reads. -/
+def lawPath (m : BernoulliM α) (S : Set BoolSeq) : ℝ≥0∞ :=
+  (fixpoint (rootTree m)).2 (runPath m ⁻¹' S)
+
+/-- **Fresh paths, from a pruned tree.**  As `fixpoint_pruned_inter`, for the path read. -/
+lemma fixpoint_pruned_inter_path {m : BernoulliM α} {c : α} :
+    ∀ {t : ProbTree α} (ν : Measure[t.ms] Ω), IsPruned m c t ν → ∀ (S : Set BoolSeq)
       {E : Set Ω}, MeasurableSet[t.ms] E →
-      (fixpoint ⟨t, ν⟩).2 (treePath m t ⁻¹' S ∩ E)
-        = (fixpoint (rootTree m)).2 (runPath m ⁻¹' S) * ν E := by
+      (fixpoint ⟨t, ν⟩).2 (leafPath t ⁻¹' S ∩ E) = lawPath m S * ν E := by
   intro t
   induction t with
   | leaf n =>
-    rintro rfl ν S E hE
+    intro ν hp S E hE
     rw [ms_leaf] at hE
-    refine Eq.trans (measure_congr_tree (fixpoint_leaf n ν) _) ?_
-    rcases MeasurableSpace.measurableSet_bot_iff.mp hE with rfl | rfl
-    · show (ν Set.univ • (fixpoint (rootTree n)).2) _ = _
-      simp
-    · show (ν Set.univ • (fixpoint (rootTree n)).2) _ = _
-      rw [Set.inter_univ, Measure.smul_apply, smul_eq_mul, mul_comm]
-      rfl
+    simp only [IsPruned] at hp
+    rcases hp with rfl | ⟨rfl, h0⟩
+    · refine Eq.trans (measure_congr_tree (fixpoint_leaf _ ν) _) ?_
+      rcases MeasurableSpace.measurableSet_bot_iff.mp hE with rfl | rfl
+      · show (ν Set.univ • (fixpoint (rootTree _)).2) _ = _
+        simp
+      · show (ν Set.univ • (fixpoint (rootTree _)).2) _ = _
+        rw [Set.inter_univ, Measure.smul_apply, smul_eq_mul, mul_comm]
+        rfl
+    · rw [measure_congr_tree (fixpoint_of_done (t := ⟨.leaf (.pure c), ν⟩) rfl) _]
+      show ν _ = _
+      rw [measure_mono_null (Set.subset_univ _) h0, measure_mono_null (Set.subset_univ _) h0,
+        mul_zero]
   | node l r ihl ihr =>
-    rintro ⟨hl, hr⟩ ν S E hE
+    intro ν hp S E hE
+    simp only [IsPruned] at hp
     have hGm : MeasurableSet[(fixpoint (⟨ProbTree.node l r, ν⟩ : TreeWithMeasure α)).1.ms]
-        (treePath m (ProbTree.node l r) ⁻¹' S ∩ E) :=
-      ((constOnAtoms_fixpoint_constTree (t := ProbTree.node l r) ⟨hl, hr⟩
-          ν).measurableSet_preimage S).inter
+        (leafPath (ProbTree.node l r) ⁻¹' S ∩ E) :=
+      ((constOnAtoms_fixpoint_leafPath (ProbTree.node l r) ν).measurableSet_preimage S).inter
         (ms_le_fixpoint' (ProbTree.node l r) ν E hE)
     rw [congrArg Sigma.fst (fixpoint_node ν)] at hGm
     refine Eq.trans (measure_congr_tree (fixpoint_node ν) _) ?_
     show joinMeasure _ _ _ = _
     rw [joinMeasure_apply _ _ hGm, Set.preimage_inter, Set.preimage_inter]
-    simp only [treePath, preimage_consFlip_ite, Bool.false_eq_true, ↓reduceIte]
-    rw [ihl hl _ S (by simpa using measurable_consFlip (l := l) (r := r) true hE),
-      ihr hr _ S (by simpa using measurable_consFlip (l := l) (r := r) false hE),
+    simp only [leafPath, preimage_consFlip_ite, Bool.false_eq_true, ↓reduceIte]
+    rw [ihl _ hp.1 S (by simpa using measurable_consFlip (l := l) (r := r) true hE),
+      ihr _ hp.2 S (by simpa using measurable_consFlip (l := l) (r := r) false hE),
       ← mul_add, ← joinMeasure_apply _ _ hE, joinMeasure_branchMeasure]
-
-lemma treePath_toTree_go (bfpsp : BoundedFootprintPsp) (m : BernoulliM α) :
-    ∀ (p : BoolSeq), (∀ X : bfpsp.atoms, bfpsp.prefixes X <+: p → bfpsp.prefixes X = p) →
-      ∀ ρ : Ω, ρ ∈ prefixEqEvent p →
-        treePath m (toTree.go bfpsp (fun _ ↦ m) p) (shiftBy p.length ρ)
-          = runPath m (shiftBy (bfpsp.prefixes (bfpsp.atomOf ρ)).length ρ) := by
-  intro p
-  induction p using toTree.go.induct bfpsp with
-  | case1 p leafy =>
-    intro hp ρ hρ
-    rw [toTree.go]
-    simp only [leafy, ↓reduceDIte]
-    obtain ⟨X, hX⟩ := leafy
-    have hpX : bfpsp.prefixes X = p := hp X hX
-    have hρX : ρ ∈ X.1 := by
-      rw [atom_eq_prefixEqEvent bfpsp X, hpX]; exact hρ
-    rw [show bfpsp.atomOf ρ = X from atomOf_eq bfpsp hρX, hpX]
-    rfl
-  | case2 p leafy ihl ihr =>
-    intro hp ρ hρ
-    rw [toTree.go]
-    simp only [leafy, ↓reduceDIte]
-    have hstep : ∀ b : Bool, ∀ X : bfpsp.atoms,
-        bfpsp.prefixes X <+: p ++ [b] → bfpsp.prefixes X = p ++ [b] := by
-      intro b X hX
-      by_cases hle : (bfpsp.prefixes X).length ≤ p.length
-      · exact absurd ⟨X, List.prefix_of_prefix_length_le hX (List.prefix_append _ _) hle⟩ leafy
-      · exact hX.eq_of_length (by have := hX.length_le; simp at this ⊢; omega)
-    have hlen : ∀ b : Bool, (p ++ [b]).length = p.length + 1 := by simp
-    show (if (shiftBy p.length ρ) 0 then _ else _) = _
-    have h0 : (shiftBy p.length ρ) 0 = ρ p.length := by
-      show ρ (0 + p.length) = _
-      congr 1
-      omega
-    rw [h0]
-    cases hb : ρ p.length
-    · simp only [Bool.false_eq_true, ↓reduceIte]
-      rw [shift_shiftBy, ← hlen false]
-      exact ihr (hstep false) ρ (mem_prefixEqEvent_append p hρ false hb)
-    · simp only [↓reduceIte]
-      rw [shift_shiftBy, ← hlen true]
-      exact ihl (hstep true) ρ (mem_prefixEqEvent_append p hρ true hb)
-
-lemma treePath_toTree (bfpsp : BoundedFootprintPsp) (m : BernoulliM α) :
-    treePath m (toTree bfpsp (fun _ ↦ m)) = footprintPath bfpsp m := by
-  funext ρ
-  rw [toTree]
-  simpa [footprintPath] using
-    treePath_toTree_go bfpsp m [] (fun _ h ↦ List.prefix_nil.mp h) ρ (by simp)
 
 /-- **The randomness a run adds is fresh.**  The run's space measures it, and it is
 independent of everything the footprint could already measure. -/
@@ -2712,32 +3668,599 @@ lemma run_fresh [Inhabited α] (b : BoundedFootprintPsp) (m : BernoulliM α) (h 
       ∀ {F : Set Ω}, MeasurableSet[freshMs b m] F → ∀ {E : Set Ω},
         MeasurableSet[(ValidPSp.toPSpace ⟨b.psp, h⟩).ms] E →
           S.μ (F ∩ E) = S.μ F * (ValidPSp.toPSpace ⟨b.psp, h⟩).μ E := by
+  set P := ValidPSp.toPSpace ⟨b.psp, h⟩ with hP
+  set T := toTree b (prunePrograms b h (fun _ ↦ m)) with hT
+  have hms : T.ms = P.ms := by rw [hT, toTree_ms_eq, b.sigmaAgrees h]
+  set W : TreeWithMeasure α := fixpoint ⟨T, P.μ.cast T.ms⟩ with hW
+  have hcast : ∀ {E : Set Ω}, MeasurableSet[T.ms] E → (P.μ.cast T.ms) E = P.μ E := fun hE ↦
+    Measure.le_preserves_measure (h := le_of_eq hms) (μ := P.μ) (hu := hE)
   have hval := Option.some_injective _ ((run_psp_eq b h m).symm.trans hS)
-  subst hval
-  have hms : (toTree b (fun _ ↦ m)).ms = (ValidPSp.toPSpace ⟨b.psp, h⟩).ms := by
-    rw [toTree_ms_eq, b.sigmaAgrees h]
-  have hct := isConstTree_toTree b m
+  have hSms : S.ms = W.1.ms := by rw [← hval]
+  have hSμ : ∀ G, S.μ G = W.2 G := fun G ↦ by rw [← hval]
+  have hTS : T.ms ≤ W.1.ms := ms_le_fixpoint' T _
+  have hDT : MeasurableSet[T.ms] (deadAtoms b h) := by
+    rw [hms]; exact deadAtoms_measurableSet b h
+  have hDW : W.2 (deadAtoms b h) = 0 := by
+    rw [hW, fixpoint_preserves' _ hDT, hcast hDT]; exact deadAtoms_null b h
+  have hpp := prunedPath_eq_leafPath b h m
+  have hsome : ∀ O : Set (Option BoolSeq),
+      (fun ρ ↦ some (leafPath T ρ)) ⁻¹' O = leafPath T ⁻¹' (some ⁻¹' O) := fun _ ↦ rfl
   refine ⟨?_, ?_⟩
-  · rintro _ ⟨T, -, rfl⟩
-    rw [← treePath_toTree]
-    exact (constOnAtoms_fixpoint_constTree hct _).measurableSet_preimage T
-  · rintro _ ⟨T, -, rfl⟩ E hE
-    rw [← treePath_toTree]
-    have hE' : MeasurableSet[(toTree b (fun _ ↦ m)).ms] E := hms ▸ hE
-    have hcast : ∀ {E : Set Ω}, MeasurableSet[(toTree b (fun _ ↦ m)).ms] E →
-        ((ValidPSp.toPSpace ⟨b.psp, h⟩).μ.cast (toTree b (fun _ ↦ m)).ms) E
-          = (ValidPSp.toPSpace ⟨b.psp, h⟩).μ E := fun hE ↦
-      Measure.le_preserves_measure (h := le_of_eq hms)
-        (μ := (ValidPSp.toPSpace ⟨b.psp, h⟩).μ) (hu := hE)
-    have h1 := fixpoint_constTree_inter_path hct
-      ((ValidPSp.toPSpace ⟨b.psp, h⟩).μ.cast (toTree b (fun _ ↦ m)).ms) T hE'
-    have h2 := fixpoint_constTree_inter_path hct
-      ((ValidPSp.toPSpace ⟨b.psp, h⟩).μ.cast (toTree b (fun _ ↦ m)).ms) T
-      (@MeasurableSet.univ _ (toTree b (fun _ ↦ m)).ms)
-    rw [Set.inter_univ, hcast MeasurableSet.univ,
-      (ValidPSp.toPSpace ⟨b.psp, h⟩).2.measure_univ, mul_one] at h2
-    show (fixpoint _).2 _ = (fixpoint _).2 _ * _
-    rw [h1, h2, hcast hE']
+  · rw [freshMs_of_valid b h m, hSms]
+    rintro _ ⟨O, -, rfl⟩
+    rw [hpp, preimage_ite_mem, hsome]
+    refine MeasurableSet.union (MeasurableSet.inter (hTS _ hDT) ?_)
+      (MeasurableSet.inter (hTS _ hDT).compl
+        ((constOnAtoms_fixpoint_leafPath T _).measurableSet_preimage _))
+    by_cases hc : (none : Option BoolSeq) ∈ O
+    · simp only [hc, Set.ofPred_true]; exact @MeasurableSet.univ Ω W.1.ms
+    · simp only [hc, Set.ofPred_false]; exact @MeasurableSet.empty Ω W.1.ms
+  · intro F hF E hE
+    rw [freshMs_of_valid b h m] at hF
+    obtain ⟨O, -, rfl⟩ := hF
+    rw [hpp, preimage_ite_mem, hsome]
+    -- the dead atoms contribute nothing
+    have hkill : ∀ G : Set Ω,
+        W.2 (((deadAtoms b h ∩ {_ρ | (none : Option BoolSeq) ∈ O})
+          ∪ ((deadAtoms b h)ᶜ ∩ leafPath T ⁻¹' (some ⁻¹' O))) ∩ G)
+        = W.2 (leafPath T ⁻¹' (some ⁻¹' O) ∩ ((deadAtoms b h)ᶜ ∩ G)) := by
+      intro G
+      refine le_antisymm ?_ (measure_mono fun ρ ⟨h1, h2, h3⟩ ↦ ⟨Or.inr ⟨h2, h1⟩, h3⟩)
+      calc W.2 (((deadAtoms b h ∩ {_ρ | (none : Option BoolSeq) ∈ O})
+              ∪ ((deadAtoms b h)ᶜ ∩ leafPath T ⁻¹' (some ⁻¹' O))) ∩ G)
+          ≤ W.2 (deadAtoms b h ∪ (leafPath T ⁻¹' (some ⁻¹' O) ∩ ((deadAtoms b h)ᶜ ∩ G))) :=
+            measure_mono (by
+              rintro ρ ⟨h1 | h1, hG⟩
+              · exact Or.inl h1.1
+              · exact Or.inr ⟨h1.2, h1.1, hG⟩)
+        _ ≤ W.2 (deadAtoms b h) + W.2 (leafPath T ⁻¹' (some ⁻¹' O) ∩ ((deadAtoms b h)ᶜ ∩ G)) :=
+            measure_union_le _ _
+        _ = W.2 (leafPath T ⁻¹' (some ⁻¹' O) ∩ ((deadAtoms b h)ᶜ ∩ G)) := by
+            rw [hDW, zero_add]
+    have hE' : MeasurableSet[T.ms] E := by rw [hms]; exact hE
+    have h1 := hkill E
+    have h2 := hkill Set.univ
+    simp only [Set.inter_univ] at h2
+    rw [hSμ, hSμ, h1, h2, hW,
+      fixpoint_pruned_inter_path _ (isPruned_toTree b h m) _ (hDT.compl.inter hE'),
+      fixpoint_pruned_inter_path _ (isPruned_toTree b h m) _ hDT.compl,
+      hcast (hDT.compl.inter hE'), hcast hDT.compl]
+    have hDc : P.μ (deadAtoms b h)ᶜ = 1 := by
+      have := P.2
+      rw [prob_compl_eq_one_sub (deadAtoms_measurableSet b h), deadAtoms_null, tsub_zero]
+    have hDE : P.μ ((deadAtoms b h)ᶜ ∩ E) = P.μ E := by
+      rw [← Set.sdiff_eq_compl_inter]; exact measure_sdiff_null (deadAtoms_null b h)
+    rw [hDE, hDc, mul_one]
+
+/-! ### Finished trees, leaf by leaf -/
+
+lemma done_leaf_iff {n : BernoulliM α} :
+    (ProbTree.leaf n).done = true ↔ ∃ a, n = PFunctor.FreeM.pure a := by
+  cases n with
+  | pure a => simp [done]
+  | liftBind op c =>
+    constructor
+    · intro h
+      simp [done] at h
+    · rintro ⟨a, h⟩
+      cases h
+
+lemma done_node_iff {l r : ProbTree α} :
+    (ProbTree.node l r).done = true ↔ l.done = true ∧ r.done = true := by
+  simp [done]
+
+/-- A finished tree, relabelled at each leaf by `f` of the value the leaf reports, is the
+tree continued with `f`. -/
+lemma mapLeavesAt_eq_bindLeaves {β : Type} (f : α → BernoulliM β) (g : Ω → α) :
+    ∀ (t : ProbTree α) (p : BoolSeq), t.done = true →
+      (∀ q ∈ t.prefixes, t.followTape q = some (g (tapeOf (p ++ q)))) →
+      mapLeavesAt (fun q ↦ f (g (tapeOf q))) t p = bindLeaves f t := by
+  intro t
+  induction t with
+  | leaf n =>
+    intro p hd hg
+    obtain ⟨a, rfl⟩ := done_leaf_iff.mp hd
+    have h := hg [] (mem_prefixes_leaf.mpr rfl)
+    rw [List.append_nil] at h
+    simp only [followTape, Option.some.injEq] at h
+    show ProbTree.leaf (f (g (tapeOf p))) = ProbTree.leaf (PFunctor.FreeM.pure a >>= f)
+    rw [← h]
+    rfl
+  | node l r ihl ihr =>
+    intro p hd hg
+    obtain ⟨hdl, hdr⟩ := done_node_iff.mp hd
+    have hgl : ∀ q ∈ l.prefixes, l.followTape q = some (g (tapeOf (p ++ [true] ++ q))) := by
+      intro q hq
+      have := hg (true :: q) (mem_prefixes_node true (by simpa using hq))
+      rw [List.append_assoc, List.singleton_append]
+      exact this
+    have hgr : ∀ q ∈ r.prefixes, r.followTape q = some (g (tapeOf (p ++ [false] ++ q))) := by
+      intro q hq
+      have := hg (false :: q) (mem_prefixes_node false (by simpa using hq))
+      rw [List.append_assoc, List.singleton_append]
+      exact this
+    show ProbTree.node _ _ = ProbTree.node _ _
+    rw [ihl (p ++ [true]) hdl hgl, ihr (p ++ [false]) hdr hgr]
+
+/-- `toTree.go`, unfolded once, with its arguments named so that a rewrite can target one
+occurrence. -/
+lemma toTree_go_unfold (bfpsp : BoundedFootprintPsp) (programs : bfpsp.atoms → BernoulliM α)
+    (p : BoolSeq) :
+    toTree.go bfpsp programs p
+      = if leafy : ∃ X : bfpsp.atoms, bfpsp.prefixes X <+: p then
+          ProbTree.leaf (programs leafy.choose)
+        else ProbTree.node (toTree.go bfpsp programs (p ++ [true]))
+          (toTree.go bfpsp programs (p ++ [false])) := by
+  rw [toTree.go]
+
+/-- Continuing a footprint's tree is continuing its programs. -/
+lemma bindLeaves_toTree_go {β : Type} (bfpsp : BoundedFootprintPsp)
+    (programs : bfpsp.atoms → BernoulliM α) (f : α → BernoulliM β) :
+    ∀ p, bindLeaves f (toTree.go bfpsp programs p)
+      = toTree.go bfpsp (fun X ↦ programs X >>= f) p := by
+  intro p
+  induction p using toTree.go.induct bfpsp with
+  | case1 p leafy =>
+    rw [toTree_go_unfold bfpsp programs p, toTree_go_unfold bfpsp (fun X ↦ programs X >>= f) p]
+    simp only [leafy, ↓reduceDIte]
+    rfl
+  | case2 p leafy ihl ihr =>
+    rw [toTree_go_unfold bfpsp programs p, toTree_go_unfold bfpsp (fun X ↦ programs X >>= f) p]
+    simp only [leafy, ↓reduceDIte]
+    show ProbTree.node _ _ = ProbTree.node _ _
+    rw [ihl, ihr]
+
+lemma bindLeaves_toTree {β : Type} (bfpsp : BoundedFootprintPsp)
+    (programs : bfpsp.atoms → BernoulliM α) (f : α → BernoulliM β) :
+    bindLeaves f (toTree bfpsp programs) = toTree bfpsp (fun X ↦ programs X >>= f) :=
+  bindLeaves_toTree_go bfpsp programs f []
+
+/-- `toTree` reads only a footprint's atoms and prefixes, which reweighting keeps. -/
+lemma toTree_go_reweight {b : BoundedFootprintPsp} {h : ✓b.psp}
+    {ν : Measure[(ValidPSp.toPSpace ⟨b.psp, h⟩).ms] Ω} {hν : IsProbabilityMeasure ν}
+    (programs : b.atoms → BernoulliM α) :
+    ∀ p, toTree.go (BoundedFootprintPsp.reweight b h ν hν) programs p
+      = toTree.go b programs p := by
+  intro p
+  induction p using toTree.go.induct b with
+  | case1 p leafy =>
+    rw [toTree_go_unfold (BoundedFootprintPsp.reweight b h ν hν) programs p,
+      toTree_go_unfold b programs p]
+    show (if leafy : ∃ X : b.atoms, b.prefixes X <+: p then ProbTree.leaf (programs leafy.choose)
+      else ProbTree.node
+        (toTree.go (BoundedFootprintPsp.reweight b h ν hν) programs (p ++ [true]))
+        (toTree.go (BoundedFootprintPsp.reweight b h ν hν) programs (p ++ [false]))) = _
+    simp only [leafy, ↓reduceDIte]
+  | case2 p leafy ihl ihr =>
+    rw [toTree_go_unfold (BoundedFootprintPsp.reweight b h ν hν) programs p,
+      toTree_go_unfold b programs p]
+    show (if leafy : ∃ X : b.atoms, b.prefixes X <+: p then ProbTree.leaf (programs leafy.choose)
+      else ProbTree.node
+        (toTree.go (BoundedFootprintPsp.reweight b h ν hν) programs (p ++ [true]))
+        (toTree.go (BoundedFootprintPsp.reweight b h ν hν) programs (p ++ [false]))) = _
+    simp only [leafy, ↓reduceDIte]
+    rw [ihl, ihr]
+
+lemma toTree_reweight {b : BoundedFootprintPsp} {h : ✓b.psp}
+    {ν : Measure[(ValidPSp.toPSpace ⟨b.psp, h⟩).ms] Ω} {hν : IsProbabilityMeasure ν}
+    (programs : b.atoms → BernoulliM α) :
+    toTree (BoundedFootprintPsp.reweight b h ν hν) programs = toTree b programs :=
+  toTree_go_reweight programs []
+
+/-! ### Leafwise order, and the σ-algebra a run ends with
+
+A tree whose leaves are those of another, or finished, runs to a σ-algebra below the
+other's: a finished leaf reads nothing more. -/
+
+/-- Leaf by leaf, the first tree's leaves are the second's or finished. -/
+def LeafLE : ProbTree α → ProbTree α → Prop
+  | .leaf n, .leaf n' => n = n' ∨ ∃ a, n = PFunctor.FreeM.pure a
+  | .node l r, .node l' r' => LeafLE l l' ∧ LeafLE r r'
+  | .leaf _, .node _ _ => False
+  | .node _ _, .leaf _ => False
+
+lemma prefixEqEvent_cons_eq (b : Bool) (q : BoolSeq) :
+    prefixEqEvent (b :: q) = descend b ⁻¹' prefixEqEvent q ∩ prefixEqEvent [b] := by
+  ext ρ
+  simp only [Set.mem_inter_iff, Set.mem_preimage, mem_prefixEqEvent_cons, prefixEqEvent_nil,
+    Set.mem_univ, and_true]
+  constructor
+  · rintro ⟨h0, h1⟩
+    rw [descend_of_eq h0]
+    exact ⟨h1, h0⟩
+  · rintro ⟨h1, h0⟩
+    rw [descend_of_eq h0] at h1
+    exact ⟨h0, h1⟩
+
+lemma ms_node_mono {l r l' r' : ProbTree α} (hl : l.ms ≤ l'.ms) (hr : r.ms ≤ r'.ms) :
+    (ProbTree.node l r).ms ≤ (ProbTree.node l' r').ms := by
+  refine MeasurableSpace.generateFrom_le ?_
+  rintro _ ⟨q, hq, rfl⟩
+  rcases mem_prefixes_node_iff.mp hq with ⟨q', hq', rfl⟩ | ⟨q', hq', rfl⟩
+  · rw [prefixEqEvent_cons_eq]
+    exact (measurable_descend (l := l') (r := r') true
+      (hl _ (measurableSet_prefixEqEvent hq'))).inter (measurableSet_prefixEqEvent_singleton true)
+  · rw [prefixEqEvent_cons_eq]
+    exact (measurable_descend (l := l') (r := r') false
+      (hr _ (measurableSet_prefixEqEvent hq'))).inter (measurableSet_prefixEqEvent_singleton false)
+
+lemma fixpoint_ms_le_of_leafLE : ∀ {t t' : ProbTree α}, LeafLE t t' →
+    ∀ (ν : Measure[t.ms] Ω) (ν' : Measure[t'.ms] Ω),
+      (fixpoint ⟨t, ν⟩).1.ms ≤ (fixpoint ⟨t', ν'⟩).1.ms := by
+  intro t
+  induction t with
+  | leaf n =>
+    intro t' h ν ν'
+    cases t' with
+    | leaf n' =>
+      simp only [LeafLE] at h
+      rw [congrArg Sigma.fst (fixpoint_leaf n ν), congrArg Sigma.fst (fixpoint_leaf n' ν')]
+      rcases h with rfl | ⟨a, rfl⟩
+      · exact le_rfl
+      · rw [congrArg Sigma.fst (fixpoint_rootTree_pure a), ms_leaf]
+        exact bot_le
+    | node l' r' => exact h.elim
+  | node l r ihl ihr =>
+    intro t' h ν ν'
+    cases t' with
+    | leaf n' => exact h.elim
+    | node l' r' =>
+      simp only [LeafLE] at h
+      rw [congrArg Sigma.fst (fixpoint_node ν), congrArg Sigma.fst (fixpoint_node ν')]
+      exact ms_node_mono (ihl h.1 _ _) (ihr h.2 _ _)
+
+lemma leafLE_toTree_go (bfpsp : BoundedFootprintPsp) (P₁ P₂ : bfpsp.atoms → BernoulliM α)
+    (hP : ∀ X, P₁ X = P₂ X ∨ ∃ a, P₁ X = PFunctor.FreeM.pure a) :
+    ∀ p, LeafLE (toTree.go bfpsp P₁ p) (toTree.go bfpsp P₂ p) := by
+  intro p
+  induction p using toTree.go.induct bfpsp with
+  | case1 p leafy =>
+    rw [toTree_go_unfold bfpsp P₁ p, toTree_go_unfold bfpsp P₂ p]
+    simp only [leafy, ↓reduceDIte, LeafLE]
+    exact hP _
+  | case2 p leafy ihl ihr =>
+    rw [toTree_go_unfold bfpsp P₁ p, toTree_go_unfold bfpsp P₂ p]
+    simp only [leafy, ↓reduceDIte, LeafLE]
+    exact ⟨ihl, ihr⟩
+
+/-- A tape is in the event of `p ++ q` when it starts with `p` and, past `p`, with `q`. -/
+lemma mem_prefixEqEvent_append_iff : ∀ (p q : BoolSeq) (ρ : Ω),
+    ρ ∈ prefixEqEvent (p ++ q) ↔ ρ ∈ prefixEqEvent p ∧ shiftBy p.length ρ ∈ prefixEqEvent q := by
+  intro p
+  induction p with
+  | nil =>
+    intro q ρ
+    simp [prefixEqEvent_nil]
+  | cons b p ih =>
+    intro q ρ
+    rw [List.cons_append, mem_prefixEqEvent_cons, mem_prefixEqEvent_cons, List.length_cons,
+      ← shiftBy_shift]
+    show ρ 0 = b ∧ shift ρ ∈ prefixEqEvent (p ++ q)
+      ↔ (ρ 0 = b ∧ shift ρ ∈ prefixEqEvent p) ∧ shiftBy p.length (shift ρ) ∈ prefixEqEvent q
+    rw [ih, and_assoc]
+
+/-! ### Sequencing: the run of `m >>= f`
+
+Running `m >>= f` from `b` is running `m` from `b`, then `f` of the value reported, at every
+atom of the footprint that first run produced (`secondStage`).  Pruning is the only thing in
+the way: the run of `m >>= f` prunes at the atoms `b` gives no mass, while the second stage
+runs `f` everywhere the first stage landed.  So the two agree off null leaves, and the
+σ-algebra of the one-stage run is below that of the two-stage run. -/
+
+section Bind
+
+variable [Inhabited α] {β : Type} [Inhabited β]
+
+/-- The footprint a run produces is a probability space. -/
+lemma valid_run_psp (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α) :
+    ✓(run m b).1.psp := by
+  rw [run_psp_eq b h m]
+  exact Option.some_ne_none _
+
+/-- A run, spelled out. -/
+lemma run_eq (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α) :
+    run m b = ⟨ofTree (fixpoint ⟨toTree b (prunePrograms b h (fun _ ↦ m)),
+        (ValidPSp.toPSpace ⟨b.psp, h⟩).μ.cast (toTree b (prunePrograms b h (fun _ ↦ m))).ms⟩),
+      fun X ↦ ((fixpoint ⟨toTree b (prunePrograms b h (fun _ ↦ m)),
+        (ValidPSp.toPSpace ⟨b.psp, h⟩).μ.cast
+          (toTree b (prunePrograms b h (fun _ ↦ m))).ms⟩).1.followTape X.2.choose).get
+        (followTape_isSome fixpoint_done X.2.choose_spec.1)⟩ := by
+  rw [run, interp_bernoulliM, bigStep, dite_eq_left h]
+
+/-- The prefix of the atom a run lands a tape in: the atom's prefix before the run, then the
+bits the run read there. -/
+lemma prefixes_run_atomOf (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α) (ρ : Ω) :
+    (run m b).1.prefixes ((run m b).1.atomOf ρ)
+      = b.prefixes (b.atomOf ρ)
+        ++ runPath (prunePrograms b h (fun _ ↦ m) (b.atomOf ρ))
+          (shiftBy (b.prefixes (b.atomOf ρ)).length ρ) := by
+  rw [run_eq b h m]
+  exact (prefixes_ofTree_atomOf _ rfl ρ).trans (fullPath_toTree _ _ ρ)
+
+/-- A run refines the atoms. -/
+lemma atom_run_subset (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α) (ρ : Ω) :
+    ((run m b).1.atomOf ρ).1 ⊆ (b.atomOf ρ).1 := by
+  rw [atom_eq_prefixEqEvent, atom_eq_prefixEqEvent, prefixes_run_atomOf b h m ρ]
+  exact prefixEqEvent_mono (List.prefix_append _ _)
+
+/-- A run keeps the measure of what the footprint already measured. -/
+lemma run_measure_eq (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α) {E : Set Ω}
+    (hE : MeasurableSet[(ValidPSp.toPSpace ⟨b.psp, h⟩).ms] E) :
+    (ValidPSp.toPSpace ⟨(run m b).1.psp, valid_run_psp b h m⟩).μ E
+      = (ValidPSp.toPSpace ⟨b.psp, h⟩).μ E := by
+  obtain ⟨S, hS, -, -, hpres, -⟩ := run_const b m h
+  rw [ValidPSp.toPSpace_eq _ hS]
+  exact hpres hE
+
+lemma run_ms_le (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α) :
+    (ValidPSp.toPSpace ⟨b.psp, h⟩).ms
+      ≤ (ValidPSp.toPSpace ⟨(run m b).1.psp, valid_run_psp b h m⟩).ms := by
+  obtain ⟨S, hS, hle, -, -, -⟩ := run_const b m h
+  rw [ValidPSp.toPSpace_eq _ hS]
+  exact hle
+
+/-- A tape in a live atom after a run was in a live atom before it. -/
+lemma not_dead_of_run {b : BoundedFootprintPsp} {h : ✓b.psp} {m : BernoulliM α} {ρ : Ω}
+    (hρ : ρ ∉ deadAtoms (run m b).1 (valid_run_psp b h m)) : ρ ∉ deadAtoms b h := by
+  intro hd
+  apply hρ
+  show (ValidPSp.toPSpace ⟨(run m b).1.psp, valid_run_psp b h m⟩).μ ((run m b).1.atomOf ρ).1 = 0
+  refine measure_mono_null (atom_run_subset b h m ρ) ?_
+  rw [run_measure_eq b h m (b.measurable _ (b.atomOf ρ).2 h)]
+  exact hd
+
+/-- The second stage of the run of `m >>= f`: `f` of the value the first stage reported, at
+every atom of the footprint the first stage produced. -/
+noncomputable def secondStage (b : BoundedFootprintPsp) (m : BernoulliM α)
+    (f : α → BernoulliM β) : ProbTree β :=
+  toTree (run m b).1 (fun A ↦ f ((run m b).2 A))
+
+omit [Inhabited β] in
+/-- The second stage is the first stage's finished tree, continued with `f`. -/
+lemma secondStage_eq_bindLeaves (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α)
+    (f : α → BernoulliM β) :
+    secondStage b m f = bindLeaves f (fixpoint ⟨toTree b (prunePrograms b h (fun _ ↦ m)),
+      (ValidPSp.toPSpace ⟨b.psp, h⟩).μ.cast (toTree b (prunePrograms b h (fun _ ↦ m))).ms⟩).1 := by
+  have hrep := reports_fixpoint_leafValue (toTree b (prunePrograms b h (fun _ ↦ m)))
+    ((ValidPSp.toPSpace ⟨b.psp, h⟩).μ.cast (toTree b (prunePrograms b h (fun _ ↦ m))).ms)
+  rw [← result_run_eq_leafValue b m h, run_eq b h m] at hrep
+  unfold secondStage
+  rw [run_eq b h m, toTree_ofTree]
+  exact mapLeavesAt_eq_bindLeaves f _ _ [] fixpoint_done
+    fun q hq ↦ hrep q hq (tapeOf q) (mem_prefixEqEvent_tapeOf q)
+
+/-- **The run of `m >>= f` is the two-stage run.**  The space the run of `m >>= f` lands in
+is below the one the second stage lands in, with the same measure on the sets it measures:
+the two differ only at the atoms `b` gives no mass, where the first stops and the second
+continues. -/
+lemma run_bind (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α) (f : α → BernoulliM β)
+    {S : PSpace Ω} (hS : (run (m >>= f) b).1.psp = .some S) :
+    S.ms ≤ (fixpoint ⟨secondStage b m f,
+        (ValidPSp.toPSpace ⟨(run m b).1.psp, valid_run_psp b h m⟩).μ.cast
+          (secondStage b m f).ms⟩).1.ms ∧
+      ∀ G, MeasurableSet[S.ms] G →
+        S.μ G = (fixpoint ⟨secondStage b m f,
+          (ValidPSp.toPSpace ⟨(run m b).1.psp, valid_run_psp b h m⟩).μ.cast
+            (secondStage b m f).ms⟩).2 G := by
+  set P := ValidPSp.toPSpace ⟨b.psp, h⟩ with hP
+  set T := toTree b (prunePrograms b h (fun _ ↦ m >>= f)) with hT
+  set T₂ := toTree b (fun X ↦ prunePrograms b h (fun _ ↦ m) X >>= f) with hT₂
+  set TC := toTree b (prunePrograms b h (fun _ ↦ m)) with hTC
+  have hmsT : T.ms = P.ms := by rw [hT, toTree_ms_eq, b.sigmaAgrees h]
+  have hmsT₂ : T₂.ms = P.ms := by rw [hT₂, toTree_ms_eq, b.sigmaAgrees h]
+  have hmsTC : TC.ms = P.ms := by rw [hTC, toTree_ms_eq, b.sigmaAgrees h]
+  set WC : TreeWithMeasure α := fixpoint ⟨TC, P.μ.cast TC.ms⟩ with hWC
+  have hP₁ : ValidPSp.toPSpace ⟨(run m b).1.psp, valid_run_psp b h m⟩
+      = ⟨⟨WC.1.ms, WC.2⟩, inferInstance⟩ :=
+    ValidPSp.toPSpace_eq _ (run_psp_eq b h m)
+  have hSS : secondStage b m f = bindLeaves f WC.1 := secondStage_eq_bindLeaves b h m f
+  have hval := Option.some_injective _ ((run_psp_eq b h (m >>= f)).symm.trans hS)
+  have hSms : S.ms = (fixpoint ⟨T, P.μ.cast T.ms⟩).1.ms := by rw [← hval]
+  have hSμ : ∀ G, S.μ G = (fixpoint ⟨T, P.μ.cast T.ms⟩).2 G := fun G ↦ by rw [← hval]
+  -- `T` is below `T₂` leaf by leaf, and agrees with it off the dead atoms
+  have hle : LeafLE T T₂ := by
+    rw [hT, hT₂, toTree, toTree]
+    refine leafLE_toTree_go b _ _ (fun X ↦ ?_) []
+    simp only [prunePrograms]
+    by_cases h0 : P.μ X.1 = 0
+    · exact Or.inr ⟨_, by rw [ite_eq_left h0]⟩
+    · exact Or.inl (by rw [ite_eq_right h0, ite_eq_right h0])
+  have hag : AgreeOffNull T T₂ (P.μ.cast T.ms) := by
+    rw [hT₂, toTree]
+    refine agreeOffNull_toTree_go b h _ _ P.μ (fun X hX ↦ ?_) []
+      (fun _ h' ↦ List.prefix_nil.mp h') ⟨T, P.μ.cast T.ms⟩ (by rw [hT, toTree]) (fun q hq ↦ ?_)
+    · simp only [prunePrograms]
+      rw [ite_eq_right hX, ite_eq_right hX]
+    · rw [List.nil_append]
+      exact Measure.le_preserves_measure (h := le_of_eq hmsT) (μ := P.μ)
+        (hu := measurableSet_prefixEqEvent hq)
+  have hT₂' : T₂ = bindLeaves f TC := by rw [hT₂, hTC, bindLeaves_toTree]
+  have hmsB : (bindLeaves f TC).ms = P.ms := by rw [ms_bindLeaves, hmsTC]
+  -- running `T₂` is running the first stage and continuing
+  have hbind : fixpoint ⟨bindLeaves f TC, P.μ.cast (bindLeaves f TC).ms⟩
+      = fixpoint ⟨bindLeaves f WC.1, WC.2.cast (bindLeaves f WC.1).ms⟩ := by
+    refine fixpoint_bindLeaves f TC (P.μ.cast TC.ms) (P.μ.cast (bindLeaves f TC).ms)
+      (fun E hE ↦ ?_) (WC.2.cast (bindLeaves f WC.1).ms) (fun E hE ↦ ?_)
+    · rw [Measure.le_preserves_measure (h := le_of_eq hmsB) (μ := P.μ) (hu := by rw [hmsB, ← hmsTC]; exact hE),
+        Measure.le_preserves_measure (h := le_of_eq hmsTC) (μ := P.μ) (hu := hE)]
+    · exact cast_apply_of_ms_eq (ms_bindLeaves f WC.1) WC.2 (by rw [ms_bindLeaves]; exact hE)
+  have h₂ : fixpoint ⟨T₂, P.μ.cast T₂.ms⟩ = fixpoint ⟨bindLeaves f TC, P.μ.cast (bindLeaves f TC).ms⟩ := by
+    refine fixpoint_congr hT₂' _ _ (fun E hE ↦ ?_)
+    rw [Measure.le_preserves_measure (h := le_of_eq hmsT₂) (μ := P.μ) (hu := hE),
+      Measure.le_preserves_measure (h := le_of_eq hmsB) (μ := P.μ) (hu := by rw [← hT₂']; exact hE)]
+  have h₃ : fixpoint ⟨bindLeaves f WC.1, WC.2.cast (bindLeaves f WC.1).ms⟩
+      = fixpoint ⟨secondStage b m f,
+          (ValidPSp.toPSpace ⟨(run m b).1.psp, valid_run_psp b h m⟩).μ.cast (secondStage b m f).ms⟩ := by
+    rw [hSS, hP₁]
+  have hms_le : (fixpoint ⟨T, P.μ.cast T.ms⟩).1.ms ≤ (fixpoint ⟨T₂, P.μ.cast T₂.ms⟩).1.ms :=
+    fixpoint_ms_le_of_leafLE hle _ _
+  refine ⟨?_, ?_⟩
+  · calc S.ms = (fixpoint ⟨T, P.μ.cast T.ms⟩).1.ms := hSms
+      _ ≤ (fixpoint ⟨T₂, P.μ.cast T₂.ms⟩).1.ms := hms_le
+      _ = _ := by rw [h₂, hbind, h₃]
+  · intro G hG
+    have hG₁ : MeasurableSet[(fixpoint ⟨T, P.μ.cast T.ms⟩).1.ms] G := by rw [← hSms]; exact hG
+    have hagree : ∀ E, MeasurableSet[T.ms] E → (P.μ.cast T.ms) E = (P.μ.cast T₂.ms) E := by
+      intro E hE
+      rw [Measure.le_preserves_measure (h := le_of_eq hmsT) (μ := P.μ) (hu := hE),
+        Measure.le_preserves_measure (h := le_of_eq hmsT₂) (μ := P.μ)
+          (hu := by rw [hmsT₂, ← hmsT]; exact hE)]
+    calc S.μ G = (fixpoint ⟨T, P.μ.cast T.ms⟩).2 G := hSμ G
+      _ = (fixpoint ⟨T₂, P.μ.cast T₂.ms⟩).2 G :=
+          fixpoint_agreeOffNull (P.μ.cast T.ms) (P.μ.cast T₂.ms) hag hagree G hG₁ (hms_le _ hG₁)
+      _ = _ := by rw [h₂, hbind, h₃]
+
+/-- What the run of `m >>= f` reports, off the dead atoms: the second stage's leaf value. -/
+lemma result_run_bind (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α)
+    (f : α → BernoulliM β) {ρ : Ω} (hρ : ρ ∉ deadAtoms b h) :
+    result (run (m >>= f) b) ρ = leafValue (secondStage b m f) ρ := by
+  have h0 : ¬ (ValidPSp.toPSpace ⟨b.psp, h⟩).μ (b.atomOf ρ).1 = 0 := hρ
+  have hX : (run m b).2 ((run m b).1.atomOf ρ)
+      = runValue m (shiftBy (b.prefixes (b.atomOf ρ)).length ρ) := by
+    show result (run m b) ρ = _
+    rw [result_run_eq_leafValue b m h, leafValue_toTree]
+    simp only [prunePrograms]
+    rw [ite_eq_right h0]
+  rw [result_run_eq_leafValue b (m >>= f) h, leafValue_toTree, secondStage, leafValue_toTree,
+    prefixes_run_atomOf b h m ρ, hX]
+  simp only [prunePrograms]
+  rw [ite_eq_right h0, ite_eq_right h0, runValue_bind, List.length_append, shiftBy_shiftBy]
+
+omit [Inhabited α] [Inhabited β] in
+/-- The randomness `m` adds is part of the randomness `m >>= f` adds: the first program's
+path is a prefix of the sequenced program's. -/
+lemma freshMs_le_freshMs_bind (b : BoundedFootprintPsp) (m : BernoulliM α) (f : α → BernoulliM β) :
+    freshMs b m ≤ freshMs b (m >>= f) := by
+  unfold freshMs
+  split_ifs with h
+  · have hpp : prunedPath b h m
+        = (Option.map fun π ↦ runPath m (tapeOf π)) ∘ prunedPath b h (m >>= f) := by
+      funext ρ
+      simp only [prunedPath, Function.comp]
+      split_ifs with h0
+      · rfl
+      · simp only [Option.map_some, footprintPath, runPath_bind, runPath_tapeOf_append]
+    rw [hpp, ← MeasurableSpace.comap_comp]
+    exact MeasurableSpace.comap_mono le_top
+  · exact le_rfl
+
+/-- The atoms a run leaves dead are read off the pruned path of the run: the dead atoms
+before it, and the paths the program reads with no probability. -/
+lemma deadAtoms_run_measurableSet (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α) :
+    MeasurableSet[freshMs b m] (deadAtoms (run m b).1 (valid_run_psp b h m)) := by
+  set P := ValidPSp.toPSpace ⟨b.psp, h⟩ with hP
+  set TC := toTree b (prunePrograms b h (fun _ ↦ m)) with hTC
+  have hmsTC : TC.ms = P.ms := by rw [hTC, toTree_ms_eq, b.sigmaAgrees h]
+  set WC : TreeWithMeasure α := fixpoint ⟨TC, P.μ.cast TC.ms⟩ with hWC
+  have hP₁ : ValidPSp.toPSpace ⟨(run m b).1.psp, valid_run_psp b h m⟩
+      = ⟨⟨WC.1.ms, WC.2⟩, inferInstance⟩ :=
+    ValidPSp.toPSpace_eq _ (run_psp_eq b h m)
+  rw [freshMs_of_valid b h m]
+  refine ⟨{o | o = none ∨ ∃ π, o = some π ∧ lawPath m {π} = 0},
+    MeasurableSpace.measurableSet_top, ?_⟩
+  ext ρ
+  simp only [Set.mem_preimage, Set.mem_ofPred_eq]
+  by_cases hd : ρ ∈ deadAtoms b h
+  · have h1 : ρ ∈ deadAtoms (run m b).1 (valid_run_psp b h m) := by
+      show (ValidPSp.toPSpace ⟨(run m b).1.psp, valid_run_psp b h m⟩).μ ((run m b).1.atomOf ρ).1 = 0
+      refine measure_mono_null (atom_run_subset b h m ρ) ?_
+      rw [run_measure_eq b h m (b.measurable _ (b.atomOf ρ).2 h)]
+      exact hd
+    simp only [prunedPath, hd, ↓reduceIte, true_or, h1]
+  · have h0 : ¬ P.μ (b.atomOf ρ).1 = 0 := hd
+    simp only [prunedPath, hd, ↓reduceIte, reduceCtorEq, Option.some.injEq, false_or,
+      exists_eq_left']
+    -- the atom after the run is the atom before it, cut down to the path read
+    have hatom : ((run m b).1.atomOf ρ).1
+        = leafPath TC ⁻¹' {runPath m (shiftBy (b.prefixes (b.atomOf ρ)).length ρ)} ∩ (b.atomOf ρ).1 := by
+      rw [atom_eq_prefixEqEvent, prefixes_run_atomOf b h m ρ]
+      simp only [prunePrograms]
+      rw [ite_eq_right h0]
+      ext ρ'
+      rw [mem_prefixEqEvent_append_iff, Set.mem_inter_iff, Set.mem_preimage, Set.mem_singleton_iff,
+        ← atom_eq_prefixEqEvent, and_comm]
+      refine and_congr_left fun hρ' ↦ ?_
+      have hρ'' : b.atomOf ρ' = b.atomOf ρ := b.atomOf_eq hρ'
+      rw [hTC, leafPath_toTree, hρ'']
+      simp only [prunePrograms]
+      rw [ite_eq_right h0]
+      constructor
+      · exact fun hm ↦ runPath_eq_of_mem_prefixEqEvent m hm
+      · intro hm; rw [← hm]; exact mem_prefixEqEvent_runPath m _
+    show lawPath m {footprintPath b m ρ} = 0
+      ↔ (ValidPSp.toPSpace ⟨(run m b).1.psp, valid_run_psp b h m⟩).μ ((run m b).1.atomOf ρ).1 = 0
+    rw [hP₁, hatom]
+    show _ ↔ WC.2 _ = 0
+    rw [hWC, fixpoint_pruned_inter_path _ (isPruned_toTree b h m) _
+        (by rw [hmsTC]; exact b.measurable _ (b.atomOf ρ).2 h),
+      Measure.le_preserves_measure (h := le_of_eq hmsTC) (μ := P.μ)
+        (hu := by rw [hmsTC]; exact b.measurable _ (b.atomOf ρ).2 h),
+      mul_eq_zero, or_iff_left h0]
+    rfl
+
+omit [Inhabited β] in
+/-- The pruned path of a fibre of the second stage, in terms of the pruned path of the
+sequenced run: dead where the fibre's measure gives no mass, and otherwise the sequenced
+program's path with the first program's bits dropped. -/
+lemma prunedPath_fibre (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α)
+    (f : α → BernoulliM β)
+    (ν : Measure[(ValidPSp.toPSpace ⟨(run m b).1.psp, valid_run_psp b h m⟩).ms] Ω)
+    (hν : IsProbabilityMeasure ν) (v : α)
+    (hXv : ∀ ρ, ν ((run m b).1.atomOf ρ).1 ≠ 0 → result (run m b) ρ = v)
+    (hac : ∀ ρ, (ValidPSp.toPSpace ⟨(run m b).1.psp, valid_run_psp b h m⟩).μ ((run m b).1.atomOf ρ).1 = 0
+      → ν ((run m b).1.atomOf ρ).1 = 0) :
+    prunedPath (BoundedFootprintPsp.reweight (run m b).1 (valid_run_psp b h m) ν hν)
+        reweight_valid (f v)
+      = fun ρ ↦ if ν ((run m b).1.atomOf ρ).1 = 0 then none
+          else Option.map (fun π ↦ π.drop (runPath m (tapeOf π)).length)
+            (prunedPath b h (m >>= f) ρ) := by
+  funext ρ
+  unfold prunedPath
+  by_cases hρ : ν ((run m b).1.atomOf ρ).1 = 0
+  · have h1 : ρ ∈ deadAtoms (BoundedFootprintPsp.reweight (run m b).1 (valid_run_psp b h m) ν hν)
+        reweight_valid := hρ
+    rw [ite_eq_left h1, ite_eq_left hρ]
+  · have h1 : ρ ∉ deadAtoms (BoundedFootprintPsp.reweight (run m b).1 (valid_run_psp b h m) ν hν)
+        reweight_valid := hρ
+    have hdead : ρ ∉ deadAtoms b h :=
+      not_dead_of_run (h := h) (m := m) fun hd ↦ hρ (hac ρ hd)
+    have h0 : ¬ (ValidPSp.toPSpace ⟨b.psp, h⟩).μ (b.atomOf ρ).1 = 0 := hdead
+    have hX : runValue m (shiftBy (b.prefixes (b.atomOf ρ)).length ρ) = v := by
+      rw [← hXv ρ hρ, result_run_eq_leafValue b m h, leafValue_toTree]
+      simp only [prunePrograms]
+      rw [ite_eq_right h0]
+    rw [ite_eq_right h1, ite_eq_right hρ, ite_eq_right hdead]
+    simp only [Option.map_some, footprintPath, runPath_bind, runPath_tapeOf_append, List.drop_left,
+      hX, Option.some.injEq]
+    show runPath (f v) (shiftBy ((run m b).1.prefixes ((run m b).1.atomOf ρ)).length ρ) = _
+    rw [prefixes_run_atomOf b h m ρ]
+    simp only [prunePrograms]
+    rw [ite_eq_right h0, List.length_append, shiftBy_shiftBy]
+
+/-- What a fibre of the second stage reports agrees with what the sequenced run reports,
+wherever the fibre's measure gives mass. -/
+lemma result_run_fibre (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α)
+    (f : α → BernoulliM β)
+    (ν : Measure[(ValidPSp.toPSpace ⟨(run m b).1.psp, valid_run_psp b h m⟩).ms] Ω)
+    (hν : IsProbabilityMeasure ν) (v : α)
+    (hXv : ∀ ρ, ν ((run m b).1.atomOf ρ).1 ≠ 0 → result (run m b) ρ = v)
+    (hac : ∀ ρ, (ValidPSp.toPSpace ⟨(run m b).1.psp, valid_run_psp b h m⟩).μ ((run m b).1.atomOf ρ).1 = 0
+      → ν ((run m b).1.atomOf ρ).1 = 0)
+    {ρ : Ω} (hρ : ν ((run m b).1.atomOf ρ).1 ≠ 0) :
+    result (run (f v) (BoundedFootprintPsp.reweight (run m b).1 (valid_run_psp b h m) ν hν)) ρ
+      = result (run (m >>= f) b) ρ := by
+  have hdead : ρ ∉ deadAtoms b h :=
+    not_dead_of_run (h := h) (m := m) fun hd ↦ hρ (hac ρ hd)
+  rw [result_run_bind b h m f hdead, result_run_eq_leafValue _ _ reweight_valid, leafValue_toTree,
+    secondStage, leafValue_toTree]
+  show runValue (prunePrograms _ reweight_valid (fun _ ↦ f v) ((run m b).1.atomOf ρ))
+      (shiftBy ((run m b).1.prefixes ((run m b).1.atomOf ρ)).length ρ) = _
+  simp only [prunePrograms]
+  split_ifs with h1
+  · exact absurd h1 hρ
+  · rw [show (run m b).2 ((run m b).1.atomOf ρ) = v from hXv ρ hρ]
+
+end Bind
 
 end
 
