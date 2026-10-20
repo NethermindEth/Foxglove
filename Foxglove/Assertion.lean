@@ -70,6 +70,24 @@ lemma ownP_one : ⊢ ownP 1 := by
   refine entails_trans ?_ (exists_intro hasBoundedFootprint_one)
   exact own_one
 
+/-- `p` satisfies `P`: `p` is a resource, and owning exactly `p` establishes `P`.  In the
+upper-set model this is `p ∈ P`. -/
+def satP (p : PSpace Ω) (P : FProp) : Prop :=
+  ∃ h : HasBoundedFootprint (p : PSp Ω),
+    own (⟨(p : PSp Ω), h⟩ : BoundedFootprintSpace Bool) ⊢ P
+
+/-- **Joint conditioning**, in the shape Amaryllis gives it (arXiv 2605.13765, §3.3):
+
+```
+  C_{v←μ} Φ(v) (x)  ⟺  ∃κ. wsum(μ, κ) ≼ x ∧ ∀ v ∈ supp μ. Φ(v) (κ v)
+```
+
+Each fibre carries its own σ-algebra and `PSpace.wsum` mixes over the *intersection*
+`⨅ v ∈ μ.support, (κ v).ms`, so a set the mixture measures is measured by every fibre --
+which is what lets per-fibre independence from a frame transfer to the mixture
+(`PSpace.wsum_indep`).  The fibre satisfies its assertion directly rather than supplying it
+through a wand, so no single residual has to serve every `v` at once; and the mixture law is
+definitional, so no side condition states it. -/
 def jointConditioning {A : Type} (μ : PMF A) (K : A → FProp) : FProp :=
   iprop(
     ∃ m : PSpace Ω,
@@ -154,7 +172,7 @@ macro_rules
   | `(lift(($x), $ρ))    => `(lift($x, $ρ))
   | `(lift($x, $ρ))      => `(LiftUnary.lift $x $ρ)
 
-syntax (name := liftStx) (priority := high) "⌈" term "⌉" : term  
+syntax (name := liftStx) (priority := high) "⌈" term "⌉" : term
 
 macro_rules (kind := liftStx)
   | `(⌈$t⌉) => `(LiftPred.lift fun ω ↦ lift($t, ω))
@@ -170,7 +188,66 @@ theorem ownP_pure_congr {φ ψ : PSpace Ω → Prop} (h : ∀ P, φ P ↔ ψ P) 
 def valuePost {α : Type} (X : RV α) (Q : α → FProp) : FProp :=
   iprop(∃ ν : PMF α, 𝒞⟨ν⟩ x; (⌈fun ρ ↦ X ρ = x⌉ ∗ Q x))
 
+/-! ### `wp` and its locality clause
+
+A `wp` that left its witness `b` wide open -- nothing relating it to `a` -- would be useless
+for conditioning: two witnesses produced at two *different* ambients, which is exactly what
+the fibres of a conditioning are, need not be comparable, and `CWPSwap`'s conclusion cannot
+be assembled from them.
+
+So `wp` carries one extra clause: the witness may not measure anything beyond what `a` could
+already measure, together with the randomness the run itself added (`freshMs`).  It is an
+upper bound, not an equality, so upward closure is unchanged -- a bigger `a` only relaxes
+it, and the same witness still serves.
+
+That bound is enough for the swap: at each fibre the input resource is `c₂ * κ v`, and since
+the fibres of a conditioning all carry `m.ms`, the bound
+`msOf (c₂ * κ v) ⊔ freshMs = c₂.ms ⊔ m.ms ⊔ freshMs` is *the same for every* `v`.  The
+witnesses can then all be enlarged to that one σ-algebra, which is independent of the frame
+because `c₂ * m` is and because fresh randomness is independent of everything prior. -/
+
+/-- The σ-algebra a resource measures.  `⊤` on the undefined resource, which keeps `msOf`
+monotone and makes the clause below vacuous there. -/
+def msOf (x : BoundedFootprintSpace Bool) : MeasurableSpace Ω :=
+  match (x : PSp Ω) with
+  | none => ⊤
+  | some p => p.ms
+
+lemma msOf_mono {x y : BoundedFootprintSpace Bool} (hxy : x ≤ y) : msOf x ≤ msOf y := by
+  unfold msOf
+  cases hx : (x : PSp Ω) with
+  | none =>
+    have hy : (y : PSp Ω) = none := by
+      refine PSp.ge_top_imp_top ?_
+      rw [show (⊤ : PSp Ω) = (x : PSp Ω) from by rw [hx]; rfl]
+      exact hxy
+    rw [hy]
+  | some p =>
+    cases hy : (y : PSp Ω) with
+    | none => exact le_top
+    | some q =>
+      have hle : (x : PSp Ω) ≤ (y : PSp Ω) := hxy
+      rw [hx, hy] at hle
+      exact (WithTop.coe_le_coe.1 hle).1
+
+/-- A defined product measures exactly what its two factors measure between them: the
+independent product's σ-algebra is the join.  Needed wherever a witness is multiplied by a
+frame and `wp`'s locality clause has to be re-established. -/
+lemma msOf_mul_le {x y : BoundedFootprintSpace Bool} (h : ✓(x * y)) :
+    msOf (x * y) ≤ msOf x ⊔ msOf y := by
+  obtain ⟨x', hx'⟩ := Option.ne_none_iff_exists'.mp (PSp.valid_def.mp (valid_mul h))
+  obtain ⟨y', hy'⟩ := Option.ne_none_iff_exists'.mp (PSp.valid_def.mp (valid_mul_r h))
+  obtain ⟨s, hs⟩ := Option.ne_none_iff_exists'.mp (PSp.valid_def.mp h)
+  have hmul : PSp.mul ((x : PSp Ω)) ((y : PSp Ω)) = (s : PSp Ω) := hs
+  rw [hx', hy'] at hmul
+  unfold msOf
+  rw [hs, hx', hy']
+  exact le_of_eq (PSp.mul_inversion hmul).1
+
+
+
 open Interp Interp.ProbTree Iris.BI OURAProp in
+/-- **The proposed `wp`.**  `wp` with the locality clause `msOf b ≤ msOf a ⊔ freshMs …`. -/
 def wp {α : Type} [Inhabited α] {m : Type → Type} [Interp.BernoulliInterpretable m]
     (t : m α) (Q : RV α → FProp) : FProp :=
   fmk {
@@ -179,11 +256,28 @@ def wp {α : Type} [Inhabited α] {m : Type → Type} [Interp.BernoulliInterpret
         ✓μ₀.psp → a * c ≤ μ₀.toSpace →
         ∃ b : BoundedFootprintSpace Bool,
           b * c ≤ (run t μ₀).1.toSpace ∧ ✓b ∧
+            msOf b ≤ msOf a ⊔ freshMs μ₀ (Interp.BernoulliInterpretable.interp t) ∧
             (own b ⊢ Q (result (run t μ₀)))}
     upper' := by
       intro x y hxy hx μ₀ c hv hle
-      exact hx μ₀ c hv (le_trans (mul_le_mul_right_le hxy c) hle)
+      obtain ⟨b, hb1, hb2, hb3, hb4⟩ := hx μ₀ c hv (le_trans (mul_le_mul_right_le hxy c) hle)
+      exact ⟨b, hb1, hb2, le_trans hb3 (sup_le_sup_right (msOf_mono hxy) _), hb4⟩
   }
+
+-- open Interp Interp.ProbTree Iris.BI OURAProp in
+-- def wp {α : Type} [Inhabited α] {m : Type → Type} [Interp.BernoulliInterpretable m]
+--     (t : m α) (Q : RV α → FProp) : FProp :=
+--   fmk {
+--     carrier := {a |
+--       ∀ (μ₀ : BoundedFootprintPsp) (c : BoundedFootprintSpace Bool),
+--         ✓μ₀.psp → a * c ≤ μ₀.toSpace →
+--         ∃ b : BoundedFootprintSpace Bool,
+--           b * c ≤ (run t μ₀).1.toSpace ∧ ✓b ∧
+--             (own b ⊢ Q (result (run t μ₀)))}
+--     upper' := by
+--       intro x y hxy hx μ₀ c hv hle
+--       exact hx μ₀ c hv (le_trans (mul_le_mul_right_le hxy c) hle)
+--   }
 
 end
 
@@ -240,6 +334,121 @@ variable {P Q : FProp} {α β : Type}
          {K : α → FProp}
 
 section DistributionOwnershipRules
+
+lemma C_True
+  {A : Type} {μ : PMF A}
+  : ⊢ (𝒞⟨μ⟩ _v; ftrue : FProp) := by
+  unfold jointConditioning
+  iexists (1 : PSpace Ω), unitKernel A
+  isplitl []
+  · exact ownP_one
+  · isplitl []
+    · ipureintro
+      show PSpace.μ 1 = (μ.toMeasureWithMs ⊤).bind (fun _ ↦ PSpace.μ 1)
+      simp [PMF.toMeasureWithMs]
+    · iintro %v Hv
+      exact entails_ftrue
+
+/-- Conditioning is monotone in its continuation. -/
+lemma jointConditioning_mono {A : Type} {ν : PMF A} {K K' : A → FProp}
+    (h : ∀ x, K x ⊢ K' x) : jointConditioning ν K ⊢ jointConditioning ν K' := by
+  unfold jointConditioning
+  exact exists_mono fun m ↦ exists_mono fun κ ↦ sep_mono_right (sep_mono_right
+    (forall_mono fun v ↦ wand_mono_right (h v)))
+--
+/-- A resource held outside a conditioning can be pushed into every fibre: one `∗`-splitting
+serves every value at once, so nothing has to be duplicated. -/
+lemma jointConditioning_frame {A : Type} {ν : PMF A} {K : A → FProp} {R : FProp} :
+    iprop(R ∗ jointConditioning ν K) ⊢ jointConditioning ν (fun x ↦ iprop(R ∗ K x)) := by
+  unfold jointConditioning
+  iintro ⟨HR, %m, %κ, Hm, %hmix, Hall⟩
+  iexists m, κ
+  isplitl [Hm]
+  · iexact Hm
+  · isplitl []
+    · ipureintro
+      exact hmix
+    · iintro %v Hv
+      ispecialize Hall $$ %v Hv
+      isplitl [HR]
+      · iexact HR
+      · iexact Hall
+
+set_option linter.style.haveILetI false in
+open ProbabilityTheory MeasureTheory in
+/-- A fibre of a conditioning kernel is absolutely continuous w.r.t. the mixture, at any
+value in the support. -/
+theorem kernel_fibre_ac {A : Type} {μ : PMF A} {m : PSpace Ω}
+    (κ : TrivialMarkovKernel A m) (hmix : m.μ = (μ.toMeasureWithMs ⊤).bind κ)
+    {v : A} (hv : v ∈ μ.support) : (κ.1 v) ≪ m.μ := by
+  letI : MeasurableSpace A := ⊤
+  have hmeas : ∀ F, MeasurableSet[m.ms] F → m.μ F = 0 → (κ.1 v) F = 0 := by
+    intro F hF h0
+    rw [hmix, Measure.bind_apply hF (Kernel.measurable κ.1).aemeasurable,
+      lintegral_eq_zero_iff (Kernel.measurable_coe κ.1 hF)] at h0
+    by_contra hne
+    have hsub : ({v} : Set A) ⊆ {a | κ.1 a F ≠ 0} := by
+      intro x hx
+      rw [Set.mem_singleton_iff] at hx
+      subst hx
+      exact hne
+    have hz : (μ.toMeasureWithMs ⊤) {v} = 0 := measure_mono_null hsub h0
+    rw [PMF.toMeasureWithMs, @PMF.toMeasure_apply_singleton A ⊤ μ v (by trivial)] at hz
+    exact (PMF.mem_support_iff μ v).mp hv hz
+  intro F h0
+  obtain ⟨F', hFF', hF'meas, hF'0⟩ := @exists_measurable_superset_of_null Ω m.ms m.μ F h0
+  exact measure_mono_null hFF' (hmeas F' hF'meas hF'0)
+
+set_option linter.style.haveILetI false in
+/-- Conditioning with a `False` continuation is `False`: pick a value in the support and
+hand the continuation the fibre it asks for.  The fibre composes with the continuation's
+frame by `PSpace.isIndependentProduct_reweight`. -/
+lemma C_False
+  {A : Type} {μ : PMF A}
+  : (𝒞⟨μ⟩ _v; ffalse : FProp) ⊢ ffalse := by
+  intro r hv h
+  obtain ⟨q, ⟨m, hq⟩, hqr⟩ := h
+  obtain ⟨q', ⟨κ, hq'⟩, hq'r⟩ := (Quotient.exact hq).2 r hv hqr
+  obtain ⟨b₁, b₂, hle, hown, hrest⟩ := (Quotient.exact hq').2 r hv hq'r
+  obtain ⟨c₁, c₂, hle', hmix, hall⟩ := hrest
+  obtain ⟨r₁, ⟨hbfm, hr₁⟩, hb₁⟩ := hown
+  have hmb₁ := (Quotient.exact hr₁).2 b₁ (valid_mono (le_trans (le_mul_of_one_le PSp.one_le) hle) hv) hb₁
+  obtain ⟨v, hvsupp⟩ := μ.support_nonempty
+  -- `c₂` sits inside `b₂`, so `m`'s resource and `c₂` compose inside `r`
+  have hc₂b₂ : c₂ ≤ b₂ := by
+    refine le_trans ?_ hle'
+    rw [mul_comm]
+    exact le_mul_of_one_le PSp.one_le
+  have hmc₂r : (⟨(m : PSp Ω), hbfm⟩ : BoundedFootprintSpace Bool) * c₂ ≤ r :=
+    le_trans (mul_le_mul_right_le hmb₁ c₂) (le_trans (mul_le_mul_left_le hc₂b₂ b₁) hle)
+  have hvmc₂ : ✓((⟨(m : PSp Ω), hbfm⟩ : BoundedFootprintSpace Bool) * c₂) := valid_mono hmc₂r hv
+  have hb₂r : b₂ ≤ r := by
+    refine le_trans ?_ hle
+    rw [mul_comm]
+    exact le_mul_of_one_le PSp.one_le
+  have hvc₂ : ✓c₂ := valid_mono (le_trans hc₂b₂ hb₂r) hv
+  -- the spaces behind `c₂` and behind `m * c₂`
+  obtain ⟨c₂', hc₂'⟩ : ∃ c : PSpace Ω, c₂.val = (c : PSp Ω) :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hvc₂)
+  obtain ⟨s, hs⟩ : ∃ s : PSpace Ω, PSp.mul ((m : PSp Ω)) (c₂.val) = (s : PSp Ω) :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hvmc₂)
+  rw [hc₂'] at hs
+  have hcomm : s =ᵢ c₂' ⊕ᵢ m := independentProduct_comm (PSp.mul_inversion hs)
+  -- reweight that product along the `v`-fibre
+  haveI hprob : MeasureTheory.IsProbabilityMeasure (κ.1 v) := κ.2.isProbabilityMeasure v
+  obtain ⟨s', hs'⟩ :=
+    PSpace.isIndependentProduct_reweight hcomm (κ.1 v) (kernel_fibre_ac κ hmix hvsupp)
+  have hvm : ✓((m : PSp Ω)) := PSp.valid_def.mpr (Option.some_ne_none _)
+  have hvk : ✓(((κ v : PSpace Ω)) : PSp Ω) := PSp.valid_def.mpr (Option.some_ne_none _)
+  have hbfk : HasBoundedFootprint (((κ v : PSpace Ω)) : PSp Ω) :=
+    hasBoundedFootprint_congr hvm hvk rfl hbfm
+  have hvalid : ✓(c₂ * (⟨((κ v : PSpace Ω) : PSp Ω), hbfk⟩ : BoundedFootprintSpace Bool)) := by
+    show PSp.mul c₂.val _ ≠ (⊤ : PSp Ω)
+    rw [hc₂']
+    exact PSp.mul_ne_top_of_exists ⟨s', hs'⟩
+  exact hall _ ⟨⟨v, hvsupp⟩, rfl⟩ _ hvalid
+    ⟨_, ⟨hbfk, rfl⟩,
+      le_refl (⟨((κ v : PSpace Ω) : PSp Ω), hbfk⟩ : BoundedFootprintSpace Bool)⟩
 
 open MeasureTheory in
 theorem DIST_INJ : E ~ μ ∧ E ~ μ' ⊢ ⌜μ = μ'⌝ := by
@@ -1746,7 +1955,12 @@ theorem EDistInj
     _ = @PMF.toMeasure A ⊤ μ' := hμ₂
 
 theorem very_sure {E : Ω → Prop} : E ~ δ True ⊣⊢ ⌈E⌉ := by
-  convert ESureDirac; simp
+  have h : (⌈E⌉ : FProp) = ⌈E = True⌉ := by
+    congr 1
+    funext ω
+    simp [LiftUnary.lift, LiftBinary.lift]
+  rw [h]
+  exact SURE_DIRAC
 
 /-- A sure fact is duplicable. -/
 theorem liftPred_dup {p : Ω → Prop} : ⌈p⌉ ⊢ ⌈p⌉ ∗ ⌈p⌉ := by
@@ -1757,6 +1971,20 @@ theorem liftPred_dup {p : Ω → Prop} : ⌈p⌉ ⊢ ⌈p⌉ ∗ ⌈p⌉ := by
     rw [hs]
   nth_rewrite 1 [h]
   exact liftPred_split
+
+/-- A sure fact weakens: the exceptional set only shrinks. -/
+theorem liftPred_mono {a b : Ω → Prop} (h : ∀ ρ, a ρ → b ρ) : ⌈a⌉ ⊢ ⌈b⌉ := by
+  intro m hv hm
+  obtain ⟨q, ⟨P, hq⟩, hqm⟩ := hm
+  obtain ⟨d₁, d₂, hle, hown, hpure⟩ := (Quotient.exact hq).2 m hv hqm
+  exact ⟨_, ⟨P, rfl⟩, d₁, d₂, hle, hown,
+    MeasureTheory.measure_mono_null (fun ρ hρ hab ↦ hρ (h ρ hab)) hpure⟩
+
+/-- Sure equalities substitute: this is the measure-theoretic content of `AEProper`, and
+what lets a fibre's report of the result stand in for the global one. -/
+theorem liftPred_subst {β : Type} {X Y : RV β} {x : β} :
+    iprop(⌈fun ρ ↦ X ρ = Y ρ⌉ ∗ ⌈fun ρ ↦ X ρ = x⌉) ⊢ ⌈fun ρ ↦ Y ρ = x⌉ :=
+  Iris.BI.entails_trans liftPred_sep (liftPred_mono (fun _ h ↦ h.1 ▸ h.2))
 
 /-- Sure facts merge and split. -/
 theorem ESureMerge {E₁ E₂ : RV Bool}
@@ -1810,34 +2038,1200 @@ satisfied `Q x` is handed straight back, and the postcondition is `valuePost` at
 constant. -/
 lemma CWPPure {α : Type} {m : Type → Type} [Monad m] [Interp.LawfulBernoulliInterpretable m]
     [Inhabited α] {Q : RV α → FProp} {x : α} : Q (fun _ ↦ x) ⊢ wp (pure x : m α) Q := by
-  sorry
-  -- obtain ⟨U, hU⟩ : ∃ U : UpperSet (BoundedFootprintSpace Bool), Q x = fmk U :=
-  --   ⟨(Q x).out, (Quotient.out_eq _).symm⟩
-  -- rw [hU]
-  -- intro a hva ha μ₀ c hvalid hle
-  -- refine ⟨a, ?_, hva, ?_⟩
-  -- · have hsp : ((run (pure x : m α) μ₀).1.toSpace : BoundedFootprintSpace Bool) = μ₀.toSpace :=
-  --     Subtype.ext (run_pure_psp x μ₀ hvalid)
-  --   rw [hsp]
-  --   exact hle
-  -- · rw [result_run_pure (m := m) x μ₀ hvalid]
-  --   have h1 : own a ⊢ Q x := by rw [hU]; exact own_entails_of_mem ha
-  --   exact entails_trans h1 (valuePost_const x Q)
+  obtain ⟨U, hU⟩ : ∃ U : UpperSet (BoundedFootprintSpace Bool), Q (fun _ ↦ x) = fmk U :=
+    ⟨(Q (fun _ ↦ x)).out, (Quotient.out_eq _).symm⟩
+  rw [hU]
+  intro a hva ha μ₀ c hvalid hle
+  refine ⟨a, ?_, hva, le_sup_left, ?_⟩
+  · have hsp : ((run (pure x : m α) μ₀).1.toSpace : BoundedFootprintSpace Bool) = μ₀.toSpace :=
+      Subtype.ext (run_pure_psp x μ₀ hvalid)
+    rw [hsp]
+    exact hle
+  · rw [result_run_pure (m := m) x μ₀ hvalid, hU]
+    exact own_entails_of_mem ha
+
+/-! ### Auxiliaries for `CWPSwap` -/
+
+section SwapAux
+
+open MeasureTheory ProbabilityTheory
+
+/-- `p ≤ S` from the σ-algebras and the measures on `p`'s sets. -/
+lemma PSpace.le_of_ms_le {p S : PSpace Ω} (h : p.ms ≤ S.ms)
+    (hμ : ∀ E, MeasurableSet[p.ms] E → S.μ E = p.μ E) : p ≤ S := by
+  refine ⟨h, ?_⟩
+  apply @Measure.ext Ω p.ms
+  intro u hu
+  exact (hμ u hu).symm.trans (Measure.le_preserves_measure (h := h) (μ := S.μ) (hu := hu)).symm
+
+/-- A space below `S` that measures no more than `f` sits below `S` trimmed to `f`. -/
+lemma PSpace.le_trim_of_le {p S : PSpace Ω} {f : MeasurableSpace Ω} (hf : f ≤ S.ms)
+    (hpS : p ≤ S) (hpf : p.ms ≤ f) : p ≤ @PSpace.trim Ω S f hf := by
+  refine PSpace.le_of_ms_le hpf fun E hE ↦ ?_
+  show (MeasureOnSpace.trim hf).μ E = p.μ E
+  rw [MeasureOnSpace.trim_eq hf (hpf E hE), MeasureOnSpace.le_preserves_measure hpS hE]
+
+/-- A set integral of a function the smaller space measures can be taken in either space. -/
+lemma PSpace.setLIntegral_of_le {s P : PSpace Ω} (hsP : s ≤ P) {g : Ω → ENNReal}
+    (hg : Measurable[s.ms] g) {A : Set Ω} (hA : MeasurableSet[s.ms] A) :
+    ∫⁻ x in A, g x ∂P.μ = ∫⁻ x in A, g x ∂s.μ := by
+  have htrim : s.μ = P.μ.trim hsP.1 := by
+    apply @Measure.ext Ω s.ms
+    intro u hu
+    rw [MeasureOnSpace.le_preserves_measure hsP hu,
+      @trim_measurableSet_eq Ω s.ms P.ms P.μ u hsP.1 hu]
+  rw [htrim, setLIntegral_trim hsP.1 hg hA]
+
+/-- **Reweighting an ambient along a factor.**  If `s = m ⊗ d` sits in `P`, then tilting `P`
+by `dν/dm` turns the `m`-factor into `ν` and leaves `d` alone. -/
+lemma PSpace.withDensity_rect {m d s P : PSpace Ω} (hs : s =ᵢ m ⊕ᵢ d) (hsP : s ≤ P)
+    (ν : Measure[m.ms] Ω) [IsProbabilityMeasure ν] (hac : ν ≪ m.μ)
+    {E : Set Ω} (hE : MeasurableSet[d.ms] E) {F : Set Ω} (hF : MeasurableSet[m.ms] F) :
+    (P.μ.withDensity (ν.rnDeriv m.μ)) (E ∩ F) = d.μ E * ν F := by
+  have hmp := m.2
+  have hmle : m.ms ≤ s.ms := (PSpace.le_of_isIndependentProduct_left hs).1
+  have hdle : d.ms ≤ s.ms := (PSpace.le_of_isIndependentProduct_right hs).1
+  have hfmeas : Measurable[m.ms] (ν.rnDeriv m.μ) := Measure.measurable_rnDeriv ν m.μ
+  have hEF : MeasurableSet[s.ms] (E ∩ F) := (hdle _ hE).inter (hmle _ hF)
+  rw [withDensity_apply _ (hsP.1 _ hEF),
+    PSpace.setLIntegral_of_le hsP (hfmeas.mono hmle le_rfl) hEF,
+    PSpace.lintegral_rect (independentProduct_comm hs) hfmeas hE hF,
+    ← withDensity_apply _ hF, Measure.withDensity_rnDeriv_eq ν m.μ hac]
+
+/-- **Mixing the reweighted ambients back.**  If `m` is the `w`-mixture of the `ν i`, then the
+ambient `P ≥ m` is the `w`-mixture of its tilts by `dν i/dm`. -/
+lemma PSpace.withDensity_mixture {ι : Type} [Countable ι] {m P : PSpace Ω} (hmP : m ≤ P)
+    (w : ι → ENNReal) (ν : ι → Measure[m.ms] Ω) [∀ i, IsProbabilityMeasure (ν i)]
+    (hac : ∀ i, ν i ≪ m.μ)
+    (hmix : ∀ F, MeasurableSet[m.ms] F → m.μ F = ∑' i, w i * ν i F)
+    {E : Set Ω} (hE : MeasurableSet[P.ms] E) :
+    P.μ E = ∑' i, w i * (P.μ.withDensity ((ν i).rnDeriv m.μ)) E := by
+  have hmp := m.2
+  have hPp := P.2
+  have hfm : ∀ i, Measurable[m.ms] ((ν i).rnDeriv m.μ) := fun i ↦ Measure.measurable_rnDeriv _ _
+  have hfP : ∀ i, Measurable[P.ms] ((ν i).rnDeriv m.μ) := fun i ↦ (hfm i).mono hmP.1 le_rfl
+  set g : Ω → ENNReal := fun x ↦ ∑' i, w i * (ν i).rnDeriv m.μ x with hg
+  have hgm : Measurable[m.ms] g := Measurable.ennreal_tsum fun i ↦ (hfm i).const_mul _
+  -- `g` is the density of `m.μ` against itself
+  have hg1 : g =ᵐ[m.μ] 1 := by
+    refine @ae_eq_of_forall_setLIntegral_eq_of_sigmaFinite Ω m.ms m.μ _ g 1 hgm
+      measurable_const ?_
+    intro F hF _
+    rw [hg, lintegral_tsum (fun i ↦ ((hfm i).const_mul _).aemeasurable)]
+    simp_rw [lintegral_const_mul _ (hfm _)]
+    have hterm : ∀ i, w i * ∫⁻ x in F, (ν i).rnDeriv m.μ x ∂m.μ = w i * ν i F := by
+      intro i
+      rw [← withDensity_apply _ hF, Measure.withDensity_rnDeriv_eq _ _ (hac i)]
+    rw [tsum_congr hterm, ← hmix F hF]
+    simp
+  have hg1P : g =ᵐ[P.μ] 1 := PSpace.ae_eq_of_le hmP hg1
+  symm
+  calc ∑' i, w i * (P.μ.withDensity ((ν i).rnDeriv m.μ)) E
+      = ∑' i, ∫⁻ x in E, w i * (ν i).rnDeriv m.μ x ∂P.μ := by
+        refine tsum_congr fun i ↦ ?_
+        rw [withDensity_apply _ hE, lintegral_const_mul _ (hfP i)]
+    _ = ∫⁻ x in E, g x ∂P.μ := by
+        rw [lintegral_tsum (fun i ↦ ((hfP i).const_mul _).aemeasurable)]
+    _ = ∫⁻ x in E, 1 ∂P.μ := lintegral_congr_ae (ae_restrict_of_ae hg1P)
+    _ = P.μ E := by simp
+
+/-- **Independence of a join, from a π-system.**  A frame `c` inside `S` that is independent
+of every `A ∩ F` (with `A` from `m₁`, `F` from `m₂`) is independent of all of `m₁ ⊔ m₂`. -/
+lemma PSpace.indep_sup_of_rect {S c : PSpace Ω} {m₁ m₂ : MeasurableSpace Ω}
+    (h₁ : m₁ ≤ S.ms) (h₂ : m₂ ≤ S.ms) (hc : c ≤ S)
+    (hbase : ∀ A, MeasurableSet[m₁] A → ∀ F, MeasurableSet[m₂] F → ∀ E,
+      MeasurableSet[c.ms] E → S.μ (A ∩ F ∩ E) = S.μ (A ∩ F) * c.μ E)
+    {E : Set Ω} (hE : MeasurableSet[c.ms] E) :
+    ∀ G, MeasurableSet[m₁ ⊔ m₂] G → S.μ (G ∩ E) = S.μ G * c.μ E := by
+  have hSp := S.2
+  have hcp := c.2
+  have hES : MeasurableSet[S.ms] E := hc.1 _ hE
+  have hcE : S.μ E = c.μ E := (MeasureOnSpace.le_preserves_measure hc hE).symm
+  have hle : m₁ ⊔ m₂ ≤ S.ms := sup_le h₁ h₂
+  intro G hG
+  refine MeasurableSpace.induction_on_inter (C := fun G _ ↦ S.μ (G ∩ E) = S.μ G * c.μ E)
+    (MeasurableSpace.generateFrom_supGenerator_eq_sup m₁ m₂).symm ?_ ?_ ?_ ?_ ?_ G hG
+  · rintro _ ⟨u, v, rfl, hu, hv⟩ _ ⟨u', v', rfl, hu', hv'⟩ _
+    exact ⟨u ∩ u', v ∩ v', by rw [Set.inter_inter_inter_comm], hu.inter hu', hv.inter hv'⟩
+  · simp
+  · rintro _ ⟨A, F, rfl, hA, hF⟩
+    exact hbase A hA F hF E hE
+  · intro t ht ih
+    have htS : MeasurableSet[S.ms] t := hle _ ht
+    have hdiff : tᶜ ∩ E = E \ (t ∩ E) := by ext; simp; tauto
+    rw [hdiff, measure_sdiff Set.inter_subset_right (htS.inter hES).nullMeasurableSet
+      (measure_ne_top _ _), ih, hcE, PSpace.measure_compl htS,
+      ENNReal.sub_mul (fun _ _ ↦ measure_ne_top _ _), one_mul]
+  · intro f hdisj hfm ih
+    have hfS : ∀ i, MeasurableSet[S.ms] (f i) := fun i ↦ hle _ (hfm i)
+    rw [Set.iUnion_inter, measure_iUnion (fun i j hij ↦ (hdisj hij).mono Set.inter_subset_left
+      Set.inter_subset_left) (fun i ↦ (hfS i).inter hES), measure_iUnion hdisj hfS,
+      ← ENNReal.tsum_mul_right]
+    exact tsum_congr ih
+
+/-- A trim of `S` that is independent of a frame `c ≤ S` composes with it inside `S`. -/
+lemma PSpace.mul_trim_le {S c : PSpace Ω} {f : MeasurableSpace Ω} (hf : f ≤ S.ms) (hc : c ≤ S)
+    (hrect : ∀ G, MeasurableSet[f] G → ∀ E, MeasurableSet[c.ms] E →
+      S.μ (G ∩ E) = S.μ G * c.μ E) :
+    PSp.mul (some (@PSpace.trim Ω S f hf)) (some c) ≤ (some S : PSp Ω) := by
+  have hsup : f ⊔ c.ms ≤ S.ms := sup_le hf hc.1
+  have hT : @PSpace.trim Ω S (f ⊔ c.ms) hsup =ᵢ (@PSpace.trim Ω S f hf) ⊕ᵢ c := by
+    refine ⟨rfl, fun G hG E hE ↦ ?_⟩
+    have hGE : MeasurableSet[f ⊔ c.ms] (G ∩ E) :=
+      ((le_sup_left : f ≤ f ⊔ c.ms) _ hG).inter ((le_sup_right : c.ms ≤ f ⊔ c.ms) _ hE)
+    show (MeasureOnSpace.trim hsup).μ (G ∩ E) = (MeasureOnSpace.trim hf).μ G * c.μ E
+    rw [MeasureOnSpace.trim_eq hsup hGE, MeasureOnSpace.trim_eq hf hG]
+    exact hrect G hG E hE
+  rw [mul_respect_independentProduct hT]
+  exact WithTop.coe_le_coe.2 (PSpace.trim_le hsup)
+
+set_option linter.style.haveILetI false in
+/-- Binding a PMF against a kernel, read off on the support. -/
+lemma bind_apply_support {β : Type} {ms : MeasurableSpace Ω} (μ : PMF β)
+    (κ : @Kernel β Ω ⊤ ms) {G : Set Ω} (hG : MeasurableSet[ms] G) :
+    ((μ.toMeasureWithMs ⊤).bind κ) G = ∑' i : μ.support, μ i * κ i G := by
+  letI : MeasurableSpace β := ⊤
+  haveI : MeasurableSingletonClass β := ⟨fun _ ↦ trivial⟩
+  rw [Measure.bind_apply hG (Kernel.measurable κ).aemeasurable, PMF.toMeasureWithMs,
+    ← PMF.restrict_toMeasure_support, lintegral_countable _ μ.support_countable]
+  refine tsum_congr fun i ↦ ?_
+  rw [PMF.toMeasure_apply_singleton μ i (measurableSet_singleton _), mul_comm]
+
+/-- The σ-algebra of a resource, read off its space. -/
+lemma msOf_of_val {x : BoundedFootprintSpace Bool} {p : PSpace Ω} (h : (x : PSp Ω) = some p) :
+    msOf x = p.ms := by
+  unfold msOf
+  rw [h]
+
+/-- The σ-algebra of a defined product is the join. -/
+lemma msOf_mul {x y : BoundedFootprintSpace Bool} {p q : PSpace Ω}
+    (hx : (x : PSp Ω) = some p) (hy : (y : PSp Ω) = some q) (hv : ✓(x * y)) :
+    msOf (x * y) = p.ms ⊔ q.ms := by
+  obtain ⟨z, hz⟩ : ∃ z : PSpace Ω, ((x * y : BoundedFootprintSpace Bool) : PSp Ω) = some z :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hv)
+  have hz' : PSp.mul (some p) (some q) = some z := by
+    rw [← hx, ← hy]; exact hz
+  rw [msOf_of_val hz]
+  exact (PSp.mul_inversion hz').1
+
+end SwapAux
+
+section SwapAuxBI
+
+/-- `P ⊢ fmk U`, checked on the resources that own `P`. -/
+lemma entails_fmk_of_own {P : FProp} {U : UpperSet (BoundedFootprintSpace Bool)}
+    (h : ∀ a, ✓a → (own a ⊢ P) → a ∈ U) : P ⊢ (fmk U : FProp) := by
+  induction P using Quotient.ind with
+  | _ P =>
+  intro a hva ha
+  exact h a hva (fun _ _ hb ↦ P.upper' hb ha)
+
+lemma own_mono {x y : BoundedFootprintSpace Bool} (h : x ≤ y) : own y ⊢ own x :=
+  fun _ _ ha ↦ le_trans h ha
+
+lemma own_mul_sep {x y : BoundedFootprintSpace Bool} : own (x * y) ⊢ iprop(own x ∗ own y) :=
+  fun _ _ ha ↦ ⟨x, y, ha, le_refl x, le_refl y⟩
+
+/-- Splitting `own M ∗ W` semantically: `M` and a resource owning `W`. -/
+lemma own_sep_entails_fmk {M : BoundedFootprintSpace Bool} {W : FProp}
+    {U : UpperSet (BoundedFootprintSpace Bool)}
+    (h : ∀ a R, ✓a → M * R ≤ a → (own R ⊢ W) → a ∈ U) :
+    iprop(own M ∗ W) ⊢ (fmk U : FProp) := by
+  induction W using Quotient.ind with
+  | _ W =>
+  rintro a hva ⟨b₁, b₂, hle, hb₁, hb₂⟩
+  exact h a b₂ hva (le_trans (mul_le_mul_right_le hb₁ b₂) hle) (fun _ _ hb ↦ W.upper' hb hb₂)
+
+end SwapAuxBI
+
+set_option linter.style.haveILetI false in
+open Interp Interp.ProbTree Interp.ProbTree.BoundedFootprintPsp ProbabilityTheory MeasureTheory in
+/-- `CWPSwap`, semantically.  Reweight the ambient along each fibre of the conditioning,
+run there, and mix the runs back: the runs' mixture is the real run (`run_psp_mixture`),
+every fibre's witness lives on the one σ-algebra `m ⊔ R ⊔ fresh` (`wp`'s locality clause),
+and that σ-algebra is independent of the frame because `m ⊗ R` was and fresh
+randomness is independent of everything prior (`run_fresh`). -/
+lemma CWPSwap_core {α β : Type} {m' : Type → Type} [Interp.BernoulliInterpretable m']
+    [Inhabited α] {C : m' α} {μ : PMF β} {Q : β → RV α → FProp}
+    (m : PSpace Ω) (κ : TrivialMarkovKernel β m)
+    (hmix : m.μ = (μ.toMeasureWithMs ⊤).bind κ)
+    (hbf : HasBoundedFootprint (m : PSp Ω)) (R : BoundedFootprintSpace Bool)
+    (hfib : ∀ v ∈ μ.support, ∀ hk : HasBoundedFootprint ((κ v : PSpace Ω) : PSp Ω),
+      own (R * ⟨((κ v : PSpace Ω) : PSp Ω), hk⟩) ⊢ wp C (Q v)) :
+    own ((⟨(m : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool) * R)
+      ⊢ wp C (fun X ↦ 𝒞⟨μ⟩ v; Q v X) := by
+  set Cb : BernoulliM α := BernoulliInterpretable.interp C with hCb
+  set M : BoundedFootprintSpace Bool := ⟨(m : PSp Ω), hbf⟩ with hM
+  have hmp := m.2
+  intro a hva ha μ₀ c hvalid hle
+  have ha' : M * R ≤ a := ha
+  -- the ambient, and the spaces sitting in it
+  set P₀ : PSpace Ω := ValidPSp.toPSpace ⟨μ₀.psp, hvalid⟩ with hP₀
+  have hμ₀P : μ₀.psp = .some P₀ := (Option.some_get _).symm
+  have hvμ₀ : ✓(μ₀.toSpace) := hvalid
+  have hle_amb : ∀ {x : BoundedFootprintSpace Bool} {p : PSpace Ω},
+      x ≤ μ₀.toSpace → (x : PSp Ω) = .some p → p ≤ P₀ := by
+    intro x p hx hp
+    have h : (.some p : PSp Ω) ≤ .some P₀ := by rw [← hp, ← hμ₀P]; exact hx
+    exact WithTop.coe_le_coe.1 h
+  have hMRc : (M * R) * c ≤ μ₀.toSpace := le_trans (mul_le_mul_right_le ha' c) hle
+  have hMD : M * (R * c) ≤ μ₀.toSpace := by rw [← mul_assoc]; exact hMRc
+  have hvMRc : ✓((M * R) * c) := valid_mono hMRc hvμ₀
+  have hvMR : ✓(M * R) := valid_mul_l hvMRc
+  have hvR : ✓R := valid_mul_r hvMR
+  have hvc : ✓c := valid_mul_r hvMRc
+  have hvMD : ✓(M * (R * c)) := valid_mono hMD hvμ₀
+  have hvD : ✓(R * c) := valid_mul_r hvMD
+  obtain ⟨d, hd⟩ : ∃ d : PSpace Ω, ((R * c : BoundedFootprintSpace Bool) : PSp Ω) = .some d :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hvD)
+  obtain ⟨r, hr⟩ : ∃ r : PSpace Ω, (R : PSp Ω) = .some r :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hvR)
+  obtain ⟨c', hc'⟩ : ∃ c' : PSpace Ω, (c : PSp Ω) = .some c' :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hvc)
+  obtain ⟨s, hs⟩ : ∃ s : PSpace Ω, ((M * (R * c) : BoundedFootprintSpace Bool) : PSp Ω) = .some s :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hvMD)
+  obtain ⟨y, hy⟩ : ∃ y : PSpace Ω, ((M * R : BoundedFootprintSpace Bool) : PSp Ω) = .some y :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hvMR)
+  obtain ⟨w, hw⟩ : ∃ w : PSpace Ω, (((M * R) * c : BoundedFootprintSpace Bool) : PSp Ω) = .some w :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hvMRc)
+  have hsmd : s =ᵢ m ⊕ᵢ d := by
+    apply PSp.mul_inversion
+    have h := hs
+    rw [show ((M * (R * c) : BoundedFootprintSpace Bool) : PSp Ω)
+      = PSp.mul (M : PSp Ω) ((R * c : BoundedFootprintSpace Bool) : PSp Ω) from rfl, hd] at h
+    exact h
+  have hymr : y =ᵢ m ⊕ᵢ r := by
+    apply PSp.mul_inversion
+    have h := hy
+    rw [show ((M * R : BoundedFootprintSpace Bool) : PSp Ω)
+      = PSp.mul (M : PSp Ω) (R : PSp Ω) from rfl, hr] at h
+    exact h
+  have hwyc : w =ᵢ y ⊕ᵢ c' := by
+    apply PSp.mul_inversion
+    have h := hw
+    rw [show (((M * R) * c : BoundedFootprintSpace Bool) : PSp Ω)
+      = PSp.mul ((M * R : BoundedFootprintSpace Bool) : PSp Ω) (c : PSp Ω) from rfl, hy, hc'] at h
+    exact h
+  have hsP : s ≤ P₀ := hle_amb hMD hs
+  have hwP : w ≤ P₀ := hle_amb hMRc hw
+  have hyP : y ≤ P₀ := le_trans (PSpace.le_of_isIndependentProduct_left hwyc) hwP
+  have hcP : c' ≤ P₀ := le_trans (PSpace.le_of_isIndependentProduct_right hwyc) hwP
+  have hm_le_P : m ≤ P₀ := le_trans (PSpace.le_of_isIndependentProduct_left hsmd) hsP
+  have hmP : m.ms ≤ P₀.ms := hm_le_P.1
+  have hdP : d.ms ≤ P₀.ms := le_trans (PSpace.le_of_isIndependentProduct_right hsmd).1 hsP.1
+  have hdp := d.2
+  -- the fibres, as reweightings of the ambient
+  haveI : Countable μ.support := μ.support_countable.to_subtype
+  have hac : ∀ i : μ.support, κ.1 i ≪ m.μ := fun i ↦ kernel_fibre_ac κ hmix i.2
+  haveI hκp : ∀ i : μ.support, IsProbabilityMeasure (κ.1 i) :=
+    fun i ↦ κ.2.isProbabilityMeasure i
+  set ρ : μ.support → Measure[P₀.ms] Ω :=
+    fun i ↦ P₀.μ.withDensity ((κ.1 i).rnDeriv m.μ) with hρ
+  have hρrect : ∀ i E, MeasurableSet[d.ms] E → ∀ F, MeasurableSet[m.ms] F →
+      ρ i (E ∩ F) = d.μ E * κ.1 i F :=
+    fun i E hE F hF ↦ PSpace.withDensity_rect hsmd hsP (κ.1 i) (hac i) hE hF
+  haveI hρp : ∀ i, IsProbabilityMeasure (ρ i) := fun i ↦ ⟨by
+    have h := hρrect i Set.univ MeasurableSet.univ Set.univ MeasurableSet.univ
+    rwa [Set.inter_univ, hdp.measure_univ, (hκp i).measure_univ, one_mul] at h⟩
+  have hκmix : ∀ F, MeasurableSet[m.ms] F → m.μ F = ∑' i : μ.support, μ i * κ.1 i F := by
+    intro F hF; rw [hmix]; exact bind_apply_support μ κ.1 hF
+  have hP₀mix : ∀ E, MeasurableSet[P₀.ms] E → P₀.μ E = ∑' i : μ.support, μ i * ρ i E :=
+    fun E hE ↦ PSpace.withDensity_mixture hm_le_P (fun i : μ.support ↦ μ i)
+      (fun i : μ.support ↦ κ.1 i) hac hκmix hE
+  -- the reweighted footprints
+  obtain ⟨τ, hτ⟩ : ∃ τ : μ.support → BoundedFootprintPsp,
+      ∀ i, τ i = BoundedFootprintPsp.reweight μ₀ hvalid (ρ i) (hρp i) := ⟨_, fun _ ↦ rfl⟩
+  have hτpsp : ∀ i, (τ i).psp = .some ⟨⟨P₀.ms, ρ i⟩, hρp i⟩ := fun i ↦ by rw [hτ]; rfl
+  have hτvalid : ∀ i, ✓(τ i).psp := fun i ↦ by rw [hτ]; exact reweight_valid
+  have hτtree : ∀ i, toTree (τ i) (fun _ ↦ Cb) = toTree μ₀ (fun _ ↦ Cb) :=
+    fun i ↦ by rw [hτ]; exact toTree_reweight Cb
+  have hτfresh : ∀ i, freshMs (τ i) Cb = freshMs μ₀ Cb := fun i ↦ by rw [hτ]; rfl
+  have hτres : ∀ i, result (run Cb (τ i)) = result (run Cb μ₀) :=
+    fun i ↦ by rw [hτ]; exact result_run_reweight Cb
+  -- each fibre, with the frame, sits in its reweighted ambient
+  have hvm : ✓((m : PSp Ω)) := PSp.valid_def.mpr (Option.some_ne_none _)
+  have hk : ∀ i : μ.support, HasBoundedFootprint (((κ i : PSpace Ω)) : PSp Ω) := fun i ↦
+    hasBoundedFootprint_congr hvm (PSp.valid_def.mpr (Option.some_ne_none _)) rfl hbf
+  set K : μ.support → BoundedFootprintSpace Bool := fun i ↦ ⟨((κ i : PSpace Ω) : PSp Ω), hk i⟩
+    with hK
+  have hKD : ∀ i, K i * (R * c) ≤ (τ i).toSpace := by
+    intro i
+    have hsup : m.ms ⊔ d.ms ≤ P₀.ms := sup_le hmP hdP
+    have hX : @PSpace.trim Ω ⟨⟨P₀.ms, ρ i⟩, hρp i⟩ (m.ms ⊔ d.ms) hsup
+        =ᵢ (κ i : PSpace Ω) ⊕ᵢ d := by
+      refine ⟨rfl, fun F hF E hE ↦ ?_⟩
+      have h1 : ρ i (F ∩ E) = κ.1 i F * d.μ E := by
+        rw [Set.inter_comm, hρrect i E hE F hF, mul_comm]
+      have h2 := MeasureOnSpace.trim_eq (p := ⟨P₀.ms, ρ i⟩) hsup
+        (((le_sup_left : m.ms ≤ _) _ hF).inter ((le_sup_right : d.ms ≤ _) _ hE))
+      exact h2.trans h1
+    show PSp.mul (.some (κ i : PSpace Ω)) ((R * c : BoundedFootprintSpace Bool) : PSp Ω)
+      ≤ (τ i).psp
+    rw [hd, hτpsp]
+    exact (le_of_eq (mul_respect_independentProduct hX)).trans
+      (WithTop.coe_le_coe.2 (PSpace.trim_le (p := ⟨⟨P₀.ms, ρ i⟩, hρp i⟩) hsup))
+  have hRKc : ∀ i, (R * K i) * c ≤ (τ i).toSpace := by
+    intro i; rw [mul_comm R, mul_assoc]; exact hKD i
+  have hvRK : ∀ i, ✓(R * K i) := fun i ↦ valid_mul_l (valid_mono (hRKc i) (hτvalid i))
+  -- run every fibre
+  have hfib' : ∀ i : μ.support, ∃ b : BoundedFootprintSpace Bool,
+      b * c ≤ (run C (τ i)).1.toSpace ∧ ✓b ∧
+        msOf b ≤ msOf (R * K i) ⊔ freshMs (τ i) Cb ∧
+        (own b ⊢ Q i (result (run C (τ i)))) :=
+    fun i ↦ hfib i i.2 (hk i) (R * K i) (hvRK i) (le_refl (R * K i)) (τ i) c (hτvalid i) (hRKc i)
+  choose bv hbvc hbvv hbvms hbvQ using hfib'
+  -- the run, and the reweighted runs
+  obtain ⟨S, hS, -, hSsub, -, hSpres, -⟩ := run_const μ₀ Cb hvalid
+  choose Sf hSf _ hSfsub _ _ _ using fun i : μ.support ↦ run_const (τ i) Cb (hτvalid i)
+  have htreems : (toTree μ₀ (fun _ ↦ Cb)).ms = P₀.ms := by
+    rw [toTree_ms_eq, μ₀.sigmaAgrees hvalid]
+  have hP₀S : P₀.ms ≤ S.ms := htreems ▸ hSsub
+  have hP₀Sf : ∀ i, P₀.ms ≤ (Sf i).ms := fun i ↦ by
+    have h := hSfsub i
+    rw [hτtree, htreems] at h
+    exact h
+  -- the one σ-algebra every witness lives on
+  set 𝓜 : MeasurableSpace Ω := (m.ms ⊔ r.ms) ⊔ freshMs μ₀ Cb with h𝓜
+  have hy𝓜 : y.ms = m.ms ⊔ r.ms := hymr.1
+  have h𝓜S : 𝓜 ≤ S.ms :=
+    sup_le (hy𝓜 ▸ le_trans hyP.1 hP₀S) (run_fresh μ₀ Cb hvalid hS).1
+  have h𝓜Sf : ∀ i, 𝓜 ≤ (Sf i).ms := fun i ↦ by
+    refine sup_le (hy𝓜 ▸ le_trans hyP.1 (hP₀Sf i)) ?_
+    have h := (run_fresh (τ i) Cb (hτvalid i) (hSf i)).1
+    rwa [hτfresh] at h
+  have hmsRK : ∀ i, msOf (R * K i) = r.ms ⊔ m.ms := fun i ↦
+    msOf_mul (q := (κ i : PSpace Ω)) hr rfl (hvRK i)
+  have hbv𝓜 : ∀ i, msOf (bv i) ≤ 𝓜 := fun i ↦ by
+    refine le_trans (hbvms i) ?_
+    rw [hmsRK, hτfresh, sup_comm r.ms]
+  -- the witness: the run, trimmed to `𝓜`
+  set B : PSpace Ω := @PSpace.trim Ω S 𝓜 h𝓜S with hB
+  have hvS : ✓((run Cb μ₀).1.psp) := by rw [hS]; exact Option.some_ne_none _
+  have hbfB : HasBoundedFootprint ((B : PSp Ω)) :=
+    hasBoundedFootprint_mono hvS (by rw [hS]; exact WithTop.coe_le_coe.2 (PSpace.trim_le h𝓜S))
+      (hasBoundedFootprint_of_tree _)
+  have hP₀S' : P₀ ≤ S := PSpace.le_of_ms_le hP₀S fun E hE ↦ hSpres (htreems ▸ hE)
+  have hcS : c' ≤ S := le_trans hcP hP₀S'
+  have hmrS : m.ms ⊔ r.ms ≤ S.ms := by rw [← hy𝓜]; exact le_trans hyP.1 hP₀S
+  -- `𝓜` is independent of the frame: `m ⊗ R` was, and the fresh bits are
+  have hrect : ∀ G, MeasurableSet[𝓜] G → ∀ E, MeasurableSet[c'.ms] E →
+      S.μ (G ∩ E) = S.μ G * c'.μ E := by
+    intro G hG E hE
+    refine PSpace.indep_sup_of_rect hmrS (run_fresh μ₀ Cb hvalid hS).1 hcS ?_ hE G hG
+    intro A hA F hF E hE
+    have hAy : MeasurableSet[y.ms] A := by rw [hy𝓜]; exact hA
+    have hAP : MeasurableSet[P₀.ms] A := hyP.1 _ hAy
+    have hEP : MeasurableSet[P₀.ms] E := hcP.1 _ hE
+    have hfr : ∀ {F : Set Ω}, MeasurableSet[freshMs μ₀ Cb] F → ∀ {E : Set Ω},
+        MeasurableSet[P₀.ms] E → S.μ (F ∩ E) = S.μ F * P₀.μ E :=
+      (run_fresh μ₀ Cb hvalid hS).2
+    have h1 : S.μ (A ∩ F ∩ E) = S.μ F * P₀.μ (A ∩ E) := by
+      rw [show A ∩ F ∩ E = F ∩ (A ∩ E) by ext; simp only [Set.mem_inter_iff]; tauto]
+      exact hfr hF (hAP.inter hEP)
+    have h2 : S.μ (A ∩ F) = S.μ F * P₀.μ A := by
+      rw [Set.inter_comm]; exact hfr hF hAP
+    have hAEw : MeasurableSet[w.ms] (A ∩ E) :=
+      hwyc.1.symm.le _ (mem_sup_inter y.ms c'.ms hAy hE)
+    have h3 : P₀.μ (A ∩ E) = y.μ A * c'.μ E := by
+      rw [← MeasureOnSpace.le_preserves_measure hwP hAEw]
+      exact hwyc.2 A hAy E hE
+    have h4 : P₀.μ A = y.μ A := (MeasureOnSpace.le_preserves_measure hyP hAy).symm
+    rw [h1, h2, h3, h4, mul_assoc]
+  refine ⟨⟨(B : PSp Ω), hbfB⟩, ?_, PSp.valid_def.mpr (Option.some_ne_none _), ?_, ?_⟩
+  · show PSp.mul (.some B) (c : PSp Ω) ≤ (run Cb μ₀).1.psp
+    rw [hc', hS]
+    exact PSpace.mul_trim_le h𝓜S hcS hrect
+  · rw [msOf_of_val (p := B) rfl]
+    show (m.ms ⊔ r.ms) ⊔ freshMs μ₀ Cb ≤ msOf a ⊔ freshMs μ₀ Cb
+    refine sup_le_sup_right ?_ _
+    rw [← hy𝓜, ← msOf_of_val hy]
+    exact msOf_mono ha'
+  -- the conditioning: the reweighted runs, trimmed to `𝓜`, are its fibres
+  have hfib_meas : ∀ v, ∃ ν : Measure[𝓜] Ω, IsProbabilityMeasure ν ∧
+      ∀ hv : v ∈ μ.support, ν = (@PSpace.trim Ω (Sf ⟨v, hv⟩) 𝓜 (h𝓜Sf ⟨v, hv⟩)).μ := by
+    intro v
+    by_cases hv : v ∈ μ.support
+    · exact ⟨_, (@PSpace.trim Ω (Sf ⟨v, hv⟩) 𝓜 (h𝓜Sf ⟨v, hv⟩)).2, fun _ ↦ rfl⟩
+    · exact ⟨B.μ, B.2, fun h ↦ absurd h hv⟩
+  choose κ'f hκ'p hκ'f' using hfib_meas
+  have hκ'f : ∀ i : μ.support, κ'f i = (@PSpace.trim Ω (Sf i) 𝓜 (h𝓜Sf i)).μ :=
+    fun i ↦ hκ'f' i i.2
+  obtain ⟨κ', hκ'⟩ : ∃ κ' : TrivialMarkovKernel β B, ∀ v, κ'.1 v = κ'f v := by
+    letI : MeasurableSpace β := ⊤
+    exact ⟨⟨⟨κ'f, measurable_from_top⟩, ⟨hκ'p⟩⟩, fun _ ↦ rfl⟩
+  have hmix' : B.μ = (μ.toMeasureWithMs ⊤).bind κ' := by
+    apply @Measure.ext Ω 𝓜
+    intro G hG
+    refine Eq.trans ?_ (bind_apply_support μ κ'.1 hG).symm
+    show (MeasureOnSpace.trim h𝓜S).μ G = _
+    rw [MeasureOnSpace.trim_eq h𝓜S hG,
+      run_psp_mixture μ₀ hvalid Cb (fun i : μ.support ↦ μ i) ρ hρp hP₀mix hS
+        (fun i ↦ by rw [← hτ]; exact hSf i) (h𝓜S G hG)]
+    refine tsum_congr fun i ↦ ?_
+    rw [hκ' i, hκ'f i]
+    show _ = _ * (MeasureOnSpace.trim (h𝓜Sf i)).μ G
+    rw [MeasureOnSpace.trim_eq (h𝓜Sf i) hG]
+  have hτres' : ∀ i, result (run C (τ i)) = result (run C μ₀) := hτres
+  show own (⟨(B : PSp Ω), hbfB⟩ : BoundedFootprintSpace Bool)
+    ⊢ jointConditioning μ (fun v ↦ Q v (result (run C μ₀)))
+  unfold jointConditioning
+  refine entails_trans ?_ (exists_intro B)
+  refine entails_trans ?_ (exists_intro κ')
+  refine entails_trans sep_emp.2 (sep_mono ?_ ?_)
+  · unfold ownP
+    exact exists_intro (Ψ := fun h : HasBoundedFootprint ((B : PSp Ω)) ↦
+      own (⟨(B : PSp Ω), h⟩ : BoundedFootprintSpace Bool)) hbfB
+  refine entails_trans emp_sep.2 (sep_mono (pure_intro hmix') ?_)
+  refine forall_intro fun i ↦ wand_intro (entails_trans emp_sep.1 ?_)
+  unfold ownP
+  refine exists_elim fun hk' ↦ ?_
+  have hQ := hbvQ i
+  rw [hτres' i] at hQ
+  refine entails_trans (own_mono ?_) hQ
+  -- the fibre's witness sits below the trimmed reweighted run
+  obtain ⟨bp, hbp⟩ : ∃ bp : PSpace Ω, (bv i : PSp Ω) = .some bp :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp (hbvv i))
+  have hbpSf : bp ≤ Sf i := by
+    have h : bv i ≤ (run C (τ i)).1.toSpace := le_trans (le_mul_of_one_le PSp.one_le) (hbvc i)
+    have h' : (.some bp : PSp Ω) ≤ .some (Sf i) := by rw [← hbp, ← hSf i]; exact h
+    exact WithTop.coe_le_coe.1 h'
+  have hbpms : bp.ms ≤ 𝓜 := by rw [← msOf_of_val hbp]; exact hbv𝓜 i
+  show (bv i : PSp Ω) ≤ ((κ' i : PSpace Ω) : PSp Ω)
+  rw [hbp]
+  refine WithTop.coe_le_coe.2 (PSpace.le_of_ms_le (S := (κ' i : PSpace Ω)) hbpms fun E hE ↦ ?_)
+  show κ'.1 i E = bp.μ E
+  rw [hκ' i, hκ'f i]
+  show (MeasureOnSpace.trim (h𝓜Sf i)).μ E = _
+  rw [MeasureOnSpace.trim_eq (h𝓜Sf i) (hbpms E hE)]
+  exact (MeasureOnSpace.le_preserves_measure hbpSf hE).symm
 
 lemma CWPSwap {α β : Type} {m : Type → Type} [Monad m] [Interp.BernoulliInterpretable m] [Inhabited α]
   {C : m α} {μ : PMF β} {Q : β → RV α → FProp} :
     iprop(𝒞⟨μ⟩ v; wp C (Q v)) ⊢ wp C (fun x ↦ 𝒞⟨μ⟩ v; Q v x) := by
+  unfold jointConditioning
+  refine exists_elim fun m₀ ↦ exists_elim fun κ ↦ ?_
+  refine pure_elim _ (entails_trans sep_elim_right sep_elim_left) fun hmix ↦ ?_
+  refine entails_trans (sep_mono_right sep_elim_right) ?_
+  unfold ownP
+  refine entails_trans sep_exists_right.1 (exists_elim fun hbf ↦ ?_)
+  refine own_sep_entails_fmk fun a R hva hle hR ↦ ?_
+  refine CWPSwap_core m₀ κ hmix hbf R (fun v hv hk ↦ ?_) a hva hle
+  refine entails_trans own_mul_sep (entails_trans (sep_mono hR (exists_intro
+    (Ψ := fun h : HasBoundedFootprint ((κ v : PSpace Ω) : PSp Ω) ↦
+      own (⟨((κ v : PSpace Ω) : PSp Ω), h⟩ : BoundedFootprintSpace Bool)) hk)) ?_)
+  exact wand_elim (forall_elim (Ψ := fun v : μ.support ↦
+    iprop(ownP (κ v) -∗ wp C (Q v))) ⟨v, hv⟩)
+
+/-- A postcondition that cannot tell almost-surely-equal random variables apart.
+
+`CWPBind` needs this.  The bound run reports the *global* result of `C >>= F`, while the
+continuation's `wp` reports the result of `F v` as a random variable of the `v`-fibre: the
+two agree on that fibre and nowhere else, so an arbitrary `Q : RV β → FProp` cannot be
+carried from one to the other. -/
+def AEProper {β : Type} (Q : RV β → FProp) : Prop :=
+  ∀ X Y : RV β, iprop(⌈fun ρ ↦ X ρ = Y ρ⌉ ∗ Q X) ⊢ Q Y
+
+/-- **Mixability.**  An assertion that is recoverable from its fibres: if every fibre of a
+conditioning establishes it, so does the mixture.  This is the Amaryllis notion of a
+*convex* assertion, and `C_SURE_CONVEX` says sure facts have it.
+
+`CWPBind` needs it on top of `AEProper`, and that is the whole of what `AEProper` is missing:
+the proof obtains `Q` once per fibre, at the reweighted ambient the fibre lives in, and has
+to produce it once for the whole run.  `not_convex_constQ` exhibits an `AEProper` `Q` that
+is not convex, which is exactly why `CWPBind_counterexample` goes through. -/
+def Convex (P : FProp) : Prop :=
+  ∀ {γ : Type} (ν : PMF γ), (𝒞⟨ν⟩ _v; P) ⊢ P
+
+/-- Sure facts are convex: `C_SURE_CONVEX` in the shape `Convex` wants. -/
+lemma convex_liftPred {E : RV Prop} : Convex ⌈E⌉ := fun _ ↦ C_SURE_CONVEX
+
+/-- A pure fact is convex: the support is nonempty, so some fibre already asserts it. -/
+lemma convex_pure {φ : Prop} : Convex iprop(⌜φ⌝) := by
+  intro γ ν r hv hr
+  have hown : own r ⊢ jointConditioning ν (fun _ ↦ iprop(⌜φ⌝)) :=
+    fun _ _ hry ↦ UpperSet.upper _ hry hr
+  obtain ⟨s, hbfs, hsr, w, hsmix, hX⟩ := cond_elim hv hown
+  obtain ⟨v₀, hv₀⟩ := ν.support_nonempty
+  obtain ⟨Y, hYval, hYK⟩ := hX v₀ hv₀
+  have hYv : ✓Y := by
+    show Y.val ≠ (⊤ : PSp Ω)
+    rw [hYval]
+    exact WithTop.coe_ne_top
+  exact hYK Y hYv (le_refl Y)
+
+lemma convex_ftrue : Convex ftrue := fun _ ↦ entails_ftrue
+
+/-- Convexity is closed under `∧`: push the conditioning through each conjunct. -/
+lemma convex_and {P R : FProp} (hP : Convex P) (hR : Convex R) : Convex iprop(P ∧ R) :=
+  fun ν ↦ and_intro (entails_trans (C_CONS fun _ ↦ and_elim_l) (hP ν))
+    (entails_trans (C_CONS fun _ ↦ and_elim_r) (hR ν))
+
+/-- Convexity is closed under `∀`, pointwise. -/
+lemma convex_forall {γ : Type} {P : γ → FProp} (h : ∀ x, Convex (P x)) :
+    Convex iprop(∀ x, P x) :=
+  fun ν ↦ forall_intro fun x ↦ entails_trans (C_CONS fun _ ↦ forall_elim x) (h x ν)
+
+/-- Value-indexed postconditions are automatically proper: they only look at the result
+through `⌈X = x⌉`, and sure equalities substitute (`liftPred_subst`).  So `CWPBind`'s side
+condition is discharged once and for all for the postconditions it is meant for. -/
+lemma aeProper_valuePost {β : Type} (Q : β → FProp) :
+    AEProper (fun X ↦ valuePost X Q) := by
+  intro X Y
+  unfold valuePost jointConditioning
+  iintro ⟨Heq, %ν, %m, %κ, Hm, %hmix, Hall⟩
+  iexists ν, m, κ
+  isplitl [Hm]
+  · iexact Hm
+  · isplitl []
+    · ipureintro
+      exact hmix
+    · iintro %v Hv
+      ispecialize Hall $$ %v Hv
+      icases Hall with ⟨Hsure, HQ⟩
+      isplitl [Heq Hsure]
+      · iapply liftPred_subst
+        isplitl [Heq]
+        · iexact Heq
+        · iexact Hsure
+      · iexact HQ
+
+/-- Having a given law is `AEProper` too: condition on the law (`C_UNIT_R`), substitute the
+sure equality in every fibre (`liftPred_subst`), and mix back.  So `AEProper` is a weak
+side condition -- it holds of postconditions that are very far from mixable, which is what
+`CWPBind_counterexample` exploits. -/
+lemma aeProper_hasDistribution {α : Type} (ν : PMF α) : AEProper (fun X ↦ X ~ ν) := fun _ _ ↦
+  entails_trans (sep_mono_right C_UNIT_R.1)
+    (entails_trans C_FRAME (entails_trans (C_CONS fun _ ↦ liftPred_subst) C_UNIT_R.2))
+
+/-- A law for `X` is already a `valuePost`, provided every fibre's postcondition holds
+outright: condition on the law and hand each fibre its free postcondition. -/
+lemma valuePost_of_law {α : Type} {X : RV α} {ν : PMF α} {Q' : α → FProp}
+    (h : ∀ v, ⊢ Q' v) : (X ~ ν) ⊢ valuePost X Q' := by
+  unfold valuePost
+  refine entails_trans C_UNIT_R.1 (entails_trans (C_CONS ?_)
+    (exists_intro (Ψ := fun ν' : PMF α ↦
+      iprop(𝒞⟨ν'⟩ x; (⌈fun ρ ↦ X ρ = x⌉ ∗ Q' x))) ν))
+  intro v
+  show (⌈X = v⌉ : FProp) ⊢ iprop(⌈fun ρ ↦ X ρ = v⌉ ∗ Q' v)
+  iintro H
+  isplitl [H]
+  · iexact H
+  · exact h v
+
+/-- A predicate that holds everywhere is surely true, and costs nothing: the exceptional set
+is empty, so the trivial space witnesses it. -/
+lemma liftPred_of_forall {a : Ω → Prop} (h : ∀ ρ, a ρ) : ⊢ (LiftPred.lift a : FProp) := by
+  dsimp only [LiftPred.lift]
+  iexists (1 : PSpace Ω)
+  isplitl []
+  · exact ownP_one
+  · ipureintro
+    have hs : {ρ : Ω | ¬ a ρ} = (∅ : Set Ω) := by ext ρ; simp [h ρ]
+    rw [hs]
+    simp
+
+/-! ### Structural rules for `wp`
+
+Consequence and framing do not touch the run: the witness a run produces does not depend on
+the postcondition, and a frame the run never reads can be carried through the run's own
+frame slot.  Both need the run to land in a *defined* space, which is `valid_run`. -/
+
+section WPStructural
+
+open Interp Interp.ProbTree
+
+/-- **A run lands in a defined space.**  `bigStep` takes its valid branch and `ofTree`
+always carries a `some`, so the output footprint is never `⊤`.  This is what lets the
+witness of a run be known valid, which `WPFrame` needs. -/
+lemma valid_run {α : Type} [Inhabited α] {m : Type → Type} [Interp.BernoulliInterpretable m]
+    (t : m α) (μ₀ : BoundedFootprintPsp) (hv : ✓μ₀.psp) :
+    ✓((run t μ₀).1.toSpace) := by
+  show ((run t μ₀).1.psp) ≠ (⊤ : PSp Ω)
+  rw [run, bigStep, dite_eq_left hv, ofTree_psp']
+  exact Option.some_ne_none _
+
+/-- **A program's value is determined by the bits it read.**  `runValue` and `runPath`
+recurse on the same program and consume the same bits, so a tape is pinned down as far as
+the value is concerned by the path. -/
+lemma runValue_eq_of_runPath_eq {α : Type} (m : BernoulliM α) :
+    ∀ {ρ ρ' : Ω}, runPath m ρ = runPath m ρ' → runValue m ρ = runValue m ρ' := by
+  induction m with
+  | pure a => intro ρ ρ' _; rfl
+  | liftBind op c ih =>
+    intro ρ ρ' h
+    rw [runPath, runPath] at h
+    obtain ⟨h0, htl⟩ := List.cons.inj h
+    rw [runValue, runValue, h0]
+    rw [h0] at htl
+    exact ih (ρ' 0) htl
+
+/-- Shifting past one more bit, from the inside. -/
+lemma shiftBy_shift (n : ℕ) (ρ : Ω) : shiftBy n (shift ρ) = shiftBy (n + 1) ρ := rfl
+
+/-- **The value of a bind, on a tape.**  Run `p`, then run `q` of its value on the tape `p`
+left behind.  The first of the two tape-level halves of a `run`-level bind lemma; both are
+plain structural inductions on the free monad. -/
+lemma runValue_bind {α β : Type} (q : α → BernoulliM β) :
+    ∀ (p : BernoulliM α) (ρ : Ω), runValue (p >>= q) ρ
+      = runValue (q (runValue p ρ)) (shiftBy (runPath p ρ).length ρ) := by
+  intro p
+  induction p with
+  | pure a => intro ρ; rfl
+  | liftBind op c ih =>
+    intro ρ
+    show runValue ((c (ρ 0)) >>= q) (shift ρ) = _
+    rw [ih (ρ 0) (shift ρ)]
+    show _ = runValue (q (runValue (c (ρ 0)) (shift ρ)))
+      (shiftBy ((ρ 0 :: runPath (c (ρ 0)) (shift ρ)).length) ρ)
+    rw [List.length_cons, shiftBy_shift]
+
+/-- **The path of a bind, on a tape**: `p`'s bits, then `q`'s. -/
+lemma runPath_bind {α β : Type} (q : α → BernoulliM β) :
+    ∀ (p : BernoulliM α) (ρ : Ω), runPath (p >>= q) ρ
+      = runPath p ρ ++ runPath (q (runValue p ρ)) (shiftBy (runPath p ρ).length ρ) := by
+  intro p
+  induction p with
+  | pure a => intro ρ; rfl
+  | liftBind op c ih =>
+    intro ρ
+    show ρ 0 :: runPath ((c (ρ 0)) >>= q) (shift ρ) = _
+    rw [ih (ρ 0) (shift ρ)]
+    show _ = (ρ 0 :: runPath (c (ρ 0)) (shift ρ)) ++
+      runPath (q (runValue (c (ρ 0)) (shift ρ)))
+        (shiftBy ((ρ 0 :: runPath (c (ρ 0)) (shift ρ)).length) ρ)
+    rw [List.cons_append, List.length_cons, shiftBy_shift]
+
+/-- **The value a run reports is part of the randomness the run added.**  This is what makes
+`wp`'s locality clause discharegable for `CWPDist`: the witness measures only the reported
+value, and the reported value is a function of the path. -/
+lemma comap_footprintValue_le_freshMs {α : Type} (b : BoundedFootprintPsp)
+    (m : BernoulliM α) :
+    MeasurableSpace.comap (footprintValue b m) ⊤ ≤ freshMs b m := by
+  rintro _ ⟨T, -, rfl⟩
+  refine ⟨footprintPath b m '' (footprintValue b m ⁻¹' T), trivial, ?_⟩
+  ext ρ
+  constructor
+  · rintro ⟨ρ', hρ', hpath⟩
+    show footprintValue b m ρ ∈ T
+    rw [show footprintValue b m ρ = footprintValue b m ρ' from
+      (runValue_eq_of_runPath_eq m hpath).symm]
+    exact hρ'
+  · intro hρ
+    exact ⟨ρ, hρ, rfl⟩
+
+/-- **Consequence.**  The witness a run produces is chosen without reference to the
+postcondition, so the same witness serves a weaker one. -/
+lemma WPCons {α : Type} [Inhabited α] {m : Type → Type} [Monad m]
+    [Interp.LawfulBernoulliInterpretable m]
+    {Q Q' : RV α → FProp} {t : m α} (h : ∀ v, Q v ⊢ Q' v) : iprop(wp t Q) ⊢ wp t Q' := by
+  intro a hva ha μ₀ c hv hle
+  obtain ⟨b, hb₁, hb₂, hb₃, hb₄⟩ := ha μ₀ c hv hle
+  exact ⟨b, hb₁, hb₂, hb₃, entails_trans hb₄ (h _)⟩
+
+/-- **Framing.**  `P` is not read by the run, so hand it to the run as part of its frame:
+`wp t Q`'s witness `b` is disjoint from `p * c`, hence `p * b` is disjoint from `c` and
+still sits inside the output footprint.  `p` is then handed back alongside `Q`. -/
+lemma WPFrame {α : Type} [Inhabited α] {m : Type → Type} [Monad m]
+    [Interp.LawfulBernoulliInterpretable m]
+    {P : FProp} {Q : RV α → FProp} {t : m α} :
+    iprop(P ∗ wp t Q) ⊢ wp t (fun v ↦ iprop(P ∗ (Q v))) := by
+  obtain ⟨U, rfl⟩ : ∃ U : UpperSet (BoundedFootprintSpace Bool), P = fmk U :=
+    ⟨P.out, (Quotient.out_eq _).symm⟩
+  obtain ⟨Qr, rfl⟩ : ∃ Qr : RV α → UpperSet (BoundedFootprintSpace Bool),
+      Q = fun X ↦ fmk (Qr X) :=
+    ⟨fun X ↦ (Q X).out, funext fun X ↦ (Quotient.out_eq _).symm⟩
+  intro a hva ha μ₀ c hv hle
+  obtain ⟨p, w, hpw, hp, hw⟩ := ha
+  have hvr : ✓((run t μ₀).1.toSpace) := valid_run t μ₀ hv
+  have hwle : w * (p * c) ≤ μ₀.toSpace := by
+    calc w * (p * c) = (p * w) * c := by rw [← mul_assoc, mul_comm w p]
+      _ ≤ a * c := mul_le_mul_right_le hpw c
+      _ ≤ μ₀.toSpace := hle
+  obtain ⟨b, hb₁, hb₂, hb₃, hb₄⟩ := hw μ₀ (p * c) hv hwle
+  have hkey : (p * b) * c ≤ (run t μ₀).1.toSpace := by
+    calc (p * b) * c = b * (p * c) := by rw [mul_comm p b, mul_assoc]
+      _ ≤ _ := hb₁
+  have hvpb : ✓(p * b) := valid_mul (valid_mono hkey hvr)
+  refine ⟨p * b, hkey, hvpb, ?_, ?_⟩
+  · -- the frame measures no more than `a` did, and `b` is local to `w`
+    have hpa : msOf p ≤ msOf a := msOf_mono (le_trans (le_mul_of_one_le PSp.one_le) hpw)
+    have hwa : msOf w ≤ msOf a :=
+      msOf_mono (le_trans (by rw [mul_comm]; exact le_mul_of_one_le PSp.one_le) hpw)
+    calc msOf (p * b) ≤ msOf p ⊔ msOf b := msOf_mul_le hvpb
+      _ ≤ msOf a ⊔ (msOf w ⊔ freshMs μ₀ (Interp.BernoulliInterpretable.interp t)) :=
+          sup_le_sup hpa hb₃
+      _ ≤ msOf a ⊔ freshMs μ₀ (Interp.BernoulliInterpretable.interp t) :=
+          sup_le le_sup_left (sup_le (le_trans hwa le_sup_left) le_sup_right)
+  · intro mm hvmm hmm
+    exact ⟨p, b, hmm, hp, hb₄ b hb₂ (le_refl b)⟩
+
+end WPStructural
+
+/-! ### Sequencing
+
+`F` consumes a value, so the result of `C` has to be split along its value before `F` can be
+named: that is exactly `valuePost`, which conditions on the law of the result and hands each
+fibre the value it reports.  The rule one would like is
+
+```
+  CWPBind : AEProper Q → wp C (fun X ↦ valuePost X (fun v ↦ wp (F v) Q)) ⊢ wp (C >>= F) Q
+```
+
+**It is false at that side condition** -- `CWPBind_counterexample` proves it -- so a
+bi-entailment is out too (`CWPBind_biEntails_counterexample`).  Both refutations are stated
+against the *locality-clause* `wp`, so moving from the old unconstrained `wp` to this one
+does not repair the rule: the counterexample is about mixing an assertion, not about
+assembling witnesses.
+
+The diagnosis is that this rule is *not* the bind rule; it is the bind rule plus a
+specialisation step.  `CWPBindC` is the bind rule: `F` runs once per fibre of `C`'s law, so
+what comes back is one `Q v` per fibre, and a resource whose fibres satisfy `Q v Y` simply
+*is* a conditioning `𝒞⟨ν⟩ v; Q v Y`.  Recording that in the conclusion costs nothing and
+needs no side condition on `Q` (this is the shape `CWPSwap`'s conclusion has, for the same
+reason).  `CWPBind` then asks for the conditioning to be collapsed back to a bare `Q Y`,
+and *that* is `Convex`.  The counterexample attacks the collapse, not the bind: `constQ` is
+perfectly fine as a `CWPBindC` postcondition.
+
+With that split, `CWPBind` is proved outright from `CWPBindC` and `WPCons`, and what is left
+is item 2 below -- a single semantic lemma -- plus the structural work of item 0.
+
+**How this relates to Amaryllis** (arXiv 2605.13765).  `CWPSwap` is already exactly the
+paper's `c-lift` (rule 2.5): `∀ x ∈ supp μ. {P x} E {V. Q x V}` gives
+`{𝐂_{x←μ} P x} E {V. 𝐂_{x←μ} Q x V}` -- conditioning in, conditioning out, no side
+condition, and crucially *the same* `E` in every fibre.  `CWPBindC` is **not** an instance of
+it, and is not the paper's bind rule either.  The paper's bind (rule 2.4) is
+`{P} E {W. P' W}`, `∀ W. {P' W} K[W] {V. Q V}` ⟹ `{P} K[E] {V. Q V}`, where `W` ranges over
+*random variables* `Ω → Val` and `K[W]` is a random expression: the continuation is never
+split along a value, so nothing is ever mixed back, which is why no convexity-like side
+condition appears anywhere in that development.
+
+Both logics are operational, so that is not the difference; the difference is the shape of
+the step.  The paper's triples are over a small-step relation with *evaluation contexts*, so
+`K[E]` reduces to `E`'s own steps and bind is structural -- Iris's `wp_bind`, essentially for
+free.  `run` is big-step and runs a whole program to completion, so there is no evaluation
+context to induct on and compositionality has to be proved outright.  (The resource side is
+the easy direction here: with no heap and no permissions, none of the paper's `⊠`/authority
+machinery is needed.)
+
+On top of that, `wp` is indexed by a fixed `t : m α`, so a continuation `F : α → m β` has to
+be routed through `valuePost` and run as a *different* program per fibre.  That per-fibre-program generalisation of `c-lift`/`CWPSwap_core` is the new work
+`CWPBindC` needs; there is nothing in the paper to specialise.  The alternative is to follow
+the paper properly and index `wp` by a random program.  The semantics already supports it --
+`bigStep` takes `programs : bfpsp.atoms → BernoulliM α`, which *is* a random expression, and
+`run` throws that away by passing `fun _ ↦ interp t`.  Reinstating it would buy the paper's
+bind rule verbatim, with no conditioning and no convexity, and leave `valuePost`-style
+per-value reasoning to `CWPSwap`, where it belongs.  Either way item 2 is still owed.
+
+**0. The locality clause (done).**  The fibres of a conditioning live at *different*,
+reweighted ambients, so the continuation's witnesses arrive one per fibre and have to be
+assembled into a single resource.  An unconstrained witness leaves two fibres' witnesses
+incomparable; the clause `msOf b ≤ msOf a ⊔ freshMs` bounds each of them, and
+`freshMs_reweight` makes that bound the same at every fibre, since all fibres of a
+conditioning carry the mixture's σ-algebra.  `CWPSwap` was already stated for this `wp` for
+exactly that reason, and `CWPSwap_core` *is* the mixing argument, carried out.  What
+sequencing needs is `CWPSwap_core` generalised from one program `C` run at every fibre to a
+family `fun v ↦ F v`, one program per fibre.  The reweighting side is in place:
+`BoundedFootprintPsp.reweight`, `freshMs_reweight`, `result_run_reweight`, and the
+mixing-back lemma above `CWPSwap_core`.
+
+**1. `Convex (Q X)`, for the collapse only.**  `AEProper` lets a fibre's report of `F v`
+stand in for the global report of `C >>= F`; it says nothing about recovering `Q` from the
+fibres.  `not_convex_constQ` shows the two are independent:
+`constQ X := ⌈X = true⌉ ∨ ⌈X = false⌉` -- "the result is almost surely a constant" -- is
+`AEProper` (`aeProper_constQ`) and is not convex, and that gap is the whole of the
+counterexample.  `convex_liftPred` is the base case (`C_SURE_CONVEX`), and `convex_pure`,
+`convex_and`, `convex_forall` close it under the connectives that preserve it; the natural
+next one, not yet proved, is that `fun X ↦ X ~ ν` is convex, its fibres being the convex
+`⌈X = v⌉`.
+
+Restricting to `valuePost`-shaped `Q` does not dodge the condition either.  Collapsing
+`𝒞⟨ν⟩ v; valuePost Y R` with `C_SKOLEM` and `C_ASSOC` lands at
+`𝒞⟨joint⟩ (v, y); (⌈Y = y⌉ ∗ R y)`, and getting from there to a conditioning over `y` alone
+is a marginalisation `𝒞⟨μ₀⟩ (v, w); K w ⊢ 𝒞⟨μ₀.map Prod.snd⟩ w; K w`, which is itself
+refuted: at `μ₀` the product of `bernoulliWeights (1/2)` with a point mass, and `K _ := constQ X`,
+it *is* `Convex (constQ X)`, which `not_convex_constQ` rules out.  Marginalisation holds
+exactly when the fibre assertion is convex, so a `valuePost`-shaped `Q` is mixable precisely
+when the values' assertions are.  (`CWPBindDist` sidesteps all of this: it reads the law of
+the whole composite program off `CWPDist`, rather than sequencing anything.)
+
+**2. A `run`-level bind lemma.**  Nothing in the development relates `run (C >>= F) μ₀` to
+running `C` and then `F`: `LawfulBernoulliInterpretable.interp_bind` is a law about `interp`,
+never about `bigStep`.  `bigStep` already takes a per-atom family of programs, so the
+statement is expressible --
+
+```
+  run (C >>= F) μ₀ = bigStep (run C μ₀).1 (fun A ↦ interp (F ((run C μ₀).2 A)))
+```
+
+-- but the `toTree`/`fixpoint` composition theorem behind it is not.  It splits in two, and
+the tape half is cheap: `runValue_bind` and `runPath_bind` are plain structural inductions
+on the free monad and are proved.  What is left is (a) that running `p` refines a
+footprint's atoms by `p`'s own paths, so that `footprintValue`/`footprintPath` compose the
+way `runValue`/`runPath` do, and (b) the measure half -- `run_psp_mixture` says the space a
+run lands in is the mixture of the spaces its reweighted runs land in, and it is stated for
+one program; bind needs it for a per-atom family, which is the shape `bigStep` already
+takes.  Three consequences are
+what the proof actually consumes: `(run C μ₀).1.toSpace ≤ (run (C >>= F) μ₀).1.toSpace`;
+each fibre's `run (F v) (BoundedFootprintPsp.reweight (run C μ₀).1 …)` landing inside the
+matching reweighting of `run (C >>= F) μ₀`; and
+`result (run (C >>= F) μ₀) = result (run (F v) …)` almost surely on `{result (run C μ₀) = v}`,
+which is the equation `AEProper` exists to exploit.  The locality side additionally needs
+`freshMs μ₀ (interp (F v)) ≤ freshMs μ₀ (interp (C >>= F))`, so that a fibre's locality bound
+implies the one the conclusion asks for.  This is the one genuinely missing input: with it,
+item 0's machinery plus `Convex` is the whole proof. -/
+
+/-- **Sequencing, in conditioned form** -- the shape the mixing argument actually produces,
+and the one `CWPBind` is a special case of.
+
+`F` is run once per fibre of `C`'s law, so what comes back is one `Q v` per fibre, at the
+reweighted ambient that fibre lives in.  Mixing them is not a *collapse*: a resource whose
+fibres satisfy `Q v Y` is by definition a conditioning `𝒞⟨ν⟩ v; Q v Y`, and that is what the
+conclusion records.  Nothing has to be recovered from the fibres, so there is no convexity
+side condition here, and the postcondition may be genuinely value-indexed.  Compare
+`CWPSwap`, whose conclusion has the same shape for the same reason.
+
+`AEProper (Q v)` is still needed, and for the reason it was introduced: the fibre's `wp`
+reports `F v`'s result as a random variable of that fibre, while the conclusion is about the
+global result of `C >>= F`, and the two agree only almost surely on the fibre.
+
+Not proved.  The one missing input is the `run`-level bind lemma of item 2 above; given it,
+the mixing is `CWPSwap_core` with a per-fibre program family in place of the single `C`. -/
+lemma CWPBindC {α β : Type} {m : Type → Type} [Monad m]
+    [Interp.LawfulBernoulliInterpretable m] [Inhabited α] [Inhabited β]
+    {C : m α} {F : α → m β} {Q : α → RV β → FProp}
+    (hQ : ∀ v, AEProper (Q v)) :
+    wp C (fun X ↦ valuePost X (fun v ↦ wp (F v) (Q v)))
+      ⊢ wp (C >>= F) (fun Y ↦ iprop(∃ ν : PMF α, 𝒞⟨ν⟩ v; Q v Y)) := by
   sorry
 
-lemma CWPBind {α β : Type} {m : Type → Type} [Monad m] [Interp.BernoulliInterpretable m] [Inhabited α] [Inhabited β]
-  {C : m α} {F : α → m β} {Q : β → FProp} :
-    wp (C >>= F) Q ⊢ wp C (fun v ↦ wp (F v) Q) := by
+/-- **Sequencing**, at the side conditions that make it survive `CWPBind_counterexample`.
+
+This is `CWPBindC` at a postcondition that does not depend on `C`'s value, followed by the
+one extra step that specialisation needs: collapsing `∃ ν, 𝒞⟨ν⟩ v; Q Y` back to `Q Y`.  That
+step *is* `Convex`, which is why `AEProper` alone is refuted -- the counterexample attacks
+the collapse, not the bind.
+
+So the whole of what `CWPBind` asks beyond the general rule is `hC`, and it is discharged by
+`convex_liftPred`, `convex_pure`, `convex_and`, `convex_forall` for the postconditions built
+out of sure facts. -/
+lemma CWPBind {α β : Type} {m : Type → Type} [Monad m]
+    [Interp.LawfulBernoulliInterpretable m] [Inhabited α] [Inhabited β]
+    {C : m α} {F : α → m β} {Q : RV β → FProp}
+    (hQ : AEProper Q) (hC : ∀ X : RV β, Convex (Q X)) :
+    wp C (fun X ↦ valuePost X (fun v ↦ wp (F v) Q)) ⊢ wp (C >>= F) Q :=
+  entails_trans (CWPBindC (Q := fun _ ↦ Q) fun _ ↦ hQ)
+    (WPCons fun Y ↦ exists_elim fun ν ↦ hC Y ν)
+
+/-- The converse direction.  Iris proves both directions of `bind`, but its `wp` is a
+fixpoint over the operational semantics, whereas this one quantifies over *every* ambient
+footprint containing the resource.  So this direction asks for more than inverting a run:
+from one run of `C >>= F` it has to manufacture a fibre resource that is a precondition for
+`F v` in every possible future ambient, not just the one that run produced.
+
+The locality clause does not change its status: it strengthens the premise, but it also
+strengthens both `wp`s in the conclusion, including the fibre obligation `wp (F v) Q`, which
+is the hard one.  So this stays open, blocked on the same missing `run`-level bind lemma as
+the forward direction (item 2 above) -- and that is also why the two directions cannot be
+merged into a single `⊣⊢` yet: the forward one is refuted at `AEProper` alone
+(`CWPBind_biEntails_counterexample`) and only conjectural once `Convex` is added, while this
+one has no proof and no counterexample.
+
+It is not known to be false: the natural refutation takes
+`Q := fun X ↦ X ~ ν` for a non-Dirac `ν`, which is `AEProper` by `aeProper_hasDistribution`
+and holds of `flip half >>= pure` by `CWPFlip`, while each fibre would have to prove
+`(fun _ ↦ v) ~ ν`; contradicting that fibre obligation means reading `wp` at an ambient
+containing the fibre, and a conditioning's fibres are reweightings, so they do not sit below
+the ambient they came from.  `BoundedFootprintPsp.reweight` together with the tilt machinery
+(`reweight_rect`, `mixture_of_tilts`) should supply that ambient; nobody has carried it
+out. -/
+lemma CWPBindInv {α β : Type} {m : Type → Type} [Monad m]
+    [Interp.LawfulBernoulliInterpretable m] [Inhabited α] [Inhabited β]
+    {C : m α} {F : α → m β} {Q : RV β → FProp} (hQ : AEProper Q) :
+    wp (C >>= F) Q ⊢ wp C (fun X ↦ valuePost X (fun v ↦ wp (F v) Q)) := by
   sorry
 
-open unitInterval in
-lemma CWPFlip {m : Type → Type} [Monad m] [Interp.BernoulliInterpretable m] {p : I} :
-    ⌜0 < p ∧ p < 1⌝ ⊢ wp (Interp.flip p) (fun v ↦ v ~ sorry) := by
-  sorry
+section ProgramRules
+
+open Interp Interp.ProbTree Interp.ProbTree.BoundedFootprintPsp ProbSpace MeasureTheory
+open unitInterval
+
+set_option linter.style.haveILetI false in
+/-- **The law of a program.**  Whatever the state already is, running `t` reports a value
+distributed as `t`'s own law and independent of everything that state could measure. -/
+lemma CWPDist {α : Type} [Inhabited α] [Countable α] (t : BernoulliM α) (ν : PMF α)
+    (hν : ∀ a : α, lawOf t a = ν a) :
+    ⊢ wp t (fun X ↦ X ~ ν) := by
+  intro a hva ha μ₀ c hvalid hle
+  letI : MeasurableSpace α := ⊤
+  haveI : MeasurableSingletonClass α := ⟨fun _ ↦ trivial⟩
+  have hcμ : c ≤ μ₀.toSpace := by
+    refine le_trans ?_ hle
+    conv_lhs => rw [← one_mul c]
+    exact mul_le_mul_right_le ha c
+  have hvc : ✓c := valid_mono hcμ (show ✓(μ₀.toSpace) from hvalid)
+  obtain ⟨C, hC⟩ : ∃ C : PSpace Ω, (c : PSp Ω) = .some C :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hvc)
+  set P : PSpace Ω := ValidPSp.toPSpace ⟨μ₀.psp, hvalid⟩ with hP
+  have hμ₀P : μ₀.psp = .some P := (Option.some_get _).symm
+  have hCP : C ≤ P := by
+    have h : (.some C : PSp Ω) ≤ .some P := by rw [← hC, ← hμ₀P]; exact hcμ
+    exact WithTop.coe_le_coe.1 h
+  obtain ⟨S, hpsp, hres, hsub, hmeas, hpres, hind⟩ := run_const μ₀ t hvalid
+  set X := treeValue t (toTree μ₀ (fun _ ↦ t)) with hX
+  -- the σ-algebra of the reported value
+  set BX : MeasurableSpace Ω := MeasurableSpace.comap X ⊤ with hBXdef
+  have hXB : Measurable[BX, ⊤] X := Measurable.of_comap_le le_rfl
+  have hcomap : ∀ b : α, MeasurableSet[BX] (X ⁻¹' {b}) := fun b ↦ ⟨{b}, trivial, rfl⟩
+  have hpre : ∀ T : Set α, MeasurableSet[S.ms] (X ⁻¹' T) := by
+    intro T
+    rw [show X ⁻¹' T = ⋃ b : T, X ⁻¹' {(b : α)} from by ext ρ; simp]
+    exact MeasurableSet.iUnion fun b ↦ hmeas b
+  have hBX : BX ≤ S.ms := by
+    rintro E ⟨T, -, rfl⟩
+    exact hpre T
+  set B : PSpace Ω := @PSpace.trim Ω S BX hBX with hBdef
+  have hBS : B ≤ S := PSpace.trim_le hBX
+  have hBμ : ∀ E, MeasurableSet[BX] E → B.μ E = S.μ E :=
+    fun E hE ↦ MeasureOnSpace.trim_eq hBX hE
+  -- the frame sits inside the pre-state
+  have hCms : C.ms ≤ (toTree μ₀ (fun _ ↦ t)).ms := by
+    rw [toTree_ms_eq, ← μ₀.sigmaAgrees hvalid]
+    exact hCP.1
+  -- the reported value is independent of everything the pre-state could measure
+  have hsum : ∀ (T : Set α) {E : Set Ω}, MeasurableSet[(toTree μ₀ (fun _ ↦ t)).ms] E →
+      S.μ (X ⁻¹' T ∩ E)
+        = (∑' b : T, (fixpoint (rootTree t)).2 (runValue t ⁻¹' {(b : α)})) * P.μ E := by
+    intro T E hE
+    have hcover : X ⁻¹' T ∩ E = ⋃ b : T, (X ⁻¹' {(b : α)} ∩ E) := by ext ρ; simp
+    have hdisj : Pairwise (Function.onFun Disjoint fun b : T ↦ X ⁻¹' {(b : α)} ∩ E) := by
+      intro b b' hbb'
+      refine Set.disjoint_left.mpr fun ρ hρ hρ' ↦ hbb' ?_
+      have h1 := hρ.1; have h2 := hρ'.1
+      simp only [Set.mem_preimage, Set.mem_singleton_iff] at h1 h2
+      exact Subtype.ext (h1.symm.trans h2)
+    have hmeasf : ∀ b : T, MeasurableSet[S.ms] (X ⁻¹' {(b : α)} ∩ E) :=
+      fun b ↦ (hmeas (b : α)).inter (hsub E hE)
+    rw [hcover, measure_iUnion (μ := S.μ) hdisj hmeasf,
+      tsum_congr (fun b : T ↦ hind (b : α) hE), ENNReal.tsum_mul_right]
+  have hlaw : ∀ T : Set α, B.μ (X ⁻¹' T)
+      = ∑' b : T, (fixpoint (rootTree t)).2 (runValue t ⁻¹' {(b : α)}) := by
+    intro T
+    rw [hBμ _ ⟨T, trivial, rfl⟩]
+    have h := hsum T (E := Set.univ) MeasurableSet.univ
+    rw [Set.inter_univ] at h
+    rw [h, P.2.measure_univ, mul_one]
+  have hsup : BX ⊔ C.ms ≤ S.ms := sup_le hBX (le_trans hCms hsub)
+  set s : PSpace Ω := @PSpace.trim Ω S (BX ⊔ C.ms) hsup with hsdef
+  have hsμ : ∀ E, MeasurableSet[BX ⊔ C.ms] E → s.μ E = S.μ E :=
+    fun E hE ↦ MeasureOnSpace.trim_eq hsup hE
+  have hCμ : ∀ F, MeasurableSet[C.ms] F → C.μ F = P.μ F :=
+    fun F hF ↦ MeasureOnSpace.le_preserves_measure hCP hF
+  have hsBC : s =ᵢ B ⊕ᵢ C := by
+    refine ⟨rfl, ?_⟩
+    intro E hE F hF
+    obtain ⟨T, -, rfl⟩ := hE
+    have hFtree : MeasurableSet[(toTree μ₀ (fun _ ↦ t)).ms] F := hCms F hF
+    have hTsup : MeasurableSet[BX ⊔ C.ms] (X ⁻¹' T ∩ F) :=
+      ((le_sup_left : BX ≤ BX ⊔ C.ms) _ ⟨T, trivial, rfl⟩).inter
+        ((le_sup_right : C.ms ≤ BX ⊔ C.ms) F hF)
+    rw [hsμ _ hTsup, hsum T hFtree, hlaw T, hCμ F hF]
+  obtain ⟨xy, hxy⟩ : ∃ xy : PSpace Ω, PSp.mul (.some B) (.some C) = .some xy :=
+    Option.ne_none_iff_exists'.mp (PSp.mul_ne_top_of_exists ⟨s, hsBC⟩)
+  have hxys : xy = s := PSpace.uniqueness (PSp.mul_inversion hxy) hsBC
+  have hvS : ✓((run t μ₀).1.psp) := by rw [hpsp]; exact Option.some_ne_none _
+  have hbf : HasBoundedFootprint ((B : PSpace Ω) : PSp Ω) :=
+    hasBoundedFootprint_mono hvS (by rw [hpsp]; exact WithTop.coe_le_coe.2 hBS)
+      (hasBoundedFootprint_of_tree _)
+  refine ⟨⟨((B : PSpace Ω) : PSp Ω), hbf⟩, ?_, PSp.valid_def.mpr (Option.some_ne_none _),
+    ?_, ?_⟩
+  · show PSp.mul _ _ ≤ _
+    rw [hC, hxy, hxys, BoundedFootprintPsp.toSpace_val, hpsp]
+    exact WithTop.coe_le_coe.2 (PSpace.trim_le hsup)
+  · -- the witness measures only the reported value, and that is part of the run's own
+    -- randomness: `treeValue` factors through `footprintPath`
+    refine le_trans ?_ (le_sup_right (a := msOf a))
+    show (B : PSpace Ω).ms ≤ freshMs μ₀ (Interp.BernoulliInterpretable.interp t)
+    rw [hBdef]
+    show BX ≤ _
+    rw [hBXdef, hX, treeValue_toTree, interp_bernoulliM]
+    exact comap_footprintValue_le_freshMs μ₀ t
+  · rw [hres]
+    intro d hvd hd
+    refine ⟨_, ⟨B, rfl⟩, ⟨((B : PSpace Ω) : PSp Ω), hbf⟩, 1, by rw [mul_one]; exact hd,
+      ⟨_, ⟨hbf, rfl⟩,
+        le_refl (⟨((B : PSpace Ω) : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool)⟩,
+      hXB.aemeasurable, ?_⟩
+    refine MeasureTheory.Measure.ext_of_singleton (fun b ↦ ?_)
+    have h1 : (@Measure.map Ω α B.ms ⊤ X B.μ) {b} = B.μ (X ⁻¹' {b}) :=
+      @Measure.map_apply Ω α B.ms ⊤ B.μ X hXB {b} MeasurableSpace.measurableSet_top
+    have h2 : (ν.toMeasureWithMs ⊤) {b} = ν b := by
+      rw [PMF.toMeasureWithMs]
+      exact @PMF.toMeasure_apply_singleton α ⊤ _ b (by trivial)
+    rw [h1, h2, hlaw {b},
+      tsum_singleton b (fun y : α ↦ (fixpoint (rootTree t)).2 (runValue t ⁻¹' {y}))]
+    exact hν b
+
+/-- **Flipping a coin**, as an instance of `CWPDist`. -/
+lemma CWPFlip {p : I} :
+    ⊢ wp (Interp.flip p)
+        (fun X ↦ X ~ bernoulliWeights (toNNReal p) (Interp.toNNReal_le_one p)) := by
+  refine CWPDist (Interp.flip p) _ (fun b ↦ ?_)
+  unfold lawOf
+  have h0 : runValue (Interp.flip p) ⁻¹' {b} = prefixEqEvent [b] := preimage_head b
+  rw [h0]
+  refine Eq.trans (measure_congr_tree (fixpoint_oneFlip (fun b : Bool ↦ b) p) _) ?_
+  show flipMeasure _ p _ = _
+  rw [flipMeasure_apply_singleton p b (measurableSet_prefixEqEvent_singleton b),
+    flipWeight_eq_bernoulliWeights]
+
+/-- **Sequencing, for distributions.**  The result of `t >>= f` is distributed as the bind
+of the laws -- and, by `CWPDist`, independently of whatever the state already was. -/
+lemma CWPBindDist {α β : Type} [Inhabited α] [Inhabited β] [Countable β]
+    (t : BernoulliM α) (f : α → BernoulliM β) (ν : PMF α) (κ : α → PMF β)
+    (hν : ∀ a, lawOf t a = ν a) (hκ : ∀ a b, lawOf (f a) b = κ a b) :
+    ⊢ wp (t >>= f) (fun X ↦ X ~ ν.bind κ) := by
+  refine CWPDist (t >>= f) _ (fun b ↦ ?_)
+  rw [lawOf_bind, PMF.bind_apply]
+  exact tsum_congr fun a ↦ by rw [hν a, hκ a b]
+
+/-! ### Why `AEProper` is not enough for sequencing
+
+The witness that the sequencing rule stated above is unsound.  Everything here is about one
+program -- a single fair coin -- and one postcondition. -/
+
+/-- **"The result is almost surely a constant."**  `AEProper`, but not mixable: it holds on
+each fibre of a coin and fails on the coin. -/
+noncomputable def constQ : RV Bool → FProp := fun X ↦ iprop(⌈X = true⌉ ∨ ⌈X = false⌉)
+
+/-- `constQ` cannot tell almost-surely-equal results apart: distribute `∗` over `∨` and
+substitute the sure equality in each disjunct. -/
+lemma aeProper_constQ : AEProper constQ := fun _ _ ↦
+  entails_trans sep_or_left.1
+    (or_elim (entails_trans liftPred_subst or_intro_l)
+      (entails_trans liftPred_subst or_intro_r))
+
+/-- A constant result is surely constant, for free. -/
+lemma constQ_const (v : Bool) : ⊢ constQ (fun _ ↦ v) := by
+  cases v
+  · exact entails_trans (liftPred_of_forall (a := fun _ : Ω ↦ (false : Bool) = false)
+      (fun _ ↦ rfl)) or_intro_r
+  · exact entails_trans (liftPred_of_forall (a := fun _ : Ω ↦ (true : Bool) = true)
+      (fun _ ↦ rfl)) or_intro_l
+
+/-- Every fibre of the bind discharges `constQ` outright: `pure v` reports the constant `v`,
+which is surely constant. -/
+lemma wp_pure_constQ (v : Bool) : ⊢ wp (pure v : Interp.BernoulliM Bool) constQ :=
+  entails_trans (constQ_const v) CWPPure
+
+/-- So the whole premise of the sequencing rule is available for free: the coin has a law
+(`CWPFlip`), conditioning on it is a `valuePost` (`valuePost_of_law`), and each fibre's
+postcondition costs nothing. -/
+lemma wp_flip_valuePost :
+    ⊢ wp (Interp.flip Interp.half)
+        (fun X ↦ valuePost X (fun v ↦ wp (pure v : Interp.BernoulliM Bool) constQ)) :=
+  entails_trans CWPFlip (WPCons fun _ ↦ valuePost_of_law fun v ↦ wp_pure_constQ v)
+
+lemma toNNReal_half_ne_zero : unitInterval.toNNReal Interp.half ≠ 0 := by
+  intro h
+  have hc : ((unitInterval.toNNReal Interp.half : NNReal) : ℝ) = 0 := by rw [h]; simp
+  rw [unitInterval.coe_toNNReal] at hc
+  norm_num [Interp.half] at hc
+
+lemma toNNReal_half_ne_one : unitInterval.toNNReal Interp.half ≠ 1 := by
+  intro h
+  have hc : ((unitInterval.toNNReal Interp.half : NNReal) : ℝ) = 1 := by rw [h]; simp
+  rw [unitInterval.coe_toNNReal] at hc
+  norm_num [Interp.half] at hc
+
+/-- A nondegenerate coin is not a point mass. -/
+lemma delta_ne_bernoulli (v : Bool) {r : NNReal} {hr : r ≤ 1} (h0 : r ≠ 0) (h1 : r ≠ 1) :
+    (δ v : PMF Bool) ≠ bernoulliWeights r hr := by
+  intro h
+  cases v
+  · have hm : true ∈ (bernoulliWeights r hr).support := mem_support_bernoulliWeights_true h0
+    rw [← h] at hm
+    simp [δ] at hm
+  · have hm : false ∈ (bernoulliWeights r hr).support := mem_support_bernoulliWeights_false h1
+    rw [← h] at hm
+    simp [δ] at hm
+
+/-- **`constQ` is `AEProper` but not convex**, and that is exactly the gap
+`CWPBind_counterexample` walks through: the fair coin's law splits into two fibres, on each
+of which the result is surely a constant, while on the coin itself it is surely neither. -/
+theorem not_convex_constQ : ¬ ∀ X : RV Bool, Convex (constQ X) := by
+  intro hconv
+  have hemp : (1 : BoundedFootprintSpace Bool) ∈ (UpperSetBI.emp :
+      UpperSet (BoundedFootprintSpace Bool)) := by
+    show (1 : BoundedFootprintSpace Bool) ≤ 1
+    exact le_refl 1
+  have hv1 : ✓(1 : BoundedFootprintPsp).psp := BoundedFootprintPsp.valid_one
+  have hle1 : (1 : BoundedFootprintSpace Bool) * 1 ≤ (1 : BoundedFootprintPsp).toSpace := by
+    rw [mul_one]; exact le_refl _
+  obtain ⟨b, hb₁, hb₂, -, hb₃⟩ := (CWPFlip (p := Interp.half)) 1 valid_one hemp 1 1 hv1 hle1
+  have hvS := valid_run (Interp.flip Interp.half) (1 : BoundedFootprintPsp) hv1
+  have hbS : b ≤ (run (Interp.flip Interp.half) (1 : BoundedFootprintPsp)).1.toSpace := by
+    have h := hb₁; rwa [mul_one] at h
+  have hlaw := hb₃ _ hvS hbS
+  -- on the fibre at `v` the result is surely `v`, hence surely a constant
+  have hstep : ∀ v : Bool,
+      (⌈result (run (Interp.flip Interp.half) (1 : BoundedFootprintPsp)) = v⌉ : FProp)
+        ⊢ constQ (result (run (Interp.flip Interp.half) (1 : BoundedFootprintPsp))) := by
+    intro v
+    cases v
+    · exact or_intro_r
+    · exact or_intro_l
+  have hcond := C_CONS hstep _ hvS (C_UNIT_R.1 _ hvS hlaw)
+  rcases hconv _ _ _ hvS hcond with h1 | h1
+  · exact delta_ne_bernoulli true toNNReal_half_ne_zero toNNReal_half_ne_one
+      (EDistInj _ hvS ⟨SURE_DIRAC.2 _ hvS h1, hlaw⟩)
+  · exact delta_ne_bernoulli false toNNReal_half_ne_zero toNNReal_half_ne_one
+      (EDistInj _ hvS ⟨SURE_DIRAC.2 _ hvS h1, hlaw⟩)
+
+/-- **Sequencing is unsound at `AEProper`.**  Take `C := flip half`, `F := pure` (so that
+`C >>= F = C`) and `Q := constQ`.  The premise holds outright (`wp_flip_valuePost`), so the
+rule would give `⊢ wp (flip half) constQ`; reading that at the unit ambient produces a
+resource below the run's space on which the coin is surely `true` or surely `false`, while
+`CWPFlip` makes that same run's space give the coin the law `bernoulliWeights (1/2)`.
+`EDistInj` then equates a point mass with a fair coin. -/
+theorem CWPBind_counterexample :
+    ¬ ∀ {α β : Type} {m : Type → Type} [Monad m] [Interp.LawfulBernoulliInterpretable m]
+        [Inhabited α] [Inhabited β] {C : m α} {F : α → m β} {Q : RV β → FProp},
+        AEProper Q → wp C (fun X ↦ valuePost X (fun v ↦ wp (F v) Q)) ⊢ wp (C >>= F) Q := by
+  intro hbind
+  have hbad : ⊢ wp (Interp.flip Interp.half >>= (pure : Bool → Interp.BernoulliM Bool)) constQ :=
+    entails_trans wp_flip_valuePost (hbind aeProper_constQ)
+  rw [bind_pure] at hbad
+  have hemp : (1 : BoundedFootprintSpace Bool) ∈ (UpperSetBI.emp :
+      UpperSet (BoundedFootprintSpace Bool)) := by
+    show (1 : BoundedFootprintSpace Bool) ≤ 1
+    exact le_refl 1
+  have hv1 : ✓(1 : BoundedFootprintPsp).psp := BoundedFootprintPsp.valid_one
+  have hle1 : (1 : BoundedFootprintSpace Bool) * 1 ≤ (1 : BoundedFootprintPsp).toSpace := by
+    rw [mul_one]; exact le_refl _
+  obtain ⟨b, hb₁, hb₂, -, hb₃⟩ := hbad 1 valid_one hemp 1 1 hv1 hle1
+  obtain ⟨b', hb'₁, hb'₂, -, hb'₃⟩ :=
+    (CWPFlip (p := Interp.half)) 1 valid_one hemp 1 1 hv1 hle1
+  have hvS := valid_run (Interp.flip Interp.half) (1 : BoundedFootprintPsp) hv1
+  have hbS : b ≤ (run (Interp.flip Interp.half) (1 : BoundedFootprintPsp)).1.toSpace := by
+    have h := hb₁; rwa [mul_one] at h
+  have hb'S : b' ≤ (run (Interp.flip Interp.half) (1 : BoundedFootprintPsp)).1.toSpace := by
+    have h := hb'₁; rwa [mul_one] at h
+  have h2 := hb'₃ _ hvS hb'S
+  rcases hb₃ _ hvS hbS with h1 | h1
+  · exact delta_ne_bernoulli true toNNReal_half_ne_zero toNNReal_half_ne_one
+      (EDistInj _ hvS ⟨SURE_DIRAC.2 _ hvS h1, h2⟩)
+  · exact delta_ne_bernoulli false toNNReal_half_ne_zero toNNReal_half_ne_one
+      (EDistInj _ hvS ⟨SURE_DIRAC.2 _ hvS h1, h2⟩)
+
+/-- **The two sequencing directions cannot be packaged as one bi-entailment**: a `⊣⊢` would
+give the direction `CWPBind_counterexample` refutes. -/
+theorem CWPBind_biEntails_counterexample :
+    ¬ ∀ {α β : Type} {m : Type → Type} [Monad m] [Interp.LawfulBernoulliInterpretable m]
+        [Inhabited α] [Inhabited β] {C : m α} {F : α → m β} {Q : RV β → FProp},
+        AEProper Q → (wp C (fun X ↦ valuePost X (fun v ↦ wp (F v) Q)) ⊣⊢ wp (C >>= F) Q) :=
+  fun h ↦ CWPBind_counterexample fun hQ ↦ (h hQ).1
+
+end ProgramRules
 
 end wp
 
