@@ -55,7 +55,7 @@ Format:
 
 - `C-FOR-ALL` | Rules.lean/C_For_All | Assertion.lean/C_FOR_ALL
 
-- `C-PURE` | Rules.lean/C_Pure | Assertion.lean/C_PURE (style TODO pending)
+- `C-PURE` | Rules.lean/C_Pure | Assertion.lean/C_PURE
 
 ### Structural WP rules
 
@@ -68,4 +68,35 @@ SKIPPED FOR NOW
 ### Ownership and distributions
 
 - `SURE-DIRAC` | Rules.lean/Sure_Dirac | Assertion.lean/SURE_DIRAC
+
+- `SURE-EQ-INJ` | Rules.lean/Sure_Eq_Inj | Assertion.lean/SURE_EQ_INJ
+
+- `SURE-SUB` | Rules.lean/Sure_Sub | Assertion.lean/SURE_SUB
+
+- `DIST-FUN` | Rules.lean/Dist_Fun | Assertion.lean/DIST_FUN
+
+- `DIRAC-DUP` | Rules.lean/Dirac_Dup | Assertion.lean/DIRAC_DUP
+
+- `DIST-SUPP` | Rules.lean/Dist_Supp | Assertion.lean/DIST_SUPP
+
+- `PROD-UNSPLIT` | Rules.lean/Prod_Unsplit | Assertion.lean/PROD_UNSPLIT
+
+### Joint conditioning
+
+- `C-FUSE` | Rules.lean/C_Fuse | Assertion.lean/C_FUSE
+
+- `C-SWAP` | Rules.lean/C_Swap | Assertion.lean/C_SWAP
+
+- `SURE-CONVEX` | Rules.lean/Sure_Convex | Assertion.lean/SURE_CONVEX
+
+- `DIST-CONVEX` | Rules.lean/Dist_Convex | Assertion.lean/DIST_CONVEX
+
+- `C-SURE-PROJ` | Rules.lean/C_Sure_Proj | Assertion.lean/C_SURE_PROJ
+
+- `C-SURE-PROJ-MANY` | Rules.lean/C_Sure_Proj_Many | Assertion.lean/C_SURE_PROJ_MANY
+
+- `C-EXTRACT` | Rules.lean/C_Extract | Assertion.lean/C_EXTRACT
+
+
+
 

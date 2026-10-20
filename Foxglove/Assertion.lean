@@ -161,16 +161,25 @@ instance {α : Type} : LiftBinary α (RV α) where
 instance {α : Type} : LiftBinary (RV α) (RV α) where
   lift := fun l r ω ↦ l ω = r ω
 
+class LiftMem (α β : Type) where
+  lift : α → β → Ω → Prop
+
+instance {α : Type} : LiftMem (RV α) (Set α) where
+  lift := fun E S ω ↦ E ω ∈ S
+
 syntax "lift(" term ", " term ")" : term
 
 macro_rules
-  | `(lift(¬$a, $ρ))     => `(¬lift($a, $ρ))
-  | `(lift($a ∧ $b, $ρ)) => `(lift($a, $ρ) ∧ lift($b, $ρ))
-  | `(lift($a ∨ $b, $ρ)) => `(lift($a, $ρ) ∨ lift($b, $ρ))
-  | `(lift($a → $b, $ρ)) => `(lift($a, $ρ) → lift($b, $ρ))
-  | `(lift($a = $b, $ρ)) => `(LiftBinary.lift $a $b $ρ)
-  | `(lift(($x), $ρ))    => `(lift($x, $ρ))
-  | `(lift($x, $ρ))      => `(LiftUnary.lift $x $ρ)
+  | `(lift(¬$a, $ρ))            => `(¬lift($a, $ρ))
+  | `(lift($a ∧ $b, $ρ))        => `(lift($a, $ρ) ∧ lift($b, $ρ))
+  | `(lift($a ∨ $b, $ρ))        => `(lift($a, $ρ) ∨ lift($b, $ρ))
+  | `(lift($a → $b, $ρ))        => `(lift($a, $ρ) → lift($b, $ρ))
+  | `(lift($a = $b, $ρ))        => `(LiftBinary.lift $a $b $ρ)
+  | `(lift(∀ $x:ident, $b, $ρ)) => `(∀ $x:ident, lift($b, $ρ))
+  | `(lift(∃ $x:ident, $b, $ρ)) => `(∃ $x:ident, lift($b, $ρ))
+  | `(lift($a ∈ $b, $ρ))        => `(LiftMem.lift $a $b $ρ)
+  | `(lift(($x), $ρ))           => `(lift($x, $ρ))
+  | `(lift($x, $ρ))             => `(LiftUnary.lift $x $ρ)
 
 syntax (name := liftStx) (priority := high) "⌈" term "⌉" : term
 
@@ -487,6 +496,14 @@ theorem DIST_INJ : E ~ μ ∧ E ~ μ' ⊢ ⌜μ = μ'⌝ := by
     _ = @Measure.map Ω _ P'.ms ⊤ E P'.μ := PSpace.map_eq_of_le hPy hP'y ham ham'
     _ = @PMF.toMeasure _ ⊤ μ' := hμ₂
 
+/-- A sure fact weakens: the exceptional set only shrinks. -/
+theorem liftPred_mono {a b : Ω → Prop} (h : ∀ ρ, a ρ → b ρ) : ⌈a⌉ ⊢ ⌈b⌉ := by
+  intro m hv hm
+  obtain ⟨q, ⟨P, hq⟩, hqm⟩ := hm
+  obtain ⟨d₁, d₂, hle, hown, hpure⟩ := (Quotient.exact hq).2 m hv hqm
+  exact ⟨_, ⟨P, rfl⟩, d₁, d₂, hle, hown,
+    MeasureTheory.measure_mono_null (fun ρ hρ hab ↦ hρ (h ρ hab)) hpure⟩
+
 /-- Two sure facts held separately are both sure on the ambient space, so they merge. -/
 theorem liftPred_sep {a b : Ω → Prop} : ⌈a⌉ ∗ ⌈b⌉ ⊢ ⌈fun ω ↦ a ω ∧ b ω⌉ := by
   intro m hv h
@@ -656,7 +673,9 @@ def product (μ₁ : PMF α) (μ₂ : PMF β) : PMF (α × β) :=
       convert h ▸ ENNReal.summable.hasSum)
   ⟨fun ((a, b) : (α × β)) => μ₁ a * μ₂ b, prf⟩
 
-infix:69 " ⊗ " => product
+scoped infix:69 " ⊗ " => product
+
+scoped notation:70 E₁:71 " ×ᵣ " E₂:71 => fun s => (E₁ s, E₂ s)
 
 lemma product_apply (μ₁ : PMF α) (μ₂ : PMF β) (a : α) (b : β) :
     (μ₁ ⊗ μ₂) (a, b) = μ₁ a * μ₂ b := rfl
@@ -819,6 +838,142 @@ theorem PSpace.split_of_product_law {E₁ : Ω → α} {E₂ : Ω → β} {μ₁
       ((MeasureOnSpace.le_preserves_measure hD₂P (hg₂D MeasurableSpace.measurableSet_top)).trans
         (hmarg₂ B))
 
+open MeasureTheory in
+/-- A measure carried by a countable set is the sum of its masses at the points. -/
+lemma measure_eq_tsum_of_countable {γ : Type} [MeasurableSpace γ] [MeasurableSingletonClass γ]
+    (ν : Measure γ) {S : Set γ} (hS : S.Countable) (hnull : ν Sᶜ = 0) (T : Set γ) :
+    ν T = ∑' p : ↥(T ∩ S), ν {(p : γ)} := by
+  rw [← measure_inter_conull (s := T) hnull]
+  conv_lhs => rw [← Set.biUnion_of_singleton (T ∩ S)]
+  exact measure_biUnion (hS.mono Set.inter_subset_right)
+    (fun _ _ _ _ h ↦ Set.disjoint_singleton.2 h) (fun _ _ ↦ measurableSet_singleton _)
+
+set_option linter.style.haveILetI false in
+open MeasureTheory in
+/-- The converse of `split_of_product_law`: two independent pieces carrying the components'
+laws carry the product law of the pair.  Each component has a measurable version, which can
+be moved into its law's (countable) support off a null set; the pair of those versions then
+takes countably many values, so it is measurable, and its law agrees with `μ₁ ⊗ μ₂` at every
+point by independence. -/
+theorem PSpace.product_law_of_split {E₁ : Ω → α} {E₂ : Ω → β} {μ₁ : PMF α} {μ₂ : PMF β}
+    {P₁ P₂ s : PSpace Ω} (hs : s =ᵢ P₁ ⊕ᵢ P₂)
+    (ham₁ : almostMeasurable E₁ (P₁ : PSp Ω))
+    (hlaw₁ : @Measure.map Ω α P₁.ms ⊤ E₁ P₁.μ = μ₁.toMeasureWithMs ⊤)
+    (ham₂ : almostMeasurable E₂ (P₂ : PSp Ω))
+    (hlaw₂ : @Measure.map Ω β P₂.ms ⊤ E₂ P₂.μ = μ₂.toMeasureWithMs ⊤) :
+    almostMeasurable (fun ω ↦ (E₁ ω, E₂ ω)) (s : PSp Ω) ∧
+      @Measure.map Ω (α × β) s.ms ⊤ (fun ω ↦ (E₁ ω, E₂ ω)) s.μ
+        = (μ₁ ⊗ μ₂).toMeasureWithMs ⊤ := by
+  classical
+  have hp₁ := P₁.isProbability
+  have hp₂ := P₂.isProbability
+  have hps := s.isProbability
+  letI : MeasurableSpace α := ⊤
+  letI : MeasurableSpace β := ⊤
+  letI : MeasurableSpace (α × β) := ⊤
+  haveI : MeasurableSingletonClass (α × β) := ⟨fun _ ↦ trivial⟩
+  replace ham₁ : @AEMeasurable Ω α ⊤ P₁.ms E₁ P₁.μ := ham₁
+  replace ham₂ : @AEMeasurable Ω β ⊤ P₂.ms E₂ P₂.μ := ham₂
+  have h1s : P₁ ≤ s := PSpace.le_of_isIndependentProduct_left hs
+  have h2s : P₂ ≤ s := PSpace.le_of_isIndependentProduct_right hs
+  obtain ⟨a₀, ha₀⟩ := μ₁.support_nonempty
+  obtain ⟨b₀, hb₀⟩ := μ₂.support_nonempty
+  -- measurable versions of the components, valued in the supports
+  set f₁ : Ω → α := fun ω ↦ if ham₁.mk E₁ ω ∈ μ₁.support then ham₁.mk E₁ ω else a₀ with hf₁def
+  set f₂ : Ω → β := fun ω ↦ if ham₂.mk E₂ ω ∈ μ₂.support then ham₂.mk E₂ ω else b₀ with hf₂def
+  have hf₁ : @Measurable Ω α P₁.ms ⊤ f₁ :=
+    (measurable_from_top (f := fun a ↦ if a ∈ μ₁.support then a else a₀)).comp
+      ham₁.measurable_mk
+  have hf₂ : @Measurable Ω β P₂.ms ⊤ f₂ :=
+    (measurable_from_top (f := fun b ↦ if b ∈ μ₂.support then b else b₀)).comp
+      ham₂.measurable_mk
+  have hf₁r : ∀ ω, f₁ ω ∈ μ₁.support := fun ω ↦ by
+    simp only [hf₁def]; split_ifs with h
+    · exact h
+    · exact ha₀
+  have hf₂r : ∀ ω, f₂ ω ∈ μ₂.support := fun ω ↦ by
+    simp only [hf₂def]; split_ifs with h
+    · exact h
+    · exact hb₀
+  -- each version is a.e. its component: the version leaves the support only on a null set
+  have hae₁ : E₁ =ᵐ[P₁.μ] f₁ := by
+    have hmk : @Measure.map Ω α P₁.ms ⊤ (ham₁.mk E₁) P₁.μ = μ₁.toMeasureWithMs ⊤ :=
+      (Measure.map_congr ham₁.ae_eq_mk).symm.trans hlaw₁
+    have hnull : P₁.μ (ham₁.mk E₁ ⁻¹' (μ₁.support)ᶜ) = 0 := by
+      rw [← Measure.map_apply ham₁.measurable_mk MeasurableSpace.measurableSet_top, hmk,
+        PMF.toMeasureWithMs]
+      exact (PMF.toMeasure_apply_eq_zero_iff μ₁ MeasurableSpace.measurableSet_top).2
+        disjoint_compl_right
+    refine ham₁.ae_eq_mk.trans (ae_iff.2 (measure_mono_null (fun ω hω ↦ ?_) hnull))
+    simp only [Set.mem_setOf_eq, hf₁def] at hω
+    split_ifs at hω with h
+    · exact absurd rfl hω
+    · exact h
+  have hae₂ : E₂ =ᵐ[P₂.μ] f₂ := by
+    have hmk : @Measure.map Ω β P₂.ms ⊤ (ham₂.mk E₂) P₂.μ = μ₂.toMeasureWithMs ⊤ :=
+      (Measure.map_congr ham₂.ae_eq_mk).symm.trans hlaw₂
+    have hnull : P₂.μ (ham₂.mk E₂ ⁻¹' (μ₂.support)ᶜ) = 0 := by
+      rw [← Measure.map_apply ham₂.measurable_mk MeasurableSpace.measurableSet_top, hmk,
+        PMF.toMeasureWithMs]
+      exact (PMF.toMeasure_apply_eq_zero_iff μ₂ MeasurableSpace.measurableSet_top).2
+        disjoint_compl_right
+    refine ham₂.ae_eq_mk.trans (ae_iff.2 (measure_mono_null (fun ω hω ↦ ?_) hnull))
+    simp only [Set.mem_setOf_eq, hf₂def] at hω
+    split_ifs at hω with h
+    · exact absurd rfl hω
+    · exact h
+  -- the laws of the versions, at a point
+  have hsing₁ : ∀ a, P₁.μ (f₁ ⁻¹' {a}) = μ₁ a := fun a ↦ by
+    rw [← Measure.map_apply hf₁ MeasurableSpace.measurableSet_top,
+      ← Measure.map_congr hae₁, hlaw₁, PMF.toMeasureWithMs,
+      PMF.toMeasure_apply_singleton _ _ MeasurableSpace.measurableSet_top]
+  have hsing₂ : ∀ b, P₂.μ (f₂ ⁻¹' {b}) = μ₂ b := fun b ↦ by
+    rw [← Measure.map_apply hf₂ MeasurableSpace.measurableSet_top,
+      ← Measure.map_congr hae₂, hlaw₂, PMF.toMeasureWithMs,
+      PMF.toMeasure_apply_singleton _ _ MeasurableSpace.measurableSet_top]
+  -- the pair of versions takes countably many values, so it is measurable
+  set g : Ω → α × β := fun ω ↦ (f₁ ω, f₂ ω) with hgdef
+  set S : Set (α × β) := μ₁.support ×ˢ μ₂.support with hSdef
+  have hS : S.Countable := μ₁.support_countable.prod μ₂.support_countable
+  have hgr : ∀ ω, g ω ∈ S := fun ω ↦ ⟨hf₁r ω, hf₂r ω⟩
+  have hpt : ∀ p : α × β, MeasurableSet[s.ms] (g ⁻¹' {p}) := fun p ↦ by
+    rw [show g ⁻¹' {p} = f₁ ⁻¹' {p.1} ∩ f₂ ⁻¹' {p.2} by
+      ext ω; simp [hgdef, Prod.ext_iff]]
+    exact (h1s.1 _ (hf₁ MeasurableSpace.measurableSet_top)).inter
+      (h2s.1 _ (hf₂ MeasurableSpace.measurableSet_top))
+  have hg : @Measurable Ω (α × β) s.ms ⊤ g := by
+    intro T _
+    rw [show g ⁻¹' T = ⋃ p ∈ T ∩ S, g ⁻¹' {p} by
+      ext ω; simp only [Set.mem_preimage, Set.mem_iUnion, Set.mem_singleton_iff, exists_prop]
+      exact ⟨fun h ↦ ⟨g ω, ⟨h, hgr ω⟩, rfl⟩, fun ⟨_, ⟨hp, _⟩, he⟩ ↦ he ▸ hp⟩]
+    exact MeasurableSet.biUnion (hS.mono Set.inter_subset_right) fun p _ ↦ hpt p
+  have hae : (fun ω ↦ (E₁ ω, E₂ ω)) =ᵐ[s.μ] g := by
+    filter_upwards [PSpace.ae_eq_of_le h1s hae₁, PSpace.ae_eq_of_le h2s hae₂] with ω h₁ h₂
+    simp [hgdef, h₁, h₂]
+  refine ⟨⟨g, hg, hae⟩, ?_⟩
+  rw [Measure.map_congr hae]
+  -- both laws live on `S` and agree at every point
+  have hν₁ : (@Measure.map Ω (α × β) s.ms ⊤ g s.μ) Sᶜ = 0 := by
+    rw [Measure.map_apply hg MeasurableSpace.measurableSet_top]
+    rw [show g ⁻¹' Sᶜ = ∅ from Set.eq_empty_of_forall_notMem fun ω h ↦ h (hgr ω)]
+    exact measure_empty
+  have hν₂ : ((μ₁ ⊗ μ₂).toMeasureWithMs ⊤) Sᶜ = 0 := by
+    rw [PMF.toMeasureWithMs]
+    refine (PMF.toMeasure_apply_eq_zero_iff _ MeasurableSpace.measurableSet_top).2 ?_
+    refine Set.disjoint_left.2 fun p hp hpS ↦ hpS ?_
+    obtain ⟨a, b⟩ := p
+    rw [PMF.mem_support_iff, product_apply] at hp
+    exact ⟨(PMF.mem_support_iff _ _).2 (left_ne_zero_of_mul hp),
+      (PMF.mem_support_iff _ _).2 (right_ne_zero_of_mul hp)⟩
+  ext T _
+  rw [measure_eq_tsum_of_countable _ hS hν₁ T, measure_eq_tsum_of_countable _ hS hν₂ T]
+  refine tsum_congr fun ⟨⟨a, b⟩, _⟩ ↦ ?_
+  rw [Measure.map_apply hg MeasurableSpace.measurableSet_top,
+    show g ⁻¹' {(a, b)} = f₁ ⁻¹' {a} ∩ f₂ ⁻¹' {b} by ext ω; simp [hgdef, Prod.ext_iff],
+    hs.2 _ (hf₁ MeasurableSpace.measurableSet_top) _ (hf₂ MeasurableSpace.measurableSet_top),
+    hsing₁, hsing₂, PMF.toMeasureWithMs,
+    PMF.toMeasure_apply_singleton _ _ MeasurableSpace.measurableSet_top, product_apply]
+
 /--
 TODO(Do we want?) - I _think_ I can make this work as it says in the paper,
 i.e. `(E₁, E₂) ~ (μ₁ ⊗ μ₂)` instead of `(fun s => (E₁ s, E₂ s)) ~ (μ₁ ⊗ μ₂)`, but it would be
@@ -827,7 +982,7 @@ touching quite a common syntax pattern, so I think I'd rather not.
 Thoughts?
 -/
 theorem PROD_SPLIT :
-  (fun s => (E₁ s, E₂ s)) ~ (μ₁ ⊗ μ₂) ⊢ E₁ ~ μ₁ ∗ E₂ ~ μ₂ := by
+  (E₁ ×ᵣ E₂) ~ (μ₁ ⊗ μ₂) ⊢ E₁ ~ μ₁ ∗ E₂ ~ μ₂ := by
   intro m hv h
   obtain ⟨q, ⟨P, hq⟩, hqm⟩ := h
   obtain ⟨d₁, d₂, hle, hown, hpure⟩ := (Quotient.exact hq).2 m hv hqm
@@ -1808,27 +1963,6 @@ theorem C_FOR_ALL :
   𝒞⟨μ⟩ v; (∀ (x : β), Q (v, x)) ⊢ ∀ (x : β), 𝒞⟨μ⟩ v; Q (v, x) :=
   forall_intro fun x ↦ C_CONS fun _ ↦ forall_elim x
 
-#check μ
-
-/--
-TODO(Preference?):
-4 options.
-- 0 `⌜μ X = 1⌝                   ∗ 𝒞⟨μ.toPMF⟩ v; K v ⊣⊢ 𝒞⟨μ.toPMF⟩ v; (⌜v ∈ X⌝ ∗ K v)`
-- 1 `⌜μ.toMeasureWithMs ⊤ X = 1⌝ ∗ 𝒞⟨μ⟩ v; K v ⊣⊢ 𝒞⟨μ⟩ v; (⌜v ∈ X⌝ ∗ K v)`
-- 2 `⌜∑' x : X, μ x = 1⌝         ∗ 𝒞⟨μ⟩ v; K v ⊣⊢ 𝒞⟨μ⟩ v; (⌜v ∈ X⌝ ∗ K v)`
-- 3 `⌜μ.support ⊆ X⌝             ∗ 𝒞⟨μ⟩ v; K v ⊣⊢ 𝒞⟨μ⟩ v; (⌜v ∈ X⌝ ∗ K v)`
-
-`0` looks the best (it keeps exactly `⌜μ X = 1⌝`) but it requires we use `μ : Measure`,
-which needs a bunch of 'context': `[MeasurableSpace α] [Countable α] [MeasurableSingletonClass α]`
-`{μ : MeasureTheory.Measure α} [MeasureTheory.IsProbabilityMeasure μ]`
-
-`1` is the current implementation which I believe gets closest to the paper, if we consider
-that `0` needs a lot of extra fluff, and two casts to `PMF`.
-
-`2` is in the current Bluebell model.
-
-`3` is the tersest, but drops the `_ = 1` bit from the paper.
--/
 theorem C_PURE {X : Set α} :
     ⌜μ.toMeasureWithMs ⊤ X = 1⌝ ∗ 𝒞⟨μ⟩ v; K v ⊣⊢ 𝒞⟨μ⟩ v; (⌜v ∈ X⌝ ∗ K v) := by
   have hsupp : μ.toMeasureWithMs ⊤ X = 1 ↔ μ.support ⊆ X :=
@@ -1902,16 +2036,362 @@ theorem law_dirac_iff {A : Type} {E : RV A} {v : A} (P : PSpace Ω) :
 
 /-- Being Dirac-distributed is being almost surely equal to the value. -/
 theorem SURE_DIRAC {v : α} : E ~ δ v ⊣⊢ ⌈E = v⌉ := by
-  have h : (E ~ δ v) = ⌈fun ρ ↦ E ρ = v⌉ :=
+  have h : (E ~ δ v) = ⌈E = v⌉ :=
     ownP_pure_congr (fun P ↦ law_dirac_iff P)
   rw [h]
   exact ⟨entails_rfl, entails_rfl⟩
 
-theorem SURE_EQ_INJ {E : RV α} {v v' : α} :
-  ⌈(E = v)⌉ ∗ ⌈(E = v')⌉
-  ⊢ ⌜v = v'⌝ := sorry
+variable {v v' : α} in
+/-- A random variable is surely equal to at most one value: if `v ≠ v'`, the two sure facts
+merge into one whose exceptional set is everything, which no probability space makes null. -/
+theorem SURE_EQ_INJ : ⌈(E = v)⌉ ∗ ⌈(E = v')⌉ ⊢ ⌜v = v'⌝ := by
+  refine entails_trans liftPred_sep ?_
+  intro m hv h
+  obtain ⟨q, ⟨P, hq⟩, hqm⟩ := h
+  obtain ⟨_, _, _, _, hpure⟩ := (Quotient.exact hq).2 m hv hqm
+  replace hpure : P.μ {ρ | ¬ (E ρ = v ∧ E ρ = v')} = 0 := hpure
+  show v = v'
+  by_contra hne
+  have huniv : {ρ | ¬ (E ρ = v ∧ E ρ = v')} = Set.univ :=
+    Set.eq_univ_of_forall fun ρ hρ ↦ hne (hρ.1.symm.trans hρ.2)
+  have hP := P.isProbability
+  rw [huniv, MeasureTheory.measure_univ] at hpure
+  exact one_ne_zero hpure
+
+scoped syntax:max (name := pmfStx) term:max " ∘ " ident "⁻¹" : term
+
+scoped macro_rules (kind := pmfStx)
+  | `($μ ∘ $f:ident⁻¹) => `(PMF.map $f $μ)
+
+set_option linter.style.haveILetI false in
+theorem SURE_SUB {E₁ : RV α} {E₂ : RV β} {f : α → β} :
+  E₁ ~ μ ∗ ⌈E₂ = f ∘ E₁⌉ ⊢ E₂ ~ μ ∘ f⁻¹ := by
+  intro m hv h
+  obtain ⟨d₁, d₂, hle, h₁, h₂⟩ := h
+  obtain ⟨y, hy⟩ : ∃ y : PSpace Ω, m.val = (y : PSp Ω) :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hv)
+  have hd₁ : d₁ ≤ m := le_trans (le_mul_of_one_le PSp.one_le) hle
+  have hd₂ : d₂ ≤ m := by
+    refine le_trans ?_ hle
+    rw [mul_comm]
+    exact le_mul_of_one_le PSp.one_le
+  -- the space carrying `E₁`'s law sits below the ambient `y`
+  obtain ⟨q₁, ⟨P₁, hq₁⟩, hq₁m⟩ := h₁
+  obtain ⟨e₁, _, hlee₁, hown₁, hpure₁⟩ := (Quotient.exact hq₁).2 d₁ (valid_mono hd₁ hv) hq₁m
+  obtain ⟨r₁, ⟨hbf₁, hr₁⟩, he₁⟩ := hown₁
+  have he₁m : e₁ ≤ m := le_trans (le_trans (le_mul_of_one_le PSp.one_le) hlee₁) hd₁
+  have hP₁ := (Quotient.exact hr₁).2 e₁ (valid_mono he₁m hv) he₁
+  have hP₁y : P₁ ≤ y := by
+    have hP₁m : (P₁ : PSp Ω) ≤ (m : PSp Ω) := le_trans hP₁ he₁m
+    rw [hy] at hP₁m
+    exact WithTop.coe_le_coe.1 hP₁m
+  -- and so does the space on which `E₂ = f ∘ E₁` is sure
+  obtain ⟨q₂, ⟨P₂, hq₂⟩, hq₂m⟩ := h₂
+  obtain ⟨e₂, _, hlee₂, hown₂, hpure₂⟩ := (Quotient.exact hq₂).2 d₂ (valid_mono hd₂ hv) hq₂m
+  obtain ⟨r₂, ⟨hbf₂, hr₂⟩, he₂⟩ := hown₂
+  have he₂m : e₂ ≤ m := le_trans (le_trans (le_mul_of_one_le PSp.one_le) hlee₂) hd₂
+  have hP₂ := (Quotient.exact hr₂).2 e₂ (valid_mono he₂m hv) he₂
+  have hP₂y : P₂ ≤ y := by
+    have hP₂m : (P₂ : PSp Ω) ≤ (m : PSp Ω) := le_trans hP₂ he₂m
+    rw [hy] at hP₂m
+    exact WithTop.coe_le_coe.1 hP₂m
+  -- on `y`: `E₁` keeps its law, and `E₂` is almost surely `f ∘ E₁`
+  letI : MeasurableSpace α := ⊤
+  letI : MeasurableSpace β := ⊤
+  obtain ⟨ham₁, hlaw₁⟩ := hpure₁
+  replace ham₁ : @AEMeasurable Ω α ⊤ P₁.ms E₁ P₁.μ := ham₁
+  have ham₁y : @AEMeasurable Ω α ⊤ y.ms E₁ y.μ :=
+    ⟨ham₁.mk E₁, ham₁.measurable_mk.mono hP₁y.1 le_rfl, PSpace.ae_eq_of_le hP₁y ham₁.ae_eq_mk⟩
+  have hlaw₁y : @MeasureTheory.Measure.map Ω α y.ms ⊤ E₁ y.μ = μ.toMeasureWithMs ⊤ :=
+    (PSpace.map_eq_of_le (le_refl y) hP₁y ham₁y ham₁).trans hlaw₁
+  have hnull : y.μ {ρ | ¬ E₂ ρ = (f ∘ E₁) ρ} = 0 := PSpace.null_of_le hP₂y hpure₂
+  have hae : E₂ =ᵐ[y.μ] f ∘ E₁ := MeasureTheory.ae_iff.2 hnull
+  have hf : Measurable f := measurable_from_top
+  have hfE₁ : @AEMeasurable Ω β ⊤ y.ms (f ∘ E₁) y.μ := hf.comp_aemeasurable ham₁y
+  have hbfy : HasBoundedFootprint (y : PSp Ω) := hy ▸ m.property
+  have hmy : (⟨(y : PSp Ω), hbfy⟩ : BoundedFootprintSpace Bool) = m := Subtype.ext hy.symm
+  refine ⟨_, ⟨y, rfl⟩, m, 1, ?_, ⟨_, ⟨hbfy, rfl⟩, le_of_eq hmy⟩, ?_, ?_⟩
+  · rw [mul_one]
+  · exact hfE₁.congr hae.symm
+  · show @MeasureTheory.Measure.map Ω β y.ms ⊤ E₂ y.μ = (μ.map f).toMeasureWithMs ⊤
+    rw [MeasureTheory.Measure.map_congr hae, ← AEMeasurable.map_map_of_aemeasurable hf.aemeasurable ham₁y,
+      hlaw₁y, PMF.toMeasureWithMs, PMF.toMeasureWithMs]
+    exact PMF.toMeasure_map (p := μ) (hf := hf)
+
+variable {f : α → β} in
+theorem DIST_FUN : E ~ μ ⊢ (f ∘ E) ~ μ ∘ f⁻¹ := by
+  refine entails_trans ?_ (SURE_SUB (E₁ := E) (E₂ := f ∘ E) (f := f))
+  iintro H
+  isplitl [H]
+  · iexact H
+  · dsimp only [LiftPred.lift]
+    iexists (1 : PSpace Ω)
+    isplitl []
+    · exact ownP_one
+    · ipureintro
+      simp [LiftBinary.lift]
+
+variable {v : α} in
+theorem DIRAC_DUP : E ~ δ v ⊢ E ~ δ v ∗ E ~ δ v := by
+  have h : (E ~ δ v) = ⌈E = v⌉ := ownP_pure_congr (fun P ↦ law_dirac_iff P)
+  have h2 : (⌈E = v⌉ : FProp) = ⌈fun ω ↦ E ω = v ∧ E ω = v⌉ :=
+    ownP_pure_congr fun P ↦ by simp [LiftUnary.lift, LiftBinary.lift]
+  rw [h]
+  nth_rewrite 1 [h2]
+  exact liftPred_split
+
+set_option linter.style.haveILetI false in
+/-- A random variable lands in its law's support almost surely: the support's complement is
+`μ`-null, so its preimage is null on the space carrying the law.  A sure fact held alongside
+an assertion can be separated from it (`SURE_AND_STAR`), which turns the `∧` into `∗`. -/
+theorem DIST_SUPP : E ~ μ ⊢ E ~ μ ∗ ⌈E ∈ μ.support⌉ := by
+  have hsupp : E ~ μ ⊢ ⌈E ∈ μ.support⌉ := by
+    dsimp only [hasDistribution, LiftPred.lift]
+    refine exists_elim fun P ↦ entails_trans (sep_mono_right (pure_mono fun hP ↦ ?_))
+      (exists_intro (Ψ := fun P : PSpace Ω ↦
+        iprop(ownP P ∗ ⌜P.μ {ρ | ¬ LiftMem.lift E μ.support ρ} = 0⌝)) P)
+    obtain ⟨ham, hmap⟩ := hP
+    have hPp := P.isProbability
+    letI : MeasurableSpace α := ⊤
+    letI : MeasurableSpace Ω := P.ms
+    replace ham : @AEMeasurable Ω α ⊤ P.ms E P.μ := ham
+    have h := MeasureTheory.Measure.map_apply_of_aemeasurable ham
+      (s := (μ.support)ᶜ) MeasurableSpace.measurableSet_top
+    rw [hmap] at h
+    show P.μ (E ⁻¹' (μ.support)ᶜ) = 0
+    rw [← h, PMF.toMeasureWithMs]
+    exact (PMF.toMeasure_apply_eq_zero_iff μ MeasurableSpace.measurableSet_top).2
+      disjoint_compl_right
+  exact entails_trans (and_intro hsupp entails_rfl) (entails_trans SURE_AND_STAR sep_comm.1)
+
+/-- Independent random variables with known laws have the product law jointly: the two
+spaces carrying the laws are independent in the ambient, and on their product the pair has
+law `μ₁ ⊗ μ₂` (`PSpace.product_law_of_split`). -/
+theorem PROD_UNSPLIT : E₁ ~ μ₁ ∗ E₂ ~ μ₂ ⊢ (E₁ ×ᵣ E₂) ~ (μ₁ ⊗ μ₂) := by
+  intro m hv h
+  obtain ⟨d₁, d₂, hle, h₁, h₂⟩ := h
+  have hd₁ : d₁ ≤ m := le_trans (le_mul_of_one_le PSp.one_le) hle
+  have hd₂ : d₂ ≤ m := by
+    refine le_trans ?_ hle
+    rw [mul_comm]
+    exact le_mul_of_one_le PSp.one_le
+  -- the space carrying `E₁`'s law sits in `d₁`
+  obtain ⟨q₁, ⟨P₁, hq₁⟩, hq₁m⟩ := h₁
+  obtain ⟨e₁, _, hlee₁, hown₁, hpure₁⟩ := (Quotient.exact hq₁).2 d₁ (valid_mono hd₁ hv) hq₁m
+  obtain ⟨r₁, ⟨hbf₁, hr₁⟩, he₁⟩ := hown₁
+  have he₁d : e₁ ≤ d₁ := le_trans (le_mul_of_one_le PSp.one_le) hlee₁
+  have hP₁ : (⟨(P₁ : PSp Ω), hbf₁⟩ : BoundedFootprintSpace Bool) ≤ d₁ :=
+    le_trans ((Quotient.exact hr₁).2 e₁ (valid_mono (le_trans he₁d hd₁) hv) he₁) he₁d
+  -- and `E₂`'s in `d₂`
+  obtain ⟨q₂, ⟨P₂, hq₂⟩, hq₂m⟩ := h₂
+  obtain ⟨e₂, _, hlee₂, hown₂, hpure₂⟩ := (Quotient.exact hq₂).2 d₂ (valid_mono hd₂ hv) hq₂m
+  obtain ⟨r₂, ⟨hbf₂, hr₂⟩, he₂⟩ := hown₂
+  have he₂d : e₂ ≤ d₂ := le_trans (le_mul_of_one_le PSp.one_le) hlee₂
+  have hP₂ : (⟨(P₂ : PSp Ω), hbf₂⟩ : BoundedFootprintSpace Bool) ≤ d₂ :=
+    le_trans ((Quotient.exact hr₂).2 e₂ (valid_mono (le_trans he₂d hd₂) hv) he₂) he₂d
+  -- so their product is defined and sits in `m`
+  set R : BoundedFootprintSpace Bool :=
+    (⟨(P₁ : PSp Ω), hbf₁⟩ : BoundedFootprintSpace Bool) * ⟨(P₂ : PSp Ω), hbf₂⟩ with hR
+  have hRm : R ≤ m :=
+    le_trans (le_trans (mul_le_mul_right_le hP₁ _) (mul_le_mul_left_le hP₂ _)) hle
+  obtain ⟨s, hs⟩ : ∃ s : PSpace Ω, (R : PSp Ω) = .some s :=
+    Option.ne_none_iff_exists'.mp (PSp.valid_def.mp (valid_mono hRm hv))
+  have hsP : s =ᵢ P₁ ⊕ᵢ P₂ := PSp.mul_inversion hs
+  have hbfs : HasBoundedFootprint (s : PSp Ω) := hs ▸ R.property
+  have hsR : (⟨(s : PSp Ω), hbfs⟩ : BoundedFootprintSpace Bool) = R := Subtype.ext hs.symm
+  obtain ⟨ham₁, hlaw₁⟩ := hpure₁
+  obtain ⟨ham₂, hlaw₂⟩ := hpure₂
+  refine ⟨_, ⟨s, rfl⟩, R, 1, by rw [mul_one]; exact hRm,
+    ⟨_, ⟨hbfs, rfl⟩, le_of_eq hsR⟩, ?_⟩
+  exact PSpace.product_law_of_split hsP ham₁ hlaw₁ ham₂ hlaw₂
 
 end OwnershipAndDistributions
+
+section JointConditioning
+
+noncomputable def fuse (μ : PMF α) (κ : α → PMF β) : PMF (α × β) :=
+  ⟨fun (v, w) => μ v * (κ v w), by
+    have h : ∑' (p : α × β), μ p.1 * κ p.1 p.2 = 1 := by
+      simp_rw [ENNReal.tsum_prod', ENNReal.tsum_mul_left, PMF.tsum_coe, mul_one, PMF.tsum_coe]
+    convert h ▸ ENNReal.summable.hasSum⟩
+
+infix:69 " -< " => fuse
+
+/-- Fusing is binding: draw `v` from `μ`, then `w` from `κ v`, and report the pair. -/
+lemma fuse_eq_bind {κ : α → PMF β} :
+    (μ -< κ) = μ.bind fun v ↦ (κ v).map fun w ↦ (v, w) := by
+  ext ⟨a, b⟩
+  rw [PMF.bind_apply, tsum_eq_single a]
+  · rw [PMF.map_apply, tsum_eq_single b]
+    · simp only [if_true]
+      rfl
+    · intro w hw
+      simp [Ne.symm hw]
+  · intro v hv
+    rw [PMF.map_apply]
+    simp [Ne.symm hv]
+
+/-- **C-FUSE.**  Conditioning on `v ← μ` and then on `w ← κ v` is conditioning once on the
+fused law of the pair.  Left to right is `C_ASSOC`; right to left splits the fused law back
+into its two stages with `C_UNASSOC`, and relabels each inner stage's values `(v, w) ↦ w`
+with `C_TRANSF`, which is a bijection of supports preserving the weights. -/
+theorem C_FUSE {K : (α × β) → FProp} :
+    𝒞⟨μ⟩ v; 𝒞⟨κ v⟩ w; (K (v, w)) ⊣⊢ 𝒞⟨μ -< κ⟩ (v, w) ; K (v, w) := by
+  constructor
+  · refine C_ASSOC (κ := κ) ?_
+    rw [fuse_eq_bind]
+    rfl
+  · rw [fuse_eq_bind]
+    refine entails_trans (C_UNASSOC (κ := fun v ↦ (κ v).map fun w ↦ (v, w))) (C_CONS fun v ↦ ?_)
+    have hinj : Function.Injective fun w : β ↦ (v, w) := fun _ _ h ↦ (Prod.mk.inj h).2
+    refine C_TRANSF (f := fun w ↦ (v, w)) ?_ ?_
+    · rw [PMF.support_map]
+      exact hinj.injOn.bijOn_image
+    · intro b _
+      rw [PMF.map_apply, tsum_eq_single b]
+      · simp
+      · intro w hw
+        simp [Ne.symm hw]
+
+variable {K : (α × β) → FProp} in
+/-- **C-SWAP.**  Independent conditionings commute.  Fuse the two into one conditioning on the
+product law (`C_FUSE`), relabel its values along `Prod.swap` (`C_TRANSF`: the two product
+laws agree up to swapping), and unfuse in the other order. -/
+theorem C_SWAP :
+  𝒞⟨μ₁⟩ v₁; 𝒞⟨μ₂⟩ v₂; K (v₁, v₂) ⊢ 𝒞⟨μ₂⟩ v₂; 𝒞⟨μ₁⟩ v₁; K (v₁, v₂) := by
+  have hw : ∀ (a : α) (b : β), (μ₂ -< fun _ ↦ μ₁) (b, a) = (μ₁ -< fun _ ↦ μ₂) (a, b) :=
+    fun a b ↦ by
+      show μ₂ b * μ₁ a = μ₁ a * μ₂ b
+      exact mul_comm _ _
+  have hbij : Set.BijOn Prod.swap (μ₂ -< fun _ ↦ μ₁).support (μ₁ -< fun _ ↦ μ₂).support := by
+    refine ⟨fun ⟨b, a⟩ h ↦ ?_, Prod.swap_injective.injOn, fun ⟨a, b⟩ h ↦ ⟨(b, a), ?_, rfl⟩⟩
+    · rw [PMF.mem_support_iff] at h ⊢
+      rwa [Prod.swap_prod_mk, ← hw]
+    · rw [PMF.mem_support_iff] at h ⊢
+      rwa [hw]
+  refine entails_trans (C_FUSE (κ := fun _ ↦ μ₂) (K := K)).1 ?_
+  refine entails_trans (C_TRANSF (f := Prod.swap) hbij fun ⟨b, a⟩ _ ↦ hw a b) ?_
+  exact (C_FUSE (μ := μ₂) (κ := fun _ ↦ μ₁) (K := fun q ↦ K (q.2, q.1))).2
+
+variable {E : RV Prop} in
+theorem SURE_CONVEX : 𝒞⟨μ⟩ _v; ⌈E⌉ ⊢ ⌈E⌉ := C_SURE_CONVEX
+
+theorem DIST_CONVEX {α : Type} {μ : PMF α} : 𝒞⟨μ⟩ _v; E ~ μ' ⊢ E ~ μ' := by
+  refine entails_trans (C_CONS fun _ ↦ C_UNIT_R.1) ?_
+  refine entails_trans (C_SWAP (μ₁ := μ) (μ₂ := μ') (K := fun p ↦ ⌈E = p.2⌉)) ?_
+  refine entails_trans (C_CONS fun w ↦ SURE_CONVEX (E := fun ω ↦ E ω = w)) ?_
+  exact C_UNIT_R.2
+
+/-- The first projection `π₁`, as in Bluebell.  An abbreviation rather than a notation, so that
+it is a name and `μ ∘ π₁⁻¹` parses as the pushforward. -/
+abbrev π₁ {α β : Type} : α × β → α := Prod.fst
+
+/-- **Projecting a conditioning.**  A conditioning on pairs whose continuation only reads the
+first component can be pushed to the marginal `μ ∘ π₁⁻¹`, provided the continuation is
+convex: conditioning it on anything, with no dependence on the value, gives it back.  Write
+`μ` as its marginal bound with the conditional laws (`PMF.filter`) and split (`C_UNASSOC`);
+inside fibre `a` the first component is surely `a` (`C_PURE`), so the inner conditioning no
+longer depends on its value and collapses by convexity. -/
+theorem C_PROJ_OF_CONVEX {μ : PMF (α × β)} {K : α → FProp}
+    (hK : ∀ (a : α) (ν : PMF (α × β)), 𝒞⟨ν⟩ _p; K a ⊢ K a) :
+    𝒞⟨μ⟩ p; K p.1 ⊢ 𝒞⟨μ ∘ π₁⁻¹⟩ a; K a := by
+  classical
+  -- the marginal at `a` sums the joint law over the second component
+  have hmarg : ∀ a, (μ ∘ π₁⁻¹) a = ∑' b, μ (a, b) := fun a ↦ by
+    rw [PMF.map_apply, ENNReal.tsum_prod', tsum_eq_single a]
+    · simp
+    · intro a' ha'
+      simp [Ne.symm ha']
+  have hind : ∀ a, ∑' p, {p : α × β | p.1 = a}.indicator μ p = (μ ∘ π₁⁻¹) a := fun a ↦ by
+    rw [PMF.map_apply]
+    exact tsum_congr fun p ↦ by by_cases h : p.1 = a <;> simp [Set.indicator, h, eq_comm]
+  -- `μ` is its marginal bound with the conditional laws, each living on `{p | p.1 = a}`
+  have hex : ∀ a, (μ ∘ π₁⁻¹) a ≠ 0 → ∃ p ∈ {p : α × β | p.1 = a}, p ∈ μ.support := by
+    intro a ha
+    rw [hmarg] at ha
+    obtain ⟨b, hb⟩ := not_forall.1 fun h ↦ ha (ENNReal.tsum_eq_zero.2 h)
+    exact ⟨(a, b), rfl, (PMF.mem_support_iff _ _).2 hb⟩
+  let cond : α → PMF (α × β) := fun a ↦
+    if h : (μ ∘ π₁⁻¹) a = 0 then (μ.map Prod.snd).map fun b ↦ (a, b)
+    else μ.filter {p | p.1 = a} (hex a h)
+  have hcond : ∀ a, (cond a).support ⊆ {p | p.1 = a} := by
+    intro a p hp
+    simp only [cond] at hp
+    split_ifs at hp with h
+    · rw [PMF.support_map] at hp
+      obtain ⟨b, -, rfl⟩ := hp
+      rfl
+    · rw [PMF.support_filter] at hp
+      exact hp.1
+  have hbind : (μ ∘ π₁⁻¹).bind cond = μ := by
+    ext ⟨a, b⟩
+    rw [PMF.bind_apply, tsum_eq_single a]
+    · by_cases h : (μ ∘ π₁⁻¹) a = 0
+      · have hab : μ (a, b) = 0 := by
+          refine nonpos_iff_eq_zero.1 ?_
+          rw [← h, hmarg]
+          exact ENNReal.le_tsum (f := fun b ↦ μ (a, b)) b
+        rw [h, zero_mul, hab]
+      · simp only [cond, dif_neg h]
+        rw [PMF.filter_apply, hind,
+          Set.indicator_of_mem (s := {p : α × β | p.1 = a}) (show (a, b).1 = a from rfl),
+          mul_comm, mul_assoc, ENNReal.inv_mul_cancel h (PMF.apply_ne_top _ _), mul_one]
+    · intro a' ha'
+      have : (a, b) ∉ (cond a').support := fun hp ↦ ha' (hcond a' hp).symm
+      rw [(PMF.apply_eq_zero_iff _ _).2 this, mul_zero]
+  have hsplit := C_UNASSOC (μ := μ ∘ π₁⁻¹) (κ := cond) (K := fun p ↦ K p.1)
+  rw [hbind] at hsplit
+  refine entails_trans hsplit (C_CONS fun a ↦ ?_)
+  -- inside fibre `a`, the first component is surely `a`
+  have hX : (cond a).toMeasureWithMs ⊤ {p : α × β | p.1 = a} = 1 :=
+    (@PMF.toMeasure_apply_eq_one_iff _ ⊤ (cond a) _ MeasurableSpace.measurableSet_top).2
+      (hcond a)
+  refine entails_trans (entails_trans emp_sep.2 (sep_mono (pure_intro hX) entails_rfl))
+    (entails_trans C_PURE.1 (entails_trans (C_CONS fun p ↦ ?_) (hK a (cond a))))
+  refine pure_elim _ sep_elim_left fun h ↦ ?_
+  rw [← show p.1 = a from h]
+  exact sep_elim_right
+
+/-- **C-SURE-PROJ.**  Conditioning on a pair whose second component the sure fact ignores is
+conditioning on the first component alone, under the marginal `μ ∘ π₁⁻¹`.  Sure facts are
+convex (`SURE_CONVEX`), so `C_PROJ_OF_CONVEX` gives `⊢`; the marginal is `μ` followed by a
+Dirac on the first component, which gives `⊣`. -/
+theorem C_SURE_PROJ {μ : PMF (α × β)} {E : α → Ω → Prop} :
+  𝒞⟨μ⟩ (v, _w); ⌈E v⌉ ⊣⊢ 𝒞⟨μ ∘ π₁⁻¹⟩ v; ⌈E v⌉ := by
+  constructor
+  · have h := C_PROJ_OF_CONVEX (μ := μ) (K := fun v ↦ ⌈E v⌉)
+      fun a ν ↦ SURE_CONVEX (μ := ν) (E := E a)
+    exact h
+  · exact entails_trans (C_UNASSOC (μ := μ) (κ := fun p ↦ δ p.1) (K := fun v ↦ ⌈E v⌉))
+      (C_CONS fun _ ↦ C_UNIT_L.1)
+
+theorem C_SURE_PROJ_MANY {ι γ B : Type} {Xs : ι → RV γ} {μ : PMF ((ι → γ) × B)} :
+  𝒞⟨μ⟩ (v, _w); ⌈∀ x, Xs x = v x⌉ ⊣⊢ 𝒞⟨μ ∘ π₁⁻¹⟩ v; ⌈∀ x, Xs x = v x⌉ := by
+  have h := C_SURE_PROJ (μ := μ) (E := fun v ω ↦ ∀ x, LiftBinary.lift (Xs x) (v x) ω)
+  exact h
+
+theorem C_EXTRACT {E₁ : RV α} {E₂ : RV β} :
+  𝒞⟨μ₁⟩ v₁; (⌈E₁ = v₁⌉ ∗ E₂ ~ μ₂) ⊢ E₁ ~ μ₁ ∗ E₂ ~ μ₂ := by
+  -- in each fibre, both components are surely their values
+  have hfib : ∀ v₁ : α, iprop(⌈E₁ = v₁⌉ ∗ E₂ ~ μ₂)
+      ⊢ 𝒞⟨μ₂⟩ v₂; ⌈(E₁ ×ᵣ E₂) = (v₁, v₂)⌉ := fun v₁ ↦
+    entails_trans (sep_mono_right C_UNIT_R.1) (entails_trans C_FRAME (C_CONS fun v₂ ↦
+      entails_trans liftPred_sep (liftPred_mono fun _ h ↦ Prod.ext h.1 h.2)))
+  refine entails_trans (C_CONS hfib) ?_
+  refine entails_trans
+    (C_FUSE (μ := μ₁) (κ := fun _ ↦ μ₂) (K := fun p ↦ ⌈(E₁ ×ᵣ E₂) = p⌉)).1 ?_
+  refine entails_trans (C_UNIT_R (E := E₁ ×ᵣ E₂) (μ := μ₁ -< fun _ ↦ μ₂)).2 ?_
+  exact PROD_SPLIT
+
+/-- **C-DIST-PROJ.**  A law that only depends on the first component survives projecting the
+conditioning to the marginal: laws are convex (`DIST_CONVEX`), so this is `C_PROJ_OF_CONVEX`. -/
+theorem C_DIST_PROJ {A B C : Type} {μ₁ : PMF (A × B)} {μ₂ : A → PMF C} {E : A → RV C} :
+  𝒞⟨μ₁⟩ (x, _y); E x ~ μ₂ x ⊢ 𝒞⟨μ₁ ∘ π₁⁻¹⟩ x; E x ~ μ₂ x := by
+  have h := C_PROJ_OF_CONVEX (μ := μ₁) (K := fun x ↦ E x ~ μ₂ x)
+    fun a ν ↦ DIST_CONVEX (μ := ν) (E := E a) (μ' := μ₂ a)
+  exact h
+
+end JointConditioning
 
 end Rules
 
@@ -1971,14 +2451,6 @@ theorem liftPred_dup {p : Ω → Prop} : ⌈p⌉ ⊢ ⌈p⌉ ∗ ⌈p⌉ := by
     rw [hs]
   nth_rewrite 1 [h]
   exact liftPred_split
-
-/-- A sure fact weakens: the exceptional set only shrinks. -/
-theorem liftPred_mono {a b : Ω → Prop} (h : ∀ ρ, a ρ → b ρ) : ⌈a⌉ ⊢ ⌈b⌉ := by
-  intro m hv hm
-  obtain ⟨q, ⟨P, hq⟩, hqm⟩ := hm
-  obtain ⟨d₁, d₂, hle, hown, hpure⟩ := (Quotient.exact hq).2 m hv hqm
-  exact ⟨_, ⟨P, rfl⟩, d₁, d₂, hle, hown,
-    MeasureTheory.measure_mono_null (fun ρ hρ hab ↦ hρ (h ρ hab)) hpure⟩
 
 /-- Sure equalities substitute: this is the measure-theoretic content of `AEProper`, and
 what lets a fibre's report of the result stand in for the global one. -/
