@@ -81,6 +81,9 @@ def hasDistribution {A : Type} (E : RV A) (μ : PMF A) : FProp :=
 
 notation:100 E:100 " ~ " p:100 => hasDistribution E p
 
+/-- The pair of two random variables. -/
+scoped notation:70 E₁:71 " ×ᵣ " E₂:71 => fun s => (E₁ s, E₂ s)
+
 /-- **Sure facts** `⌈E⌉`: some owned space gives the failure set of `E` measure zero. -/
 class LiftPred (α : Type) where
   lift : (Ω → α) → FProp
@@ -114,16 +117,25 @@ instance {α : Type} : LiftBinary α (RV α) where
 instance {α : Type} : LiftBinary (RV α) (RV α) where
   lift := fun l r ω ↦ l ω = r ω
 
+class LiftMem (α β : Type) where
+  lift : α → β → Ω → Prop
+
+instance {α : Type} : LiftMem (RV α) (Set α) where
+  lift := fun E S ω ↦ E ω ∈ S
+
 syntax "lift(" term ", " term ")" : term
 
 macro_rules
-  | `(lift(¬$a, $ρ))     => `(¬lift($a, $ρ))
-  | `(lift($a ∧ $b, $ρ)) => `(lift($a, $ρ) ∧ lift($b, $ρ))
-  | `(lift($a ∨ $b, $ρ)) => `(lift($a, $ρ) ∨ lift($b, $ρ))
-  | `(lift($a → $b, $ρ)) => `(lift($a, $ρ) → lift($b, $ρ))
-  | `(lift($a = $b, $ρ)) => `(LiftBinary.lift $a $b $ρ)
-  | `(lift(($x), $ρ))    => `(lift($x, $ρ))
-  | `(lift($x, $ρ))      => `(LiftUnary.lift $x $ρ)
+  | `(lift(¬$a, $ρ))            => `(¬lift($a, $ρ))
+  | `(lift($a ∧ $b, $ρ))        => `(lift($a, $ρ) ∧ lift($b, $ρ))
+  | `(lift($a ∨ $b, $ρ))        => `(lift($a, $ρ) ∨ lift($b, $ρ))
+  | `(lift($a → $b, $ρ))        => `(lift($a, $ρ) → lift($b, $ρ))
+  | `(lift($a = $b, $ρ))        => `(LiftBinary.lift $a $b $ρ)
+  | `(lift(∀ $x:ident, $b, $ρ)) => `(∀ $x:ident, lift($b, $ρ))
+  | `(lift(∃ $x:ident, $b, $ρ)) => `(∃ $x:ident, lift($b, $ρ))
+  | `(lift($a ∈ $b, $ρ))        => `(LiftMem.lift $a $b $ρ)
+  | `(lift(($x), $ρ))           => `(lift($x, $ρ))
+  | `(lift($x, $ρ))             => `(LiftUnary.lift $x $ρ)
 
 syntax (name := liftStx) (priority := high) "⌈" term "⌉" : term
 

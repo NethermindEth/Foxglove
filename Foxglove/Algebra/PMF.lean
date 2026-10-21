@@ -35,7 +35,7 @@ def product (μ₁ : PMF α) (μ₂ : PMF β) : PMF (α × β) :=
       convert h ▸ ENNReal.summable.hasSum)
   ⟨fun ((a, b) : (α × β)) => μ₁ a * μ₂ b, prf⟩
 
-infix:69 " ⊗ " => product
+scoped infix:69 " ⊗ " => product
 
 lemma product_apply (μ₁ : PMF α) (μ₂ : PMF β) (a : α) (b : β) :
     (μ₁ ⊗ μ₂) (a, b) = μ₁ a * μ₂ b := rfl
@@ -136,6 +136,39 @@ lemma lintegral_pmf_bind_pair {γ δ : Type} (p : PMF γ) (κ : γ → PMF δ) (
   refine lintegral_congr fun w ↦ ?_
   show ∫⁻ x, F x ∂(PMF.pure (v, w)).toMeasure = F (v, w)
   rw [PMF.toMeasure_pure, lintegral_dirac' _ measurable_from_top]
+
+/-- The pushforward `μ ∘ f⁻¹` of a law along `f`, as Bluebell writes it. -/
+scoped syntax:max (name := pmfStx) term:max " ∘ " ident "⁻¹" : term
+
+scoped macro_rules (kind := pmfStx)
+  | `($μ ∘ $f:ident⁻¹) => `(PMF.map $f $μ)
+
+/-- The first projection, as a name so that `μ ∘ π₁⁻¹` is the marginal. -/
+abbrev π₁ {α β : Type} : α × β → α := Prod.fst
+
+/-- Fusing a law with a kernel: the law of the pair `(v, w)` with `v ← μ`, `w ← κ v`. -/
+noncomputable def fuse (μ : PMF α) (κ : α → PMF β) : PMF (α × β) :=
+  ⟨fun (v, w) => μ v * (κ v w), by
+    have h : ∑' (p : α × β), μ p.1 * κ p.1 p.2 = 1 := by
+      simp_rw [ENNReal.tsum_prod', ENNReal.tsum_mul_left, PMF.tsum_coe, mul_one, PMF.tsum_coe]
+    convert h ▸ ENNReal.summable.hasSum⟩
+
+scoped infix:69 " -< " => fuse
+
+/-- Fusing is binding: draw `v` from `μ`, then `w` from `κ v`, and report the pair. -/
+lemma fuse_eq_bind {μ : PMF α} {κ : α → PMF β} :
+    (μ -< κ) = μ.bind fun v ↦ (κ v).map fun w ↦ (v, w) := by
+  ext ⟨a, b⟩
+  rw [PMF.bind_apply, tsum_eq_single a]
+  · rw [PMF.map_apply, tsum_eq_single b]
+    · simp only [if_true]
+      rfl
+    · intro w hw
+      simp [Ne.symm hw]
+  · intro v hv
+    rw [PMF.map_apply]
+    simp [Ne.symm hv]
+
 
 end
 

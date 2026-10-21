@@ -441,6 +441,142 @@ theorem PSpace.split_of_product_law {E₁ : Ω → α} {E₂ : Ω → β} {μ₁
       ((MeasureOnSpace.le_preserves_measure hD₂P (hg₂D MeasurableSpace.measurableSet_top)).trans
         (hmarg₂ B))
 
+open MeasureTheory in
+/-- A measure carried by a countable set is the sum of its masses at the points. -/
+lemma measure_eq_tsum_of_countable {γ : Type} [MeasurableSpace γ] [MeasurableSingletonClass γ]
+    (ν : Measure γ) {S : Set γ} (hS : S.Countable) (hnull : ν Sᶜ = 0) (T : Set γ) :
+    ν T = ∑' p : ↥(T ∩ S), ν {(p : γ)} := by
+  rw [← measure_inter_conull (s := T) hnull]
+  conv_lhs => rw [← Set.biUnion_of_singleton (T ∩ S)]
+  exact measure_biUnion (hS.mono Set.inter_subset_right)
+    (fun _ _ _ _ h ↦ Set.disjoint_singleton.2 h) (fun _ _ ↦ measurableSet_singleton _)
+
+set_option linter.style.haveILetI false in
+open MeasureTheory in
+/-- The converse of `split_of_product_law`: two independent pieces carrying the components'
+laws carry the product law of the pair.  Each component has a measurable version, which can
+be moved into its law's (countable) support off a null set; the pair of those versions then
+takes countably many values, so it is measurable, and its law agrees with `μ₁ ⊗ μ₂` at every
+point by independence. -/
+theorem PSpace.product_law_of_split {E₁ : Ω → α} {E₂ : Ω → β} {μ₁ : PMF α} {μ₂ : PMF β}
+    {P₁ P₂ s : PSpace Ω} (hs : s =ᵢ P₁ ⊕ᵢ P₂)
+    (ham₁ : almostMeasurable E₁ (P₁ : PSp Ω))
+    (hlaw₁ : @Measure.map Ω α P₁.ms ⊤ E₁ P₁.μ = μ₁.toMeasureWithMs ⊤)
+    (ham₂ : almostMeasurable E₂ (P₂ : PSp Ω))
+    (hlaw₂ : @Measure.map Ω β P₂.ms ⊤ E₂ P₂.μ = μ₂.toMeasureWithMs ⊤) :
+    almostMeasurable (fun ω ↦ (E₁ ω, E₂ ω)) (s : PSp Ω) ∧
+      @Measure.map Ω (α × β) s.ms ⊤ (fun ω ↦ (E₁ ω, E₂ ω)) s.μ
+        = (μ₁ ⊗ μ₂).toMeasureWithMs ⊤ := by
+  classical
+  have hp₁ := P₁.isProbability
+  have hp₂ := P₂.isProbability
+  have hps := s.isProbability
+  letI : MeasurableSpace α := ⊤
+  letI : MeasurableSpace β := ⊤
+  letI : MeasurableSpace (α × β) := ⊤
+  haveI : MeasurableSingletonClass (α × β) := ⟨fun _ ↦ trivial⟩
+  replace ham₁ : @AEMeasurable Ω α ⊤ P₁.ms E₁ P₁.μ := ham₁
+  replace ham₂ : @AEMeasurable Ω β ⊤ P₂.ms E₂ P₂.μ := ham₂
+  have h1s : P₁ ≤ s := PSpace.le_of_isIndependentProduct_left hs
+  have h2s : P₂ ≤ s := PSpace.le_of_isIndependentProduct_right hs
+  obtain ⟨a₀, ha₀⟩ := μ₁.support_nonempty
+  obtain ⟨b₀, hb₀⟩ := μ₂.support_nonempty
+  -- measurable versions of the components, valued in the supports
+  set f₁ : Ω → α := fun ω ↦ if ham₁.mk E₁ ω ∈ μ₁.support then ham₁.mk E₁ ω else a₀ with hf₁def
+  set f₂ : Ω → β := fun ω ↦ if ham₂.mk E₂ ω ∈ μ₂.support then ham₂.mk E₂ ω else b₀ with hf₂def
+  have hf₁ : @Measurable Ω α P₁.ms ⊤ f₁ :=
+    (measurable_from_top (f := fun a ↦ if a ∈ μ₁.support then a else a₀)).comp
+      ham₁.measurable_mk
+  have hf₂ : @Measurable Ω β P₂.ms ⊤ f₂ :=
+    (measurable_from_top (f := fun b ↦ if b ∈ μ₂.support then b else b₀)).comp
+      ham₂.measurable_mk
+  have hf₁r : ∀ ω, f₁ ω ∈ μ₁.support := fun ω ↦ by
+    simp only [hf₁def]; split_ifs with h
+    · exact h
+    · exact ha₀
+  have hf₂r : ∀ ω, f₂ ω ∈ μ₂.support := fun ω ↦ by
+    simp only [hf₂def]; split_ifs with h
+    · exact h
+    · exact hb₀
+  -- each version is a.e. its component: the version leaves the support only on a null set
+  have hae₁ : E₁ =ᵐ[P₁.μ] f₁ := by
+    have hmk : @Measure.map Ω α P₁.ms ⊤ (ham₁.mk E₁) P₁.μ = μ₁.toMeasureWithMs ⊤ :=
+      (Measure.map_congr ham₁.ae_eq_mk).symm.trans hlaw₁
+    have hnull : P₁.μ (ham₁.mk E₁ ⁻¹' (μ₁.support)ᶜ) = 0 := by
+      rw [← Measure.map_apply ham₁.measurable_mk MeasurableSpace.measurableSet_top, hmk,
+        PMF.toMeasureWithMs]
+      exact (PMF.toMeasure_apply_eq_zero_iff μ₁ MeasurableSpace.measurableSet_top).2
+        disjoint_compl_right
+    refine ham₁.ae_eq_mk.trans (ae_iff.2 (measure_mono_null (fun ω hω ↦ ?_) hnull))
+    simp only [Set.mem_setOf_eq, hf₁def] at hω
+    split_ifs at hω with h
+    · exact absurd rfl hω
+    · exact h
+  have hae₂ : E₂ =ᵐ[P₂.μ] f₂ := by
+    have hmk : @Measure.map Ω β P₂.ms ⊤ (ham₂.mk E₂) P₂.μ = μ₂.toMeasureWithMs ⊤ :=
+      (Measure.map_congr ham₂.ae_eq_mk).symm.trans hlaw₂
+    have hnull : P₂.μ (ham₂.mk E₂ ⁻¹' (μ₂.support)ᶜ) = 0 := by
+      rw [← Measure.map_apply ham₂.measurable_mk MeasurableSpace.measurableSet_top, hmk,
+        PMF.toMeasureWithMs]
+      exact (PMF.toMeasure_apply_eq_zero_iff μ₂ MeasurableSpace.measurableSet_top).2
+        disjoint_compl_right
+    refine ham₂.ae_eq_mk.trans (ae_iff.2 (measure_mono_null (fun ω hω ↦ ?_) hnull))
+    simp only [Set.mem_setOf_eq, hf₂def] at hω
+    split_ifs at hω with h
+    · exact absurd rfl hω
+    · exact h
+  -- the laws of the versions, at a point
+  have hsing₁ : ∀ a, P₁.μ (f₁ ⁻¹' {a}) = μ₁ a := fun a ↦ by
+    rw [← Measure.map_apply hf₁ MeasurableSpace.measurableSet_top,
+      ← Measure.map_congr hae₁, hlaw₁, PMF.toMeasureWithMs,
+      PMF.toMeasure_apply_singleton _ _ MeasurableSpace.measurableSet_top]
+  have hsing₂ : ∀ b, P₂.μ (f₂ ⁻¹' {b}) = μ₂ b := fun b ↦ by
+    rw [← Measure.map_apply hf₂ MeasurableSpace.measurableSet_top,
+      ← Measure.map_congr hae₂, hlaw₂, PMF.toMeasureWithMs,
+      PMF.toMeasure_apply_singleton _ _ MeasurableSpace.measurableSet_top]
+  -- the pair of versions takes countably many values, so it is measurable
+  set g : Ω → α × β := fun ω ↦ (f₁ ω, f₂ ω) with hgdef
+  set S : Set (α × β) := μ₁.support ×ˢ μ₂.support with hSdef
+  have hS : S.Countable := μ₁.support_countable.prod μ₂.support_countable
+  have hgr : ∀ ω, g ω ∈ S := fun ω ↦ ⟨hf₁r ω, hf₂r ω⟩
+  have hpt : ∀ p : α × β, MeasurableSet[s.ms] (g ⁻¹' {p}) := fun p ↦ by
+    rw [show g ⁻¹' {p} = f₁ ⁻¹' {p.1} ∩ f₂ ⁻¹' {p.2} by
+      ext ω; simp [hgdef, Prod.ext_iff]]
+    exact (h1s.1 _ (hf₁ MeasurableSpace.measurableSet_top)).inter
+      (h2s.1 _ (hf₂ MeasurableSpace.measurableSet_top))
+  have hg : @Measurable Ω (α × β) s.ms ⊤ g := by
+    intro T _
+    rw [show g ⁻¹' T = ⋃ p ∈ T ∩ S, g ⁻¹' {p} by
+      ext ω; simp only [Set.mem_preimage, Set.mem_iUnion, Set.mem_singleton_iff, exists_prop]
+      exact ⟨fun h ↦ ⟨g ω, ⟨h, hgr ω⟩, rfl⟩, fun ⟨_, ⟨hp, _⟩, he⟩ ↦ he ▸ hp⟩]
+    exact MeasurableSet.biUnion (hS.mono Set.inter_subset_right) fun p _ ↦ hpt p
+  have hae : (fun ω ↦ (E₁ ω, E₂ ω)) =ᵐ[s.μ] g := by
+    filter_upwards [PSpace.ae_eq_of_le h1s hae₁, PSpace.ae_eq_of_le h2s hae₂] with ω h₁ h₂
+    simp [hgdef, h₁, h₂]
+  refine ⟨⟨g, hg, hae⟩, ?_⟩
+  rw [Measure.map_congr hae]
+  -- both laws live on `S` and agree at every point
+  have hν₁ : (@Measure.map Ω (α × β) s.ms ⊤ g s.μ) Sᶜ = 0 := by
+    rw [Measure.map_apply hg MeasurableSpace.measurableSet_top]
+    rw [show g ⁻¹' Sᶜ = ∅ from Set.eq_empty_of_forall_notMem fun ω h ↦ h (hgr ω)]
+    exact measure_empty
+  have hν₂ : ((μ₁ ⊗ μ₂).toMeasureWithMs ⊤) Sᶜ = 0 := by
+    rw [PMF.toMeasureWithMs]
+    refine (PMF.toMeasure_apply_eq_zero_iff _ MeasurableSpace.measurableSet_top).2 ?_
+    refine Set.disjoint_left.2 fun p hp hpS ↦ hpS ?_
+    obtain ⟨a, b⟩ := p
+    rw [PMF.mem_support_iff, product_apply] at hp
+    exact ⟨(PMF.mem_support_iff _ _).2 (left_ne_zero_of_mul hp),
+      (PMF.mem_support_iff _ _).2 (right_ne_zero_of_mul hp)⟩
+  ext T _
+  rw [measure_eq_tsum_of_countable _ hS hν₁ T, measure_eq_tsum_of_countable _ hS hν₂ T]
+  refine tsum_congr fun ⟨⟨a, b⟩, _⟩ ↦ ?_
+  rw [Measure.map_apply hg MeasurableSpace.measurableSet_top,
+    show g ⁻¹' {(a, b)} = f₁ ⁻¹' {a} ∩ f₂ ⁻¹' {b} by ext ω; simp [hgdef, Prod.ext_iff],
+    hs.2 _ (hf₁ MeasurableSpace.measurableSet_top) _ (hf₂ MeasurableSpace.measurableSet_top),
+    hsing₁, hsing₂, PMF.toMeasureWithMs,
+    PMF.toMeasure_apply_singleton _ _ MeasurableSpace.measurableSet_top, product_apply]
+
 set_option linter.style.haveILetI false in
 open MeasureTheory in
 /-- A space that is a `μ`-mixture of fibres, on each of which `E` surely is the fibre's

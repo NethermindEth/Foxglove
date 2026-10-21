@@ -17,8 +17,12 @@ noncomputable section
 Discharging the side conditions of the `wp` rules: which postconditions are `AEProper`, which
 are `Convex`, and what `valuePost` satisfies in the logic. -/
 
-/-- Sure facts are convex: `C_SURE_CONVEX` in the shape `Convex` wants. -/
-lemma convex_liftPred {E : RV Prop} : Convex ⌈E⌉ := fun _ ↦ C_SURE_CONVEX
+/-- Sure facts are convex: `SURE_CONVEX` in the shape `Convex` wants. -/
+lemma convex_liftPred {E : RV Prop} : Convex ⌈E⌉ := fun _ ↦ SURE_CONVEX
+
+/-- Laws are convex: `DIST_CONVEX`. -/
+lemma convex_hasDistribution {α : Type} {X : RV α} (ν : PMF α) : Convex (X ~ ν) :=
+  fun _ ↦ DIST_CONVEX
 
 /-- A pure fact is convex: the support is nonempty, so some fibre already asserts it. -/
 lemma convex_pure {φ : Prop} : Convex iprop(⌜φ⌝) := by
