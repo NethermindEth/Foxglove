@@ -21,15 +21,6 @@ theorem hasDistribution_dirac {α : Type} {E : RV α} {v : α} :
     (E ~ δ v) = ⌈fun ρ ↦ E ρ = v⌉ :=
   ownP_pure_congr fun P ↦ law_dirac_iff P
 
-/-- A sure fact is a Dirac law at `True`. -/
-theorem very_sure {E : Ω → Prop} : E ~ δ True ⊣⊢ ⌈E⌉ := by
-  have h : (⌈E⌉ : FProp) = ⌈E = True⌉ := by
-    congr 1
-    funext ω
-    simp [LiftUnary.lift, LiftBinary.lift]
-  rw [h, hasDistribution_dirac]
-  exact ⟨entails_rfl, entails_rfl⟩
-
 end
 
 end Foxglove

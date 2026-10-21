@@ -100,6 +100,21 @@ theorem true_subst_star (h : Q ⊣⊢ ftrue) : P ⊢ P ∗ Q := by
   · exact entails_trans entails_ftrue h.2
 
 
+/-! ### Sure facts as laws -/
+
+/-- A sure fact is a Dirac law at `True`: `SURE_DIRAC` at `v := True`, with the sure fact
+`E = True` weakened to `E` and back. -/
+theorem very_sure {E : Ω → Prop} : E ~ δ True ⊣⊢ ⌈E⌉ := by
+  constructor
+  · iintro H
+    iapply (liftPred_mono fun _ h ↦ of_eq_true h)
+    iapply SURE_DIRAC.1
+    iexact H
+  · iintro H
+    iapply SURE_DIRAC.2
+    iapply (liftPred_mono fun _ h ↦ eq_true h)
+    iexact H
+
 /-! ### Sampling in `OracleComp unifSpec`
 
 The uniform selection oracle of `unifSpec` (VCVio's `$[0..n]`), implemented by rejection
