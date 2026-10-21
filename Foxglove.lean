@@ -10,6 +10,7 @@ import Foxglove.Interp.Bernoulli.Basic
 import Foxglove.Interp.Bernoulli.Example
 import Foxglove.Interp.Bernoulli.Helper
 import Foxglove.Interp.OracleComp.Basic
+import Foxglove.RuleProofs
 import Foxglove.Rules
 import Foxglove.Rules.Conditioning
 import Foxglove.Rules.Distribution

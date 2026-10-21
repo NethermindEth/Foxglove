@@ -117,6 +117,9 @@ instance {α : Type} : LiftBinary α (RV α) where
 instance {α : Type} : LiftBinary (RV α) (RV α) where
   lift := fun l r ω ↦ l ω = r ω
 
+instance {ι γ : Type} : LiftBinary (ι → RV γ) (ι → γ) where
+  lift := fun x v ω ↦ ∀ i, x i ω = v i
+
 class LiftMem (α β : Type) where
   lift : α → β → Ω → Prop
 
