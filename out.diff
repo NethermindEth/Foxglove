@@ -1,0 +1,374 @@
+diff --git a/Foxglove/Assertion.lean b/Foxglove/Assertion.lean
+index f7a6213..0574e8a 100644
+--- a/Foxglove/Assertion.lean
++++ b/Foxglove/Assertion.lean
+@@ -226,6 +226,8 @@ def wp {α : Type} [Inhabited α] {m : Type → Type} [Interp.BernoulliInterpret
+       exact ⟨b, hb1, hb2, le_trans hb3 (sup_le_sup_right (msOf_mono hxy) _), hb4⟩
+   }
+ 
++macro "⦃" x:Lean.Parser.Term.funBinder ", " Q:term "⦄" : term => `(fun $x ↦ iprop($Q))
++
+ end
+ 
+ section
+@@ -272,6 +274,25 @@ lemma ffalse_entails : ffalse ⊢ P := by
+ 
+ end
+ 
++open Lean Elab Term in
++/--
++We steal Iris entails parser.
++-/
++scoped elab:25 (priority := high) P:term:29 " ⊢ " Q:term:25 : term => do
++  let s ← saveState
++  let pointwise ←
++    try
++      let ty ← instantiateMVars (← Meta.inferType (← withoutErrToSorry (elabTerm P none)))
++      pure ty.isArrow
++    catch _ =>
++      pure false
++  s.restore -- `elabTerm` does who-knows-what to the environment but I just want to see the type
++  let stx ← if pointwise then `(∀ a, ($P) a ⊢ ($Q) a)
++    else `(
++      Iris.BI.BIBase.Entails iprop($P) iprop($Q)
++    )
++  elabTerm stx .none
++
+ end
+ 
+ end Foxglove
+diff --git a/Foxglove/Example.lean b/Foxglove/Example.lean
+index 631f941..da63b9f 100644
+--- a/Foxglove/Example.lean
++++ b/Foxglove/Example.lean
+@@ -125,7 +125,7 @@ section Sampling
+ open Interp Interp.Helper
+ open scoped ENNReal
+ 
+-/-- Rejection sampling from `m` upwards is uniform on `{m, …, N}`: `WPFlip` for the coin,
++/-- Rejection sampling from `m` upwards is uniform on `{m, …, N}`: `WP_FLIP` for the coin,
+ `WPBindCond` to sequence it with the two continuations, `C_BIND` to mix their laws, by
+ induction on the number of values left. -/
+ theorem wp_split' {N : ℕ} :
+@@ -156,7 +156,7 @@ theorem wp_split' {N : ℕ} :
+             ite_eq_right hi']
+       rw [hsplit, hlaw]
+       iapply (WPPure (Q := fun Y ↦ Y ~ δ m))
+-      exact DIST_DIRAC
++      exact DISTR_DIRAC
+     · -- flip a coin: report `m` with probability `1 / (N + 1 - m)`, otherwise recurse
+       have hm'lt : m.1 + 1 < N + 1 := by have := m.isLt; omega
+       have hK1 : 1 ≤ N + 1 - m.1 := by have := m.isLt; omega
+@@ -210,7 +210,7 @@ theorem wp_split' {N : ℕ} :
+         · exact ih m' (by show N + 1 - (m.1 + 1) ≤ k; omega)
+         · show ⊢ wp (pure m : BernoulliM (Fin (N + 1))) (fun Y ↦ Y ~ δ m)
+           iapply (WPPure (Q := fun Y ↦ Y ~ δ m))
+-          exact DIST_DIRAC
++          exact DISTR_DIRAC
+       have hfib : ∀ (X : RV Bool) (v : Bool), (⌈X = v⌉ : FProp) ⊢
+           ⌈X = v⌉ ∗ wp (if v then (pure m : BernoulliM (Fin (N + 1))) else split' m')
+             (fun Y ↦ Y ~ κ v) := by
+@@ -220,10 +220,10 @@ theorem wp_split' {N : ℕ} :
+         · iexact H
+         · exact hcont v
+       rw [hsplit, ← hmix]
+-      iapply (WPCons fun Y ↦ C_BIND (μ := Ber) (κ := κ) (X := Y))
++      iapply (WP_CONS fun Y ↦ C_BIND (μ := Ber) (κ := κ) (X := Y))
+       iapply (WPBindCond (ν := Ber) fun v ↦ aeProper_hasDistribution (κ v))
+-      iapply (WPCons fun X ↦ entails_trans (C_UNIT_R (E := X) (μ := Ber)).1 (C_CONS (hfib X)))
+-      exact WPFlip
++      iapply (WP_CONS fun X ↦ entails_trans (C_UNIT_R (E := X) (μ := Ber)).1 (C_CONS (hfib X)))
++      exact WP_FLIP
+ 
+ /-- **Uniform sampling.**  The query `unifSpec.query n` reports a value uniformly distributed
+ on `Fin (n + 1)`: it interprets to `split n`, rejection sampling from `0` (`wp_split'`). -/
+diff --git a/Foxglove/RuleProofs.lean b/Foxglove/RuleProofs.lean
+index a68487e..30a1f5a 100644
+--- a/Foxglove/RuleProofs.lean
++++ b/Foxglove/RuleProofs.lean
+@@ -856,7 +856,7 @@ theorem SURE_DIRAC {v : α} : E ~ δ v ⊣⊢ ⌈E = v⌉ := by
+   exact ⟨entails_rfl, entails_rfl⟩
+ 
+ /-- `distr-dirac` (Amaryllis, Fig. 1). -/
+-theorem DIST_DIRAC {v : α} : ⊢ (fun _ : Ω ↦ v) ~ δ v :=
++theorem DISTR_DIRAC {v : α} : ⊢ (fun _ : Ω ↦ v) ~ δ v :=
+   entails_trans (liftPred_of_forall (a := fun ω ↦ LiftBinary.lift (fun _ : Ω ↦ v) v ω)
+     fun _ ↦ rfl) SURE_DIRAC.2
+ 
+@@ -871,7 +871,7 @@ theorem DIRAC_DUP {v : α} : E ~ δ v ⊢ E ~ δ v ∗ E ~ δ v := by
+   exact liftPred_dup
+ 
+ /-- `distr-subst` (Amaryllis, Fig. 1). -/
+-theorem DIST_SUBST {X Y : RV α} : X ~ μ ∗ ⌈X = Y⌉ ⊢ Y ~ μ :=
++theorem DISTR_SUBST {X Y : RV α} : X ~ μ ∗ ⌈X = Y⌉ ⊢ Y ~ μ :=
+   entails_trans (sep_mono_left C_UNIT_R.1)
+     (entails_trans Iris.BI.sep_comm.1 (entails_trans C_FRAME
+       (entails_trans (C_CONS fun _ ↦ liftPred_subst) C_UNIT_R.2)))
+diff --git a/Foxglove/Rules.lean b/Foxglove/Rules.lean
+index 79e35a6..6bf2126 100644
+--- a/Foxglove/Rules.lean
++++ b/Foxglove/Rules.lean
+@@ -108,14 +108,6 @@ theorem C_PURE {X : Set α} :
+     ⌜μ.toMeasureWithMs ⊤ X = 1⌝ ∗ 𝒞⟨μ⟩ v; K v ⊣⊢ 𝒞⟨μ⟩ v; (⌜v ∈ X⌝ ∗ K v) :=
+   Proofs.C_PURE
+ 
+-/-
+-Bluebell, Fig. 11
+--/
+-
+-variable {E : RV Prop} in
+-theorem SURE_CONVEX : 𝒞⟨μ⟩ _v; ⌈E⌉ ⊢ ⌈E⌉ :=
+-  Proofs.SURE_CONVEX
+-
+ end JointConditioning
+ 
+ section JointConditioningDerived
+@@ -134,14 +126,14 @@ theorem C_SWAP :
+   𝒞⟨μ₁⟩ v₁; 𝒞⟨μ₂⟩ v₂; K (v₁, v₂) ⊢ 𝒞⟨μ₂⟩ v₂; 𝒞⟨μ₁⟩ v₁; K (v₁, v₂) :=
+   Proofs.C_SWAP
+ 
++variable {E : RV Prop} in
++theorem SURE_CONVEX : 𝒞⟨μ⟩ _v; ⌈E⌉ ⊢ ⌈E⌉ :=
++  Proofs.SURE_CONVEX
++
+ variable {γ : Type} {μ : PMF γ} in
+ theorem DIST_CONVEX : 𝒞⟨μ⟩ _v; E ~ μ' ⊢ E ~ μ' :=
+   Proofs.DIST_CONVEX
+ 
+-variable {μ : PMF (α × β)} in
+-theorem C_PROJ_OF_CONVEX (hK : ∀ a, Convex (K a)) : 𝒞⟨μ⟩ p; K p.1 ⊢ 𝒞⟨μ ∘ π₁⁻¹⟩ a; K a :=
+-  Proofs.C_PROJ_OF_CONVEX hK
+-
+ variable {μ : PMF (α × β)} {E : α → Ω → Prop} in
+ theorem C_SURE_PROJ :
+   𝒞⟨μ⟩ (v, _w); ⌈E v⌉ ⊣⊢ 𝒞⟨μ ∘ π₁⁻¹⟩ v; ⌈E v⌉ :=
+@@ -169,9 +161,17 @@ variable {κ : α → PMF β} {X : RV β} in
+ theorem C_BIND : 𝒞⟨μ⟩ v; X ~ κ v ⊢ X ~ μ.bind κ :=
+   Proofs.C_BIND
+ 
++/-
++Derived, not in either paper
++-/
++
++variable {μ : PMF (α × β)} in
++theorem C_PROJ_OF_CONVEX (hK : ∀ a, Convex (K a)) : 𝒞⟨μ⟩ p; K p.1 ⊢ 𝒞⟨μ ∘ π₁⁻¹⟩ a; K a :=
++  Proofs.C_PROJ_OF_CONVEX hK
++
+ end JointConditioningDerived
+ 
+-section OwnershipAndLaws
++section OwnershipAndDistributions
+ 
+ /-
+ Bluebell, Fig. 11
+@@ -183,9 +183,6 @@ theorem SURE_DIRAC : E ~ δ v ⊣⊢ ⌈E = v⌉ :=
+ theorem SURE_EQ_INJ : ⌈E = v⌉ ∗ ⌈E = v'⌉ ⊢ ⌜v = v'⌝ :=
+   Proofs.SURE_EQ_INJ
+ 
+-theorem DIRAC_DUP : E ~ δ v ⊢ E ~ δ v ∗ E ~ δ v :=
+-  Proofs.DIRAC_DUP
+-
+ variable {f : α → β} in
+ theorem SURE_SUB : E₁ ~ μ ∗ ⌈E₂ = f ∘ E₁⌉ ⊢ E₂ ~ μ ∘ f⁻¹ :=
+   Proofs.SURE_SUB
+@@ -194,6 +191,9 @@ variable {f : α → β} in
+ theorem DIST_FUN : E ~ μ ⊢ (f ∘ E) ~ μ ∘ f⁻¹ :=
+   Proofs.DIST_FUN
+ 
++theorem DIRAC_DUP : E ~ δ v ⊢ E ~ δ v ∗ E ~ δ v :=
++  Proofs.DIRAC_DUP
++
+ theorem DIST_SUPP : E ~ μ ⊢ E ~ μ ∗ ⌈E ∈ μ.support⌉ :=
+   Proofs.DIST_SUPP
+ 
+@@ -204,57 +204,69 @@ theorem PROD_UNSPLIT : E₁ ~ μ₁ ∗ E₂ ~ μ₂ ⊢ (E₁ ×ᵣ E₂) ~ (μ
+ Amaryllis, Fig. 1
+ -/
+ 
+-theorem DIST_DIRAC : ⊢ (fun _ : Ω ↦ v) ~ δ v :=
+-  Proofs.DIST_DIRAC
++variable {X Y : RV α} in
++theorem DISTR_SUBST : X ~ μ ∗ ⌈X = Y⌉ ⊢ Y ~ μ :=
++  Proofs.DISTR_SUBST
+ 
+-theorem DIST_SUBST {X Y : RV α} : X ~ μ ∗ ⌈X = Y⌉ ⊢ Y ~ μ :=
+-  Proofs.DIST_SUBST
++theorem DISTR_DIRAC : ⊢ (fun _ : Ω ↦ v) ~ δ v :=
++  Proofs.DISTR_DIRAC
+ 
+-end OwnershipAndLaws
+-
+-section WeakestPrecondition
++end OwnershipAndDistributions
+ 
+ open Interp Interp.ProbTree unitInterval
+ 
++section StructuralWpRules
++
+ /-
+ Bluebell, Fig. 10
+ -/
+ 
+-theorem WPCons {α : Type} [Inhabited α] {m : Type → Type} [Monad m]
+-    [Interp.LawfulBernoulliInterpretable m]
+-    {Q Q' : RV α → FProp} {t : m α} (h : ∀ v, Q v ⊢ Q' v) : iprop(wp t Q) ⊢ wp t Q' :=
++variable {α β : Type} [Inhabited α]
++         {m : Type → Type} [Monad m]
++         [Interp.LawfulBernoulliInterpretable m]
++         {Q Q' : RV α → FProp}
++         {t : m α} 
++         {C : m α}
++
++theorem WP_CONS (h : Q ⊢ Q') : wp t Q ⊢ wp t Q' :=
+   Proofs.WPCons h
+ 
+-theorem WPFrame {α : Type} [Inhabited α] {m : Type → Type} [Monad m]
+-    [Interp.LawfulBernoulliInterpretable m]
+-    {P : FProp} {Q : RV α → FProp} {t : m α} :
+-    iprop(P ∗ wp t Q) ⊢ wp t (fun v ↦ iprop(P ∗ (Q v))) :=
++theorem WP_FRAME : P ∗ wp t Q ⊢ wp t (fun v ↦ iprop(P ∗ Q v)) :=
+   Proofs.WPFrame
+ 
+-/-- With `AEProper` in place of `ownX`. -/
+-theorem CWPSwap {α β : Type} {m : Type → Type} [Monad m] [Interp.BernoulliInterpretable m] [Inhabited α]
+-  {C : m α} {μ : PMF β} {Q : β → RV α → FProp} (hQ : ∀ v, AEProper (Q v)) :
+-    iprop(𝒞⟨μ⟩ v; wp C (Q v)) ⊢ wp C (fun x ↦ 𝒞⟨μ⟩ v; Q v x) :=
++variable {μ : PMF β} {Q : β → RV α → FProp}
++theorem C_WP_SWAP (hQ : ∀ v, AEProper (Q v)) :
++  𝒞⟨μ⟩ v; wp C (Q v) ⊢ wp C (fun x ↦ 𝒞⟨μ⟩ v; Q v x) :=
+   Proofs.CWPSwap hQ
+ 
+-/-- `wp-samp`, for the law of any closed program. -/
+-theorem WPDist {α : Type} [Inhabited α] [Countable α] (t : BernoulliM α) (ν : PMF α)
+-    (hν : ∀ a : α, lawOf t a = ν a) :
+-    ⊢ wp t (fun X ↦ X ~ ν) :=
++end StructuralWpRules
++
++section ProgramWpRules
++
++variable {α : Type} [Inhabited α]
++         {m : Type → Type} [Monad m] [Interp.LawfulBernoulliInterpretable m]
++
++variable [Countable α] in
++theorem WP_SAMP {t : BernoulliM α} {ν : PMF α} (hν : ∀ a : α, lawOf t a = ν a) :
++  ⊢ wp t (fun X ↦ X ~ ν) :=
+   Proofs.WPDist t ν hν
+ 
+-/-- `wp-samp`, for a coin. -/
+-theorem WPFlip {p : I} :
+-    ⊢ wp (Interp.flip p)
+-        (fun X ↦ X ~ bernoulliWeights (toNNReal p) (Interp.toNNReal_le_one p)) :=
++theorem WP_FLIP {p : I} :
++  ⊢ wp (Interp.flip p) (fun X ↦ X ~ bernoulliWeights (toNNReal p) (Interp.toNNReal_le_one p)) :=
+   Proofs.WPFlip
+ 
++end ProgramWpRules
++
++section WeakestPreconditionModality
++
++variable {α : Type} [Inhabited α] {m : Type → Type} [Monad m] [Interp.LawfulBernoulliInterpretable m]
++
+ /-
+ Amaryllis, Fig. 2
+ -/
+ 
+-theorem WPPure {α : Type} {m : Type → Type} [Monad m] [Interp.LawfulBernoulliInterpretable m]
+-    [Inhabited α] {Q : RV α → FProp} {x : α} : Q (fun _ ↦ x) ⊢ wp (pure x : m α) Q :=
++variable {Q : RV α → FProp} {x : α} in
++theorem WPPure : Q (fun _ ↦ x) ⊢ wp (pure x : m α) Q :=
+   Proofs.WPPure
+ 
+ theorem WPBindCond {α β : Type} {m : Type → Type} [Monad m]
+@@ -290,7 +302,7 @@ theorem WPBindDist {α β : Type} [Inhabited α] [Inhabited β] [Countable β]
+     ⊢ wp (t >>= f) (fun X ↦ X ~ ν.bind κ) :=
+   Proofs.WPBindDist t f ν κ hν hκ
+ 
+-end WeakestPrecondition
++end WeakestPreconditionModality
+ 
+ end
+ 
+diff --git a/Foxglove/Rules/WP/Counterexamples.lean b/Foxglove/Rules/WP/Counterexamples.lean
+index ce84c37..b679ac6 100644
+--- a/Foxglove/Rules/WP/Counterexamples.lean
++++ b/Foxglove/Rules/WP/Counterexamples.lean
+@@ -45,12 +45,12 @@ lemma wp_pure_constQ (v : Bool) : ⊢ wp (pure v : Interp.BernoulliM Bool) const
+   entails_trans (constQ_const v) WPPure
+ 
+ /-- So the whole premise of the sequencing rule is available for free: the coin has a law
+-(`WPFlip`), conditioning on it is a `valuePost` (`valuePost_of_law`), and each fibre's
++(`WP_FLIP`), conditioning on it is a `valuePost` (`valuePost_of_law`), and each fibre's
+ postcondition costs nothing. -/
+ lemma wp_flip_valuePost :
+     ⊢ wp (Interp.flip Interp.half)
+         (fun X ↦ valuePost X (fun v ↦ wp (pure v : Interp.BernoulliM Bool) constQ)) :=
+-  entails_trans WPFlip (WPCons fun _ ↦ valuePost_of_law fun v ↦ wp_pure_constQ v)
++  entails_trans WP_FLIP (WP_CONS fun _ ↦ valuePost_of_law fun v ↦ wp_pure_constQ v)
+ 
+ lemma toNNReal_half_ne_zero : unitInterval.toNNReal Interp.half ≠ 0 := by
+   intro h
+@@ -88,7 +88,7 @@ theorem not_convex_constQ : ¬ ∀ X : RV Bool, Convex (constQ X) := by
+   have hv1 : ✓(1 : BoundedFootprintPsp).psp := BoundedFootprintPsp.valid_one
+   have hle1 : (1 : BoundedFootprintSpace Bool) * 1 ≤ (1 : BoundedFootprintPsp).toSpace := by
+     rw [mul_one]; exact le_refl _
+-  obtain ⟨b, hb₁, hb₂, -, hb₃⟩ := (WPFlip (p := Interp.half)) 1 valid_one hemp 1 1 hv1 hle1
++  obtain ⟨b, hb₁, hb₂, -, hb₃⟩ := (WP_FLIP (p := Interp.half)) 1 valid_one hemp 1 1 hv1 hle1
+   have hvS := valid_run (Interp.flip Interp.half) (1 : BoundedFootprintPsp) hv1
+   have hbS : b ≤ (run (Interp.flip Interp.half) (1 : BoundedFootprintPsp)).1.toSpace := by
+     have h := hb₁; rwa [mul_one] at h
+@@ -112,7 +112,7 @@ theorem not_convex_constQ : ¬ ∀ X : RV Bool, Convex (constQ X) := by
+ `C >>= F = C`) and `Q := constQ`.  The premise holds outright (`wp_flip_valuePost`), so the
+ rule would give `⊢ wp (flip half) constQ`; reading that at the unit ambient produces a
+ resource below the run's space on which the coin is surely `true` or surely `false`, while
+-`WPFlip` makes that same run's space give the coin the law `bernoulliWeights (1/2)`.
++`WP_FLIP` makes that same run's space give the coin the law `bernoulliWeights (1/2)`.
+ `DIST_INJ` then equates a point mass with a fair coin. -/
+ theorem WPBind_counterexample :
+     ¬ ∀ {α β : Type} {m : Type → Type} [Monad m] [Interp.LawfulBernoulliInterpretable m]
+@@ -131,7 +131,7 @@ theorem WPBind_counterexample :
+     rw [mul_one]; exact le_refl _
+   obtain ⟨b, hb₁, hb₂, -, hb₃⟩ := hbad 1 valid_one hemp 1 1 hv1 hle1
+   obtain ⟨b', hb'₁, hb'₂, -, hb'₃⟩ :=
+-    (WPFlip (p := Interp.half)) 1 valid_one hemp 1 1 hv1 hle1
++    (WP_FLIP (p := Interp.half)) 1 valid_one hemp 1 1 hv1 hle1
+   have hvS := valid_run (Interp.flip Interp.half) (1 : BoundedFootprintPsp) hv1
+   have hbS : b ≤ (run (Interp.flip Interp.half) (1 : BoundedFootprintPsp)).1.toSpace := by
+     have h := hb₁; rwa [mul_one] at h
+@@ -154,7 +154,7 @@ theorem WPBind_biEntails_counterexample :
+ 
+ set_option linter.style.haveILetI false in
+ /-- **The converse of `WPBind` is unsound.**  Take `C := flip half`, `F := pure` and
+-`Q := (· ~ Ber½)`.  The premise holds by `WPFlip`, so the rule would split the coin's result
++`Q := (· ~ Ber½)`.  The premise holds by `WP_FLIP`, so the rule would split the coin's result
+ along its law and ask, on the fibre at `v`, for `wp (pure v) Q`; read at the fibre's own
+ ambient, that makes the constant `v` distributed as a fair coin. -/
+ theorem WPBindInv_counterexample :
+@@ -168,7 +168,7 @@ theorem WPBindInv_counterexample :
+   have hpre : ⊢ wp (Interp.flip Interp.half >>= (pure : Bool → Interp.BernoulliM Bool))
+       (fun X ↦ X ~ Ber) := by
+     rw [bind_pure]
+-    exact WPFlip
++    exact WP_FLIP
+   have hbad : ⊢ wp (Interp.flip Interp.half) (fun X ↦ valuePost X
+       (fun v ↦ wp (pure v : Interp.BernoulliM Bool) (fun X ↦ X ~ Ber))) :=
+     entails_trans hpre (hinv (aeProper_hasDistribution Ber))
+diff --git a/Foxglove/Rules/WP/Post.lean b/Foxglove/Rules/WP/Post.lean
+index a64a41d..75a2deb 100644
+--- a/Foxglove/Rules/WP/Post.lean
++++ b/Foxglove/Rules/WP/Post.lean
+@@ -83,12 +83,12 @@ lemma aeProper_valuePost {β : Type} (Q : β → FProp) :
+         · iexact Hsure
+       · iexact HQ
+ 
+-/-- Having a given law is `AEProper`: `DIST_SUBST`. -/
++/-- Having a given law is `AEProper`: `DISTR_SUBST`. -/
+ lemma aeProper_hasDistribution {α : Type} (ν : PMF α) : AEProper (fun X ↦ X ~ ν) :=
+-  fun _ _ ↦ entails_trans Iris.BI.sep_comm.1 DIST_SUBST
++  fun _ _ ↦ entails_trans Iris.BI.sep_comm.1 DISTR_SUBST
+ 
+ /-- `valuePost` is monotone in the postcondition: weaken every fibre under the conditioning.
+-This is what lets a `wp` rule be applied *inside* a `valuePost`, through `WPCons`. -/
++This is what lets a `wp` rule be applied *inside* a `valuePost`, through `WP_CONS`. -/
+ lemma valuePost_mono {α : Type} {X : RV α} {Q Q' : α → FProp} (h : ∀ x, Q x ⊢ Q' x) :
+     valuePost X Q ⊢ valuePost X Q' :=
+   exists_mono fun _ ↦ C_CONS fun x ↦ sep_mono_right (h x)

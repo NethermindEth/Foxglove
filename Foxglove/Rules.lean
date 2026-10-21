@@ -108,14 +108,6 @@ theorem C_PURE {X : Set α} :
     ⌜μ.toMeasureWithMs ⊤ X = 1⌝ ∗ 𝒞⟨μ⟩ v; K v ⊣⊢ 𝒞⟨μ⟩ v; (⌜v ∈ X⌝ ∗ K v) :=
   Proofs.C_PURE
 
-/-
-Bluebell, Fig. 11
--/
-
-variable {E : RV Prop} in
-theorem SURE_CONVEX : 𝒞⟨μ⟩ _v; ⌈E⌉ ⊢ ⌈E⌉ :=
-  Proofs.SURE_CONVEX
-
 end JointConditioning
 
 section JointConditioningDerived
@@ -134,13 +126,13 @@ theorem C_SWAP :
   𝒞⟨μ₁⟩ v₁; 𝒞⟨μ₂⟩ v₂; K (v₁, v₂) ⊢ 𝒞⟨μ₂⟩ v₂; 𝒞⟨μ₁⟩ v₁; K (v₁, v₂) :=
   Proofs.C_SWAP
 
+variable {E : RV Prop} in
+theorem SURE_CONVEX : 𝒞⟨μ⟩ _v; ⌈E⌉ ⊢ ⌈E⌉ :=
+  Proofs.SURE_CONVEX
+
 variable {γ : Type} {μ : PMF γ} in
 theorem DIST_CONVEX : 𝒞⟨μ⟩ _v; E ~ μ' ⊢ E ~ μ' :=
   Proofs.DIST_CONVEX
-
-variable {μ : PMF (α × β)} in
-theorem C_PROJ_OF_CONVEX (hK : ∀ a, Convex (K a)) : 𝒞⟨μ⟩ p; K p.1 ⊢ 𝒞⟨μ ∘ π₁⁻¹⟩ a; K a :=
-  Proofs.C_PROJ_OF_CONVEX hK
 
 variable {μ : PMF (α × β)} {E : α → Ω → Prop} in
 theorem C_SURE_PROJ :
@@ -169,9 +161,17 @@ variable {κ : α → PMF β} {X : RV β} in
 theorem C_BIND : 𝒞⟨μ⟩ v; X ~ κ v ⊢ X ~ μ.bind κ :=
   Proofs.C_BIND
 
+/-
+Derived, not in either paper
+-/
+
+variable {μ : PMF (α × β)} in
+theorem C_PROJ_OF_CONVEX (hK : ∀ a, Convex (K a)) : 𝒞⟨μ⟩ p; K p.1 ⊢ 𝒞⟨μ ∘ π₁⁻¹⟩ a; K a :=
+  Proofs.C_PROJ_OF_CONVEX hK
+
 end JointConditioningDerived
 
-section OwnershipAndLaws
+section OwnershipAndDistributions
 
 /-
 Bluebell, Fig. 11
@@ -183,9 +183,6 @@ theorem SURE_DIRAC : E ~ δ v ⊣⊢ ⌈E = v⌉ :=
 theorem SURE_EQ_INJ : ⌈E = v⌉ ∗ ⌈E = v'⌉ ⊢ ⌜v = v'⌝ :=
   Proofs.SURE_EQ_INJ
 
-theorem DIRAC_DUP : E ~ δ v ⊢ E ~ δ v ∗ E ~ δ v :=
-  Proofs.DIRAC_DUP
-
 variable {f : α → β} in
 theorem SURE_SUB : E₁ ~ μ ∗ ⌈E₂ = f ∘ E₁⌉ ⊢ E₂ ~ μ ∘ f⁻¹ :=
   Proofs.SURE_SUB
@@ -193,6 +190,9 @@ theorem SURE_SUB : E₁ ~ μ ∗ ⌈E₂ = f ∘ E₁⌉ ⊢ E₂ ~ μ ∘ f⁻�
 variable {f : α → β} in
 theorem DIST_FUN : E ~ μ ⊢ (f ∘ E) ~ μ ∘ f⁻¹ :=
   Proofs.DIST_FUN
+
+theorem DIRAC_DUP : E ~ δ v ⊢ E ~ δ v ∗ E ~ δ v :=
+  Proofs.DIRAC_DUP
 
 theorem DIST_SUPP : E ~ μ ⊢ E ~ μ ∗ ⌈E ∈ μ.support⌉ :=
   Proofs.DIST_SUPP
@@ -204,93 +204,100 @@ theorem PROD_UNSPLIT : E₁ ~ μ₁ ∗ E₂ ~ μ₂ ⊢ (E₁ ×ᵣ E₂) ~ (μ
 Amaryllis, Fig. 1
 -/
 
-theorem DIST_DIRAC : ⊢ (fun _ : Ω ↦ v) ~ δ v :=
-  Proofs.DIST_DIRAC
+variable {X Y : RV α} in
+theorem DISTR_SUBST : X ~ μ ∗ ⌈X = Y⌉ ⊢ Y ~ μ :=
+  Proofs.DISTR_SUBST
 
-theorem DIST_SUBST {X Y : RV α} : X ~ μ ∗ ⌈X = Y⌉ ⊢ Y ~ μ :=
-  Proofs.DIST_SUBST
+theorem DISTR_DIRAC : ⊢ (fun _ : Ω ↦ v) ~ δ v :=
+  Proofs.DISTR_DIRAC
 
-end OwnershipAndLaws
-
-section WeakestPrecondition
+end OwnershipAndDistributions
 
 open Interp Interp.ProbTree unitInterval
+
+section StructuralWpRules
 
 /-
 Bluebell, Fig. 10
 -/
 
-theorem WPCons {α : Type} [Inhabited α] {m : Type → Type} [Monad m]
-    [Interp.LawfulBernoulliInterpretable m]
-    {Q Q' : RV α → FProp} {t : m α} (h : ∀ v, Q v ⊢ Q' v) : iprop(wp t Q) ⊢ wp t Q' :=
-  Proofs.WPCons h
+variable {α β : Type} [Inhabited α]
+         {m : Type → Type} [Monad m]
+         [Interp.LawfulBernoulliInterpretable m]
+         {Q Q' : RV α → FProp}
+         {t : m α} 
+         {C : m α}
 
-theorem WPFrame {α : Type} [Inhabited α] {m : Type → Type} [Monad m]
-    [Interp.LawfulBernoulliInterpretable m]
-    {P : FProp} {Q : RV α → FProp} {t : m α} :
-    iprop(P ∗ wp t Q) ⊢ wp t (fun v ↦ iprop(P ∗ (Q v))) :=
-  Proofs.WPFrame
+theorem WP_CONS (h : Q ⊢ Q') : wp t Q ⊢ wp t Q' :=
+  Proofs.WP_CONS h
 
-/-- With `AEProper` in place of `ownX`. -/
-theorem CWPSwap {α β : Type} {m : Type → Type} [Monad m] [Interp.BernoulliInterpretable m] [Inhabited α]
-  {C : m α} {μ : PMF β} {Q : β → RV α → FProp} (hQ : ∀ v, AEProper (Q v)) :
-    iprop(𝒞⟨μ⟩ v; wp C (Q v)) ⊢ wp C (fun x ↦ 𝒞⟨μ⟩ v; Q v x) :=
-  Proofs.CWPSwap hQ
+theorem WP_FRAME : P ∗ wp t Q ⊢ wp t ⦃v, P ∗ Q v⦄ :=
+  Proofs.WP_FRAME
 
-/-- `wp-samp`, for the law of any closed program. -/
-theorem WPDist {α : Type} [Inhabited α] [Countable α] (t : BernoulliM α) (ν : PMF α)
-    (hν : ∀ a : α, lawOf t a = ν a) :
-    ⊢ wp t (fun X ↦ X ~ ν) :=
-  Proofs.WPDist t ν hν
+variable {μ : PMF β} {Q : β → RV α → FProp}
+theorem C_WP_SWAP (hQ : ∀ v, AEProper (Q v)) :
+  𝒞⟨μ⟩ v; wp C (Q v) ⊢ wp C ⦃x, 𝒞⟨μ⟩ v; Q v x⦄ :=
+  Proofs.C_WP_SWAP hQ
 
-/-- `wp-samp`, for a coin. -/
-theorem WPFlip {p : I} :
-    ⊢ wp (Interp.flip p)
-        (fun X ↦ X ~ bernoulliWeights (toNNReal p) (Interp.toNNReal_le_one p)) :=
-  Proofs.WPFlip
+end StructuralWpRules
+
+section ProgramWpRules
+
+variable {α : Type} [Inhabited α]
+         {m : Type → Type} [Monad m] [Interp.LawfulBernoulliInterpretable m]
+
+variable [Countable α] {t : BernoulliM α} {ν : PMF α} in
+theorem WP_SAMP (hν : ∀ a : α, lawOf t a = ν a) :
+  ⊢ wp t ⦃X, X ~ ν⦄ :=
+  Proofs.WP_SAMP t ν hν
+
+theorem WP_FLIP {p : I} :
+  ⊢ wp (Interp.flip p) ⦃X, X ~ bernoulliWeights (toNNReal p) (Interp.toNNReal_le_one p)⦄ :=
+  Proofs.WP_FLIP
+
+end ProgramWpRules
+
+section WeakestPreconditionModality
+
+variable {α β : Type} [Inhabited α] [Inhabited β] {m : Type → Type} [Monad m] [Interp.LawfulBernoulliInterpretable m]
 
 /-
 Amaryllis, Fig. 2
 -/
 
-theorem WPPure {α : Type} {m : Type → Type} [Monad m] [Interp.LawfulBernoulliInterpretable m]
-    [Inhabited α] {Q : RV α → FProp} {x : α} : Q (fun _ ↦ x) ⊢ wp (pure x : m α) Q :=
-  Proofs.WPPure
+variable {Q : RV α → FProp} {x : α} in
+theorem WP_PURE : Q (fun _ ↦ x) ⊢ wp (pure x : m α) Q :=
+  Proofs.WP_PURE
 
-theorem WPBindCond {α β : Type} {m : Type → Type} [Monad m]
-    [Interp.LawfulBernoulliInterpretable m] [Inhabited α] [Inhabited β]
-    {C : m α} {F : α → m β} {ν : PMF α} {Q : α → RV β → FProp}
-    (hQ : ∀ v, AEProper (Q v)) :
-    wp C (fun X ↦ 𝒞⟨ν⟩ v; (⌈X = v⌉ ∗ wp (F v) (Q v)))
-      ⊢ wp (C >>= F) (fun Y ↦ 𝒞⟨ν⟩ v; Q v Y) :=
-  Proofs.WPBindCond hQ
+section WP_BIND
 
-theorem WPBindC {α β : Type} {m : Type → Type} [Monad m]
-    [Interp.LawfulBernoulliInterpretable m] [Inhabited α] [Inhabited β]
-    {C : m α} {F : α → m β} {Q : α → RV β → FProp}
-    (hQ : ∀ v, AEProper (Q v)) :
-    wp C (fun X ↦ valuePost X (fun v ↦ wp (F v) (Q v)))
-      ⊢ wp (C >>= F) (fun Y ↦ iprop(∃ ν : PMF α, 𝒞⟨ν⟩ v; Q v Y)) :=
-  Proofs.WPBindC hQ
+variable {C : m α} {F : α → m β} {ν : PMF α} {Q : α → RV β → FProp} in
+theorem WP_BIND_COND (hQ : ∀ v, AEProper (Q v)) :
+  wp C ⦃X, 𝒞⟨ν⟩ v; (⌈X = v⌉ ∗ wp (F v) (Q v))⦄ ⊢ wp (C >>= F) ⦃Y, 𝒞⟨ν⟩ v; Q v Y⦄ :=
+  Proofs.WP_BIND_COND hQ
+
+variable {C : m α} {F : α → m β} {Q : α → RV β → FProp} in
+theorem WP_BIND_C (hQ : ∀ v, AEProper (Q v)) :
+  wp C ⦃X, valuePost X (fun v ↦ wp (F v) (Q v))⦄ ⊢ wp (C >>= F) ⦃Y, ∃ ν : PMF α, 𝒞⟨ν⟩ v; Q v Y⦄ :=
+  Proofs.WP_BIND_C hQ
+
+end WP_BIND
 
 /-
 Derived, not in either paper
 -/
 
-theorem WPBind {α β : Type} {m : Type → Type} [Monad m]
-    [Interp.LawfulBernoulliInterpretable m] [Inhabited α] [Inhabited β]
-    {C : m α} {F : α → m β} {Q : RV β → FProp}
-    (hQ : AEProper Q) (hC : ∀ X : RV β, Convex (Q X)) :
-    wp C (fun X ↦ valuePost X (fun v ↦ wp (F v) Q)) ⊢ wp (C >>= F) Q :=
-  Proofs.WPBind hQ hC
+variable {C : m α} {F : α → m β} {Q : RV β → FProp} in
+theorem WP_BIND (hQ : AEProper Q) (hC : ∀ X : RV β, Convex (Q X)) :
+  wp C ⦃X, valuePost X (fun v ↦ wp (F v) Q)⦄ ⊢ wp (C >>= F) Q :=
+  Proofs.WP_BIND hQ hC
 
-theorem WPBindDist {α β : Type} [Inhabited α] [Inhabited β] [Countable β]
-    (t : BernoulliM α) (f : α → BernoulliM β) (ν : PMF α) (κ : α → PMF β)
-    (hν : ∀ a, lawOf t a = ν a) (hκ : ∀ a b, lawOf (f a) b = κ a b) :
-    ⊢ wp (t >>= f) (fun X ↦ X ~ ν.bind κ) :=
-  Proofs.WPBindDist t f ν κ hν hκ
+variable [Countable β] {t : BernoulliM α} {f : α → BernoulliM β} {ν : PMF α} {κ : α → PMF β}
+theorem WP_BIND_DIST (hν : ∀ a, lawOf t a = ν a) (hκ : ∀ a b, lawOf (f a) b = κ a b) :
+  ⊢ wp (t >>= f) ⦃X, X ~ ν.bind κ⦄ :=
+  Proofs.WP_BIND_DIST t f ν κ hν hκ
 
-end WeakestPrecondition
+end WeakestPreconditionModality
 
 end
 

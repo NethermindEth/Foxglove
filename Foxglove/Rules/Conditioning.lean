@@ -178,7 +178,7 @@ lemma valuePost_elim {β : Type} {X : RV β} {K : β → FProp} {b : BoundedFoot
   exact ⟨ν, condValue_elim hv h'⟩
 
 /-- An assertion recoverable from the fibres of any conditioning (Amaryllis's *strongly
-convex* assertions).  `WPBind` needs it to collapse the conditioning `WPBindC` returns;
+convex* assertions).  `WP_BIND` needs it to collapse the conditioning `WP_BIND_C` returns;
 `not_convex_constQ` shows `AEProper` does not imply it. -/
 def Convex (P : FProp) : Prop :=
   ∀ {γ : Type} (ν : PMF γ), (𝒞⟨ν⟩ _v; P) ⊢ P

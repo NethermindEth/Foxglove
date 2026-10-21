@@ -856,7 +856,7 @@ theorem SURE_DIRAC {v : α} : E ~ δ v ⊣⊢ ⌈E = v⌉ := by
   exact ⟨entails_rfl, entails_rfl⟩
 
 /-- `distr-dirac` (Amaryllis, Fig. 1). -/
-theorem DIST_DIRAC {v : α} : ⊢ (fun _ : Ω ↦ v) ~ δ v :=
+theorem DISTR_DIRAC {v : α} : ⊢ (fun _ : Ω ↦ v) ~ δ v :=
   entails_trans (liftPred_of_forall (a := fun ω ↦ LiftBinary.lift (fun _ : Ω ↦ v) v ω)
     fun _ ↦ rfl) SURE_DIRAC.2
 
@@ -871,7 +871,7 @@ theorem DIRAC_DUP {v : α} : E ~ δ v ⊢ E ~ δ v ∗ E ~ δ v := by
   exact liftPred_dup
 
 /-- `distr-subst` (Amaryllis, Fig. 1). -/
-theorem DIST_SUBST {X Y : RV α} : X ~ μ ∗ ⌈X = Y⌉ ⊢ Y ~ μ :=
+theorem DISTR_SUBST {X Y : RV α} : X ~ μ ∗ ⌈X = Y⌉ ⊢ Y ~ μ :=
   entails_trans (sep_mono_left C_UNIT_R.1)
     (entails_trans Iris.BI.sep_comm.1 (entails_trans C_FRAME
       (entails_trans (C_CONS fun _ ↦ liftPred_subst) C_UNIT_R.2)))
@@ -1013,7 +1013,7 @@ section WeakestPrecondition
 open Interp Interp.ProbTree unitInterval
 
 /-- `wp-value` (Amaryllis, Fig. 2). -/
-theorem WPPure {α : Type} {m : Type → Type} [Monad m] [Interp.LawfulBernoulliInterpretable m]
+theorem WP_PURE {α : Type} {m : Type → Type} [Monad m] [Interp.LawfulBernoulliInterpretable m]
     [Inhabited α] {Q : RV α → FProp} {x : α} : Q (fun _ ↦ x) ⊢ wp (pure x : m α) Q := by
   obtain ⟨U, hU⟩ : ∃ U : UpperSet (BoundedFootprintSpace Bool), Q (fun _ ↦ x) = fmk U :=
     ⟨(Q (fun _ ↦ x)).out, (Quotient.out_eq _).symm⟩
@@ -1028,7 +1028,7 @@ theorem WPPure {α : Type} {m : Type → Type} [Monad m] [Interp.LawfulBernoulli
     exact own_entails_of_mem ha
 
 /-- `wp-cons` (Bluebell, Fig. 10). -/
-theorem WPCons {α : Type} [Inhabited α] {m : Type → Type} [Monad m]
+theorem WP_CONS {α : Type} [Inhabited α] {m : Type → Type} [Monad m]
     [Interp.LawfulBernoulliInterpretable m]
     {Q Q' : RV α → FProp} {t : m α} (h : ∀ v, Q v ⊢ Q' v) : iprop(wp t Q) ⊢ wp t Q' := by
   intro a hva ha μ₀ c hv hle
@@ -1036,10 +1036,10 @@ theorem WPCons {α : Type} [Inhabited α] {m : Type → Type} [Monad m]
   exact ⟨b, hb₁, hb₂, hb₃, entails_trans hb₄ (h _)⟩
 
 /-- `wp-frame` (Bluebell, Fig. 10). -/
-theorem WPFrame {α : Type} [Inhabited α] {m : Type → Type} [Monad m]
+theorem WP_FRAME {α : Type} [Inhabited α] {m : Type → Type} [Monad m]
     [Interp.LawfulBernoulliInterpretable m]
     {P : FProp} {Q : RV α → FProp} {t : m α} :
-    iprop(P ∗ wp t Q) ⊢ wp t (fun v ↦ iprop(P ∗ (Q v))) := by
+    iprop(P ∗ wp t Q) ⊢ wp t ⦃v, P ∗ (Q v)⦄ := by
   obtain ⟨U, rfl⟩ : ∃ U : UpperSet (BoundedFootprintSpace Bool), P = fmk U :=
     ⟨P.out, (Quotient.out_eq _).symm⟩
   obtain ⟨Qr, rfl⟩ : ∃ Qr : RV α → UpperSet (BoundedFootprintSpace Bool),
@@ -1071,9 +1071,9 @@ theorem WPFrame {α : Type} [Inhabited α] {m : Type → Type} [Monad m]
     exact ⟨p, b, hmm, hp, hb₄ b hb₂ (le_refl b)⟩
 
 /-- `c-wp-swap` (Bluebell, Fig. 10), with `AEProper` in place of `ownX`. -/
-theorem CWPSwap {α β : Type} {m : Type → Type} [Monad m] [Interp.BernoulliInterpretable m] [Inhabited α]
+theorem C_WP_SWAP {α β : Type} {m : Type → Type} [Monad m] [Interp.BernoulliInterpretable m] [Inhabited α]
   {C : m α} {μ : PMF β} {Q : β → RV α → FProp} (hQ : ∀ v, AEProper (Q v)) :
-    iprop(𝒞⟨μ⟩ v; wp C (Q v)) ⊢ wp C (fun x ↦ 𝒞⟨μ⟩ v; Q v x) := by
+    iprop(𝒞⟨μ⟩ v; wp C (Q v)) ⊢ wp C ⦃x, 𝒞⟨μ⟩ v; Q v x⦄ := by
   unfold jointConditioning
   refine exists_elim fun m₀ ↦ exists_elim fun κ ↦ ?_
   refine pure_elim _ (entails_trans sep_elim_right sep_elim_left) fun hmix ↦ ?_
@@ -1089,9 +1089,9 @@ theorem CWPSwap {α β : Type} {m : Type → Type} [Monad m] [Interp.BernoulliIn
     iprop(ownP (κ v) -∗ wp C (Q v))) ⟨v, hv⟩)
 
 /-- `wp-samp` (Bluebell, Fig. 10), for the law of any closed program. -/
-theorem WPDist {α : Type} [Inhabited α] [Countable α] (t : BernoulliM α) (ν : PMF α)
+theorem WP_SAMP {α : Type} [Inhabited α] [Countable α] (t : BernoulliM α) (ν : PMF α)
     (hν : ∀ a : α, lawOf t a = ν a) :
-    ⊢ wp t (fun X ↦ X ~ ν) := by
+    ⊢ wp t ⦃X, X ~ ν⦄ := by
   intro a hva ha μ₀ c hvalid hle
   have hcμ : c ≤ μ₀.toSpace := by
     refine le_trans ?_ hle
@@ -1101,10 +1101,10 @@ theorem WPDist {α : Type} [Inhabited α] [Countable α] (t : BernoulliM α) (ν
   exact ⟨b, hb₁, hb₂, le_trans hb₃ le_sup_right, hb₄⟩
 
 /-- `wp-samp` (Bluebell, Fig. 10), for a coin. -/
-theorem WPFlip {p : I} :
+theorem WP_FLIP {p : I} :
     ⊢ wp (Interp.flip p)
-        (fun X ↦ X ~ bernoulliWeights (toNNReal p) (Interp.toNNReal_le_one p)) := by
-  refine WPDist (Interp.flip p) _ (fun b ↦ ?_)
+        ⦃X, X ~ bernoulliWeights (toNNReal p) (Interp.toNNReal_le_one p)⦄ := by
+  refine WP_SAMP (Interp.flip p) _ (fun b ↦ ?_)
   unfold lawOf
   have h0 : runValue (Interp.flip p) ⁻¹' {b} = prefixEqEvent [b] := preimage_head b
   rw [h0]
@@ -1115,24 +1115,24 @@ theorem WPFlip {p : I} :
 
 /-- `wp-bind` (Amaryllis, Fig. 2), for the monadic `wp`, at a law `ν` of `C`'s result: the
 continuation runs once per fibre, conditioning in and conditioning out. -/
-theorem WPBindCond {α β : Type} {m : Type → Type} [Monad m]
+theorem WP_BIND_COND {α β : Type} {m : Type → Type} [Monad m]
     [Interp.LawfulBernoulliInterpretable m] [Inhabited α] [Inhabited β]
     {C : m α} {F : α → m β} {ν : PMF α} {Q : α → RV β → FProp}
     (hQ : ∀ v, AEProper (Q v)) :
-    wp C (fun X ↦ 𝒞⟨ν⟩ v; (⌈X = v⌉ ∗ wp (F v) (Q v)))
-      ⊢ wp (C >>= F) (fun Y ↦ 𝒞⟨ν⟩ v; Q v Y) := by
+    wp C ⦃X, 𝒞⟨ν⟩ v; (⌈X = v⌉ ∗ wp (F v) (Q v))⦄
+      ⊢ wp (C >>= F) ⦃Y, 𝒞⟨ν⟩ v; Q v Y⦄ := by
   intro a hva ha μ₀ c hvalid hle
   obtain ⟨b, hbc, hvb, hbms, hbQ⟩ := ha μ₀ c hvalid hle
   exact WPBindC_core hQ μ₀ hvalid a c hva hle b hbc hvb hbms hbQ
 
 /-- `wp-bind` (Amaryllis, Fig. 2), for the monadic `wp`, at whatever law the premise
 conditions on. -/
-theorem WPBindC {α β : Type} {m : Type → Type} [Monad m]
+theorem WP_BIND_C {α β : Type} {m : Type → Type} [Monad m]
     [Interp.LawfulBernoulliInterpretable m] [Inhabited α] [Inhabited β]
     {C : m α} {F : α → m β} {Q : α → RV β → FProp}
     (hQ : ∀ v, AEProper (Q v)) :
-    wp C (fun X ↦ valuePost X (fun v ↦ wp (F v) (Q v)))
-      ⊢ wp (C >>= F) (fun Y ↦ iprop(∃ ν : PMF α, 𝒞⟨ν⟩ v; Q v Y)) := by
+    wp C ⦃X, valuePost X (fun v ↦ wp (F v) (Q v))⦄
+      ⊢ wp (C >>= F) ⦃Y, ∃ ν : PMF α, 𝒞⟨ν⟩ v; Q v Y⦄ := by
   intro a hva ha μ₀ c hvalid hle
   obtain ⟨b, hbc, hvb, hbms, hbQ⟩ := ha μ₀ c hvalid hle
   obtain ⟨ν, hbQ'⟩ := own_exists_elim hvb hbQ
@@ -1141,20 +1141,20 @@ theorem WPBindC {α β : Type} {m : Type → Type} [Monad m]
   exact exists_intro (Ψ := fun ν' : PMF α ↦ 𝒞⟨ν'⟩ v; Q v (result (run (C >>= F) μ₀))) ν
 
 /-- `wp-bind` with the conditioning collapsed, which needs `Convex` (`WPBind_counterexample`). -/
-theorem WPBind {α β : Type} {m : Type → Type} [Monad m]
+theorem WP_BIND {α β : Type} {m : Type → Type} [Monad m]
     [Interp.LawfulBernoulliInterpretable m] [Inhabited α] [Inhabited β]
     {C : m α} {F : α → m β} {Q : RV β → FProp}
     (hQ : AEProper Q) (hC : ∀ X : RV β, Convex (Q X)) :
-    wp C (fun X ↦ valuePost X (fun v ↦ wp (F v) Q)) ⊢ wp (C >>= F) Q :=
-  entails_trans (WPBindC (Q := fun _ ↦ Q) fun _ ↦ hQ)
-    (WPCons fun Y ↦ exists_elim fun ν ↦ hC Y ν)
+    wp C ⦃X, valuePost X (fun v ↦ wp (F v) Q)⦄ ⊢ wp (C >>= F) Q :=
+  entails_trans (WP_BIND_C (Q := fun _ ↦ Q) fun _ ↦ hQ)
+    (WP_CONS fun Y ↦ exists_elim fun ν ↦ hC Y ν)
 
 /-- `wp-bind` and `wp-samp` combined, for laws. -/
-theorem WPBindDist {α β : Type} [Inhabited α] [Inhabited β] [Countable β]
+theorem WP_BIND_DIST {α β : Type} [Inhabited α] [Inhabited β] [Countable β]
     (t : BernoulliM α) (f : α → BernoulliM β) (ν : PMF α) (κ : α → PMF β)
     (hν : ∀ a, lawOf t a = ν a) (hκ : ∀ a b, lawOf (f a) b = κ a b) :
-    ⊢ wp (t >>= f) (fun X ↦ X ~ ν.bind κ) := by
-  refine WPDist (t >>= f) _ (fun b ↦ ?_)
+    ⊢ wp (t >>= f) ⦃X, X ~ ν.bind κ⦄ := by
+  refine WP_SAMP (t >>= f) _ (fun b ↦ ?_)
   rw [lawOf_bind, PMF.bind_apply]
   exact tsum_congr fun a ↦ by rw [hν a, hκ a b]
 

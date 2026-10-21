@@ -125,13 +125,13 @@ section Sampling
 open Interp Interp.Helper
 open scoped ENNReal
 
-/-- Rejection sampling from `m` upwards is uniform on `{m, …, N}`: `WPFlip` for the coin,
-`WPBindCond` to sequence it with the two continuations, `C_BIND` to mix their laws, by
+/-- Rejection sampling from `m` upwards is uniform on `{m, …, N}`: `WP_FLIP` for the coin,
+`WP_BIND_COND` to sequence it with the two continuations, `C_BIND` to mix their laws, by
 induction on the number of values left. -/
 theorem wp_split' {N : ℕ} :
     ∀ (k : ℕ) (m : Fin (N + 1)), N + 1 - m.1 ≤ k →
       ⊢ wp (split' m)
-          (fun X ↦ X ~ PMF.uniformOfFinset (Finset.Ici m) Finset.nonempty_Ici) := by
+          ⦃X, X ~ PMF.uniformOfFinset (Finset.Ici m) Finset.nonempty_Ici⦄ := by
   intro k
   induction k with
   | zero => intro m hk; exact absurd m.isLt (by omega)
@@ -155,8 +155,8 @@ theorem wp_split' {N : ℕ} :
         · rw [ite_eq_right fun (h : m ≤ i) ↦ hi' (Fin.ext (le_antisymm (by omega) h)),
             ite_eq_right hi']
       rw [hsplit, hlaw]
-      iapply (WPPure (Q := fun Y ↦ Y ~ δ m))
-      exact DIST_DIRAC
+      iapply (WP_PURE (Q := fun Y ↦ Y ~ δ m))
+      exact DISTR_DIRAC
     · -- flip a coin: report `m` with probability `1 / (N + 1 - m)`, otherwise recurse
       have hm'lt : m.1 + 1 < N + 1 := by have := m.isLt; omega
       have hK1 : 1 ≤ N + 1 - m.1 := by have := m.isLt; omega
@@ -201,35 +201,35 @@ theorem wp_split' {N : ℕ} :
           simp only [eq_false h1, eq_true h2, eq_true h3, ↓reduceIte, mul_zero, add_zero]
           rw [show N + 1 - (m.1 + 1) = N + 1 - m.1 - 1 by omega]
           exact mix_step (N + 1 - m.1) hK2
-      -- each continuation has its law: `pure m` by `WPPure`, the recursive call by induction
+      -- each continuation has its law: `pure m` by `WP_PURE`, the recursive call by induction
       have hcont : ∀ v : Bool,
           ⊢ wp (if v then (pure m : BernoulliM (Fin (N + 1))) else split' m')
-              (fun Y ↦ Y ~ κ v) := by
+              ⦃Y, Y ~ κ v⦄ := by
         intro v
         cases v
         · exact ih m' (by show N + 1 - (m.1 + 1) ≤ k; omega)
-        · show ⊢ wp (pure m : BernoulliM (Fin (N + 1))) (fun Y ↦ Y ~ δ m)
-          iapply (WPPure (Q := fun Y ↦ Y ~ δ m))
-          exact DIST_DIRAC
+        · show ⊢ wp (pure m : BernoulliM (Fin (N + 1))) ⦃Y, Y ~ δ m⦄
+          iapply (WP_PURE (Q := fun Y ↦ Y ~ δ m))
+          exact DISTR_DIRAC
       have hfib : ∀ (X : RV Bool) (v : Bool), (⌈X = v⌉ : FProp) ⊢
           ⌈X = v⌉ ∗ wp (if v then (pure m : BernoulliM (Fin (N + 1))) else split' m')
-            (fun Y ↦ Y ~ κ v) := by
+            ⦃Y, Y ~ κ v⦄ := by
         intro X v
         iintro H
         isplitl [H]
         · iexact H
         · exact hcont v
       rw [hsplit, ← hmix]
-      iapply (WPCons fun Y ↦ C_BIND (μ := Ber) (κ := κ) (X := Y))
-      iapply (WPBindCond (ν := Ber) fun v ↦ aeProper_hasDistribution (κ v))
-      iapply (WPCons fun X ↦ entails_trans (C_UNIT_R (E := X) (μ := Ber)).1 (C_CONS (hfib X)))
-      exact WPFlip
+      iapply (WP_CONS fun Y ↦ C_BIND (μ := Ber) (κ := κ) (X := Y))
+      iapply (WP_BIND_COND (ν := Ber) fun v ↦ aeProper_hasDistribution (κ v))
+      iapply (WP_CONS fun X ↦ entails_trans (C_UNIT_R (E := X) (μ := Ber)).1 (C_CONS (hfib X)))
+      exact WP_FLIP
 
 /-- **Uniform sampling.**  The query `unifSpec.query n` reports a value uniformly distributed
 on `Fin (n + 1)`: it interprets to `split n`, rejection sampling from `0` (`wp_split'`). -/
 theorem wp_unifSpec_query (n : ℕ) :
     ⊢ wp (unifSpec.query n : OracleComp unifSpec (Fin (n + 1)))
-        (fun X ↦ X ~ PMF.uniformOfFintype (Fin (n + 1))) := by
+        ⦃X, X ~ PMF.uniformOfFintype (Fin (n + 1))⦄ := by
   have hq : BernoulliInterpretable.interp (unifSpec.query n : OracleComp unifSpec (Fin (n + 1)))
       = split n := by
     show (split n >>= fun x ↦ pure x) = split n
@@ -239,7 +239,7 @@ theorem wp_unifSpec_query (n : ℕ) :
     refine PMF.ext fun i ↦ ?_
     simp [PMF.uniformOfFintype_apply, PMF.uniformOfFinset_apply]
   show ⊢ wp (BernoulliInterpretable.interp (unifSpec.query n : OracleComp unifSpec (Fin (n + 1))))
-    (fun X ↦ X ~ PMF.uniformOfFintype (Fin (n + 1)))
+    ⦃X, X ~ PMF.uniformOfFintype (Fin (n + 1))⦄
   rw [hq, hlaw]
   exact wp_split' (n + 1) 0 (by simp)
 

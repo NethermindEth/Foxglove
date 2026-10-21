@@ -1656,7 +1656,7 @@ end Reading
 invents σ-algebra: `toTree_ms_eq`.  If on top of that the tree is already `done` -- which is
 exactly the case for the constant program `pure x` -- `fixpoint` is the identity, so the run
 hands the footprint's space straight back (`bigStep_psp_of_done`) and every atom reports `x`
-(`result_bigStep_of_done`).  Together these are what `WPPure` needs. -/
+(`result_bigStep_of_done`).  Together these are what `WP_PURE` needs. -/
 
 section Pure
 
@@ -3404,7 +3404,7 @@ lemma comap_ite_le {β : Type} (p : Ω → Prop) {_ : DecidablePred p} (c : β) 
 
 /-- The value a run reports is part of the randomness it adds: on an atom that carries mass
 it is the program's value along the path read, and on the rest it is a constant, as is the
-path.  Needed for the locality clause of `wp` in `WPDist`. -/
+path.  Needed for the locality clause of `wp` in `WP_SAMP`. -/
 lemma comap_result_le_freshMs [Inhabited α] (b : BoundedFootprintPsp) (m : BernoulliM α) :
     MeasurableSpace.comap (result (run m b)) ⊤ ≤ freshMs b m := by
   unfold freshMs

@@ -20,7 +20,7 @@ Facts about runs that the `wp` rules consume. -/
 
 /-- **A run lands in a defined space.**  `bigStep` takes its valid branch and `ofTree`
 always carries a `some`, so the output footprint is never `⊤`.  This is what lets the
-witness of a run be known valid, which `WPFrame` needs. -/
+witness of a run be known valid, which `WP_FRAME` needs. -/
 lemma valid_run {α : Type} [Inhabited α] {m : Type → Type} [Interp.BernoulliInterpretable m]
     (t : m α) (μ₀ : BoundedFootprintPsp) (hv : ✓μ₀.psp) :
     ✓((run t μ₀).1.toSpace) := by

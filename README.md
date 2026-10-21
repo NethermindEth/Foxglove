@@ -30,8 +30,8 @@ precondition is about commands acting on a variable store; Foxglove's, like Amar
 about a monadic program returning a value, so sequencing is monadic bind rather than `;` and
 the result of a program is a random variable. From Amaryllis come the packaging of the
 resources as an ordered unital resource algebra whose upper sets form the BI, the
-kernel-based definition of the conditioning modality, the bind rule (`WPBindCond`,
-`WPBindC`), the rule that moves a conditioning through `wp` (`CWPSwap`), the requirement that
+kernel-based definition of the conditioning modality, the bind rule (`WP_BIND_COND`,
+`WP_BIND_C`), the rule that moves a conditioning through `wp` (`C_WP_SWAP`), the requirement that
 postconditions be invariant under almost-sure equality (`AEProper`), and a few conditioning
 rules (`c-bind`, `distr-subst`, `distr-dirac`). Amaryllis's heap, permissions and frameability
 modality are not taken: there is no mutable state, so none of that machinery is owed.

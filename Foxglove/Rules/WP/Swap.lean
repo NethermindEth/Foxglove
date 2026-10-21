@@ -12,12 +12,12 @@ open Iris BI UpperSetBI OURAProp
 
 noncomputable section
 
-/-! # The core of `CWPSwap` -/
+/-! # The core of `C_WP_SWAP` -/
 
 set_option linter.style.haveILetI false in
 set_option maxHeartbeats 1000000 in
 open Interp Interp.ProbTree Interp.ProbTree.BoundedFootprintPsp ProbabilityTheory MeasureTheory in
-/-- `CWPSwap`, semantically.  Reweight the ambient along each fibre of the conditioning,
+/-- `C_WP_SWAP`, semantically.  Reweight the ambient along each fibre of the conditioning,
 run there, and mix the runs back.
 
 Every fibre's witness lives on the one σ-algebra `m ⊔ R ⊔ fresh` (`wp`'s locality clause),
@@ -37,7 +37,7 @@ lemma CWPSwap_core {α β : Type} {m' : Type → Type} [Interp.BernoulliInterpre
     (hfib : ∀ v ∈ μ.support, ∀ hk : HasBoundedFootprint ((κ v : PSpace Ω) : PSp Ω),
       own (R * ⟨((κ v : PSpace Ω) : PSp Ω), hk⟩) ⊢ wp C (Q v)) :
     own ((⟨(m : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool) * R)
-      ⊢ wp C (fun X ↦ 𝒞⟨μ⟩ v; Q v X) := by
+      ⊢ wp C ⦃X, 𝒞⟨μ⟩ v; Q v X⦄ := by
   set Cb : BernoulliM α := BernoulliInterpretable.interp C with hCb
   set M : BoundedFootprintSpace Bool := ⟨(m : PSp Ω), hbf⟩ with hM
   have hmp := m.2

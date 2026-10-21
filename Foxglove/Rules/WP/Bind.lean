@@ -12,12 +12,12 @@ open Iris BI UpperSetBI OURAProp
 
 noncomputable section
 
-/-! # The core of `WPBindC` -/
+/-! # The core of `WP_BIND_C` -/
 
 set_option linter.style.haveILetI false in
 set_option maxHeartbeats 1000000 in
 open Interp Interp.ProbTree Interp.ProbTree.BoundedFootprintPsp ProbabilityTheory MeasureTheory in
-/-- The semantic core of `WPBindCond` and `WPBindC`: from a witness of `C`'s run whose
+/-- The semantic core of `WP_BIND_COND` and `WP_BIND_C`: from a witness of `C`'s run whose
 resource conditions, on a law `ν` of the result, the continuation's `wp` at each value, a
 witness of the run of `C >>= F` whose resource conditions the continuation's postconditions
 on the same `ν`.

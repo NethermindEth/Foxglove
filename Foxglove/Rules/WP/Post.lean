@@ -60,7 +60,7 @@ lemma convex_liftPred_sep {E E' : RV Prop} : Convex iprop(⌈E⌉ ∗ ⌈E'⌉) 
   convex_congr SURE_MERGE convex_liftPred
 
 /-- Value-indexed postconditions are automatically proper: they only look at the result
-through `⌈X = x⌉`, and sure equalities substitute (`liftPred_subst`).  So `WPBind`'s side
+through `⌈X = x⌉`, and sure equalities substitute (`liftPred_subst`).  So `WP_BIND`'s side
 condition is discharged once and for all for the postconditions it is meant for. -/
 lemma aeProper_valuePost {β : Type} (Q : β → FProp) :
     AEProper (fun X ↦ valuePost X Q) := by
@@ -83,12 +83,12 @@ lemma aeProper_valuePost {β : Type} (Q : β → FProp) :
         · iexact Hsure
       · iexact HQ
 
-/-- Having a given law is `AEProper`: `DIST_SUBST`. -/
+/-- Having a given law is `AEProper`: `DISTR_SUBST`. -/
 lemma aeProper_hasDistribution {α : Type} (ν : PMF α) : AEProper (fun X ↦ X ~ ν) :=
-  fun _ _ ↦ entails_trans Iris.BI.sep_comm.1 DIST_SUBST
+  fun _ _ ↦ entails_trans Iris.BI.sep_comm.1 DISTR_SUBST
 
 /-- `valuePost` is monotone in the postcondition: weaken every fibre under the conditioning.
-This is what lets a `wp` rule be applied *inside* a `valuePost`, through `WPCons`. -/
+This is what lets a `wp` rule be applied *inside* a `valuePost`, through `WP_CONS`. -/
 lemma valuePost_mono {α : Type} {X : RV α} {Q Q' : α → FProp} (h : ∀ x, Q x ⊢ Q' x) :
     valuePost X Q ⊢ valuePost X Q' :=
   exists_mono fun _ ↦ C_CONS fun x ↦ sep_mono_right (h x)

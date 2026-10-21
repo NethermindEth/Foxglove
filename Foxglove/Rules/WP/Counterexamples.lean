@@ -17,8 +17,8 @@ noncomputable section
 /-! # Counterexamples
 
 What the side conditions of the sequencing rules rule out, on one program -- a single fair
-coin -- and one postcondition each: `AEProper` alone does not make `WPBind` sound, and the
-converse of `WPBind` fails outright. -/
+coin -- and one postcondition each: `AEProper` alone does not make `WP_BIND` sound, and the
+converse of `WP_BIND` fails outright. -/
 
 /-- **"The result is almost surely a constant."**  `AEProper`, but not mixable: it holds on
 each fibre of a coin and fails on the coin. -/
@@ -42,15 +42,15 @@ lemma constQ_const (v : Bool) : ⊢ constQ (fun _ ↦ v) := by
 /-- Every fibre of the bind discharges `constQ` outright: `pure v` reports the constant `v`,
 which is surely constant. -/
 lemma wp_pure_constQ (v : Bool) : ⊢ wp (pure v : Interp.BernoulliM Bool) constQ :=
-  entails_trans (constQ_const v) WPPure
+  entails_trans (constQ_const v) WP_PURE
 
 /-- So the whole premise of the sequencing rule is available for free: the coin has a law
-(`WPFlip`), conditioning on it is a `valuePost` (`valuePost_of_law`), and each fibre's
+(`WP_FLIP`), conditioning on it is a `valuePost` (`valuePost_of_law`), and each fibre's
 postcondition costs nothing. -/
 lemma wp_flip_valuePost :
     ⊢ wp (Interp.flip Interp.half)
-        (fun X ↦ valuePost X (fun v ↦ wp (pure v : Interp.BernoulliM Bool) constQ)) :=
-  entails_trans WPFlip (WPCons fun _ ↦ valuePost_of_law fun v ↦ wp_pure_constQ v)
+        ⦃X, valuePost X (fun v ↦ wp (pure v : Interp.BernoulliM Bool) constQ)⦄ :=
+  entails_trans WP_FLIP (WP_CONS fun _ ↦ valuePost_of_law fun v ↦ wp_pure_constQ v)
 
 lemma toNNReal_half_ne_zero : unitInterval.toNNReal Interp.half ≠ 0 := by
   intro h
@@ -88,7 +88,7 @@ theorem not_convex_constQ : ¬ ∀ X : RV Bool, Convex (constQ X) := by
   have hv1 : ✓(1 : BoundedFootprintPsp).psp := BoundedFootprintPsp.valid_one
   have hle1 : (1 : BoundedFootprintSpace Bool) * 1 ≤ (1 : BoundedFootprintPsp).toSpace := by
     rw [mul_one]; exact le_refl _
-  obtain ⟨b, hb₁, hb₂, -, hb₃⟩ := (WPFlip (p := Interp.half)) 1 valid_one hemp 1 1 hv1 hle1
+  obtain ⟨b, hb₁, hb₂, -, hb₃⟩ := (WP_FLIP (p := Interp.half)) 1 valid_one hemp 1 1 hv1 hle1
   have hvS := valid_run (Interp.flip Interp.half) (1 : BoundedFootprintPsp) hv1
   have hbS : b ≤ (run (Interp.flip Interp.half) (1 : BoundedFootprintPsp)).1.toSpace := by
     have h := hb₁; rwa [mul_one] at h
@@ -112,12 +112,12 @@ theorem not_convex_constQ : ¬ ∀ X : RV Bool, Convex (constQ X) := by
 `C >>= F = C`) and `Q := constQ`.  The premise holds outright (`wp_flip_valuePost`), so the
 rule would give `⊢ wp (flip half) constQ`; reading that at the unit ambient produces a
 resource below the run's space on which the coin is surely `true` or surely `false`, while
-`WPFlip` makes that same run's space give the coin the law `bernoulliWeights (1/2)`.
+`WP_FLIP` makes that same run's space give the coin the law `bernoulliWeights (1/2)`.
 `DIST_INJ` then equates a point mass with a fair coin. -/
 theorem WPBind_counterexample :
     ¬ ∀ {α β : Type} {m : Type → Type} [Monad m] [Interp.LawfulBernoulliInterpretable m]
         [Inhabited α] [Inhabited β] {C : m α} {F : α → m β} {Q : RV β → FProp},
-        AEProper Q → wp C (fun X ↦ valuePost X (fun v ↦ wp (F v) Q)) ⊢ wp (C >>= F) Q := by
+        AEProper Q → wp C ⦃X, valuePost X (fun v ↦ wp (F v) Q)⦄ ⊢ wp (C >>= F) Q := by
   intro hbind
   have hbad : ⊢ wp (Interp.flip Interp.half >>= (pure : Bool → Interp.BernoulliM Bool)) constQ :=
     entails_trans wp_flip_valuePost (hbind aeProper_constQ)
@@ -131,7 +131,7 @@ theorem WPBind_counterexample :
     rw [mul_one]; exact le_refl _
   obtain ⟨b, hb₁, hb₂, -, hb₃⟩ := hbad 1 valid_one hemp 1 1 hv1 hle1
   obtain ⟨b', hb'₁, hb'₂, -, hb'₃⟩ :=
-    (WPFlip (p := Interp.half)) 1 valid_one hemp 1 1 hv1 hle1
+    (WP_FLIP (p := Interp.half)) 1 valid_one hemp 1 1 hv1 hle1
   have hvS := valid_run (Interp.flip Interp.half) (1 : BoundedFootprintPsp) hv1
   have hbS : b ≤ (run (Interp.flip Interp.half) (1 : BoundedFootprintPsp)).1.toSpace := by
     have h := hb₁; rwa [mul_one] at h
@@ -149,28 +149,28 @@ give the direction `WPBind_counterexample` refutes. -/
 theorem WPBind_biEntails_counterexample :
     ¬ ∀ {α β : Type} {m : Type → Type} [Monad m] [Interp.LawfulBernoulliInterpretable m]
         [Inhabited α] [Inhabited β] {C : m α} {F : α → m β} {Q : RV β → FProp},
-        AEProper Q → (wp C (fun X ↦ valuePost X (fun v ↦ wp (F v) Q)) ⊣⊢ wp (C >>= F) Q) :=
+        AEProper Q → (wp C ⦃X, valuePost X (fun v ↦ wp (F v) Q)⦄ ⊣⊢ wp (C >>= F) Q) :=
   fun h ↦ WPBind_counterexample fun hQ ↦ (h hQ).1
 
 set_option linter.style.haveILetI false in
-/-- **The converse of `WPBind` is unsound.**  Take `C := flip half`, `F := pure` and
-`Q := (· ~ Ber½)`.  The premise holds by `WPFlip`, so the rule would split the coin's result
+/-- **The converse of `WP_BIND` is unsound.**  Take `C := flip half`, `F := pure` and
+`Q := (· ~ Ber½)`.  The premise holds by `WP_FLIP`, so the rule would split the coin's result
 along its law and ask, on the fibre at `v`, for `wp (pure v) Q`; read at the fibre's own
 ambient, that makes the constant `v` distributed as a fair coin. -/
 theorem WPBindInv_counterexample :
     ¬ ∀ {α β : Type} {m : Type → Type} [Monad m] [Interp.LawfulBernoulliInterpretable m]
         [Inhabited α] [Inhabited β] {C : m α} {F : α → m β} {Q : RV β → FProp},
-        AEProper Q → wp (C >>= F) Q ⊢ wp C (fun X ↦ valuePost X (fun v ↦ wp (F v) Q)) := by
+        AEProper Q → wp (C >>= F) Q ⊢ wp C ⦃X, valuePost X (fun v ↦ wp (F v) Q)⦄ := by
   intro hinv
   set Ber : PMF Bool :=
     bernoulliWeights (unitInterval.toNNReal Interp.half) (Interp.toNNReal_le_one Interp.half)
     with hBer
   have hpre : ⊢ wp (Interp.flip Interp.half >>= (pure : Bool → Interp.BernoulliM Bool))
-      (fun X ↦ X ~ Ber) := by
+      ⦃X, X ~ Ber⦄ := by
     rw [bind_pure]
-    exact WPFlip
-  have hbad : ⊢ wp (Interp.flip Interp.half) (fun X ↦ valuePost X
-      (fun v ↦ wp (pure v : Interp.BernoulliM Bool) (fun X ↦ X ~ Ber))) :=
+    exact WP_FLIP
+  have hbad : ⊢ wp (Interp.flip Interp.half) ⦃X, valuePost X
+      (fun v ↦ wp (pure v : Interp.BernoulliM Bool) ⦃X, X ~ Ber⦄)⦄ :=
     entails_trans hpre (hinv (aeProper_hasDistribution Ber))
   have hemp : (1 : BoundedFootprintSpace Bool) ∈ (UpperSetBI.emp :
       UpperSet (BoundedFootprintSpace Bool)) := by
@@ -188,7 +188,7 @@ theorem WPBindInv_counterexample :
   have hμ₁P : μ₁.psp = .some P₁ := (Option.some_get _).symm
   have hbμ : b ≤ μ₁.toSpace := by rw [mul_one] at hb₁; exact hb₁
   have hb₃' : own b ⊢ valuePost (result (run (Interp.flip Interp.half) (1 : BoundedFootprintPsp)))
-      (fun v ↦ wp (pure v : Interp.BernoulliM Bool) (fun X ↦ X ~ Ber)) := hb₃
+      (fun v ↦ wp (pure v : Interp.BernoulliM Bool) ⦃X, X ~ Ber⦄) := hb₃
   obtain ⟨ν, mm, hbfm, κ, R, hmix, hMR, hfib⟩ := valuePost_elim hvb hb₃'
   set M : BoundedFootprintSpace Bool := ⟨(mm : PSp Ω), hbfm⟩ with hM
   have hmp := mm.2

@@ -63,22 +63,22 @@ Format:
 
 ### Structural WP rules
 
-- `WP-CONS` | — | Rules.lean/WPCons
+- `WP-CONS` | — | Rules.lean/WP_CONS
 
-- `WP-FRAME` | — | Rules.lean/WPFrame
+- `WP-FRAME` | — | Rules.lean/WP_FRAME
 
 - `WP-NEST` | — | n/a (no composition of program tuples)
 
 - `WP-CONJ` | — | n/a (n-ary side condition)
 
-- `C-WP-SWAP` | — | Rules.lean/CWPSwap (`AEProper` in place of `ownX`)
+- `C-WP-SWAP` | — | Rules.lean/C_WP_SWAP (`AEProper` in place of `ownX`)
 
 ### Program WP rules
 
-- `WP-SAMP` | — | Rules.lean/WPFlip (instance of Rules.lean/WPDist, the law of any closed program)
+- `WP-SAMP` | — | Rules.lean/WP_FLIP (instance of Rules.lean/WP_SAMP, the law of any closed program)
 
 - `WP-SKIP`, `WP-SEQ`, `WP-ASSIGN`, `WP-IF-PRIM`, `WP-LOOP-UNF`, `WP-LOOP` | — | n/a (imperative);
-  sequencing is Amaryllis's `WP-BIND`, Rules.lean/WPBindC and Rules.lean/WPBind
+  sequencing is Amaryllis's `WP-BIND`, Rules.lean/WP_BIND_C and Rules.lean/WP_BIND
 
 ### Ownership and distributions
 

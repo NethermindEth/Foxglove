@@ -165,7 +165,7 @@ def valuePost {α : Type} (X : RV α) (Q : α → FProp) : FProp :=
 frame `c`, running `t` yields a witness `b` beside the same frame inside the run's footprint,
 satisfying `Q` of the run's result.  The witness may measure no more than `a` could, together
 with the randomness the run added (`freshMs`): this *locality clause* makes the witnesses
-produced at the fibres of a conditioning comparable, which `CWPSwap` and `WPBindC` need in
+produced at the fibres of a conditioning comparable, which `C_WP_SWAP` and `WP_BIND_C` need in
 order to assemble them into one resource.  It is an upper bound, so upward closure is
 unaffected. -/
 
@@ -226,6 +226,8 @@ def wp {α : Type} [Inhabited α] {m : Type → Type} [Interp.BernoulliInterpret
       exact ⟨b, hb1, hb2, le_trans hb3 (sup_le_sup_right (msOf_mono hxy) _), hb4⟩
   }
 
+macro "⦃" x:Lean.Parser.Term.funBinder ", " Q:term "⦄" : term => `(fun $x ↦ iprop($Q))
+
 end
 
 section
@@ -271,6 +273,29 @@ lemma ffalse_entails : ffalse ⊢ P := by
   grind
 
 end
+
+open Lean Elab Term in
+/--
+We steal Iris entails parser.
+-/
+scoped elab:25 (priority := high) P:term:29 " ⊢ " Q:term:25 : term => do
+  let s ← saveState
+  let pointwise ←
+    try
+      let ty ← instantiateMVars (← Meta.inferType (← withoutErrToSorry (elabTerm P none)))
+      pure ty.isArrow
+    catch _ =>
+      pure false
+  s.restore -- `elabTerm` does who-knows-what to the environment but I just want to see the type
+  let stx ←
+    if pointwise
+    then
+      `(∀ a, ($P) a ⊢ ($Q) a)
+    else
+      `(
+        Iris.BI.BIBase.Entails iprop($P) iprop($Q)
+      )
+  elabTerm stx .none
 
 end
 
