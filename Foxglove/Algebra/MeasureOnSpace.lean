@@ -4,12 +4,14 @@ public import Mathlib.Probability.Distributions.Uniform
 public import Mathlib.Data.Set.Finite.List
 public import Mathlib.MeasureTheory.Measure.Decomposition.RadonNikodym
 public import Foxglove.Algebra.OURA
+public import Mathlib.Topology.UnitInterval
+public import Foxglove.Wheels
 
 /-! ## Independent product of probability measures -/
 
 @[expose] public section
 
-open ProbabilityTheory MeasureTheory
+open ProbabilityTheory MeasureTheory unitInterval
 
 alias MeasureTheory.MeasureSpace.σAlg := MeasureSpace.toMeasurableSpace
 alias MeasureTheory.MeasureSpace.μ := MeasureSpace.volume
@@ -1136,6 +1138,7 @@ end PSpace.Auxiliary
 
 section PSp
 
+open Classical in
 set_option maxHeartbeats 100000000 in
 /--
   Note: the patterns below are deliberately *non-overlapping*. Writing the
@@ -1149,10 +1152,8 @@ def PSp.mul [Inhabited Ω] (p q : PSp Ω) : PSp Ω :=
   match p, q with
   | none, _ => none
   | some _, none => none
-  | some p, some q => by
-    by_cases h : ∃ s, s =ᵢ p ⊕ᵢ q
-    exact (some h.choose)
-    exact none
+  | some p, some q =>
+    if h : ∃ s, s =ᵢ p ⊕ᵢ q then some h.choose else none
 
 @[simp]
 def PSp.unit [Inhabited Ω] : PSp Ω :=
@@ -1702,44 +1703,54 @@ theorem PSpace.wsum_indep [Inhabited Ω] (μ : PMF A) (κ s : A → PSpace Ω) (
 `false`.  Mathlib's `PMF.bernoulli` is deprecated in favour of the *measure*-valued
 `ProbabilityTheory.bernoulliMeasure`, but `wsum` mixes over a `PMF`, so we keep a `PMF`
 here. -/
-noncomputable def bernoulliWeights (r : NNReal) (hr : r ≤ 1) : PMF Bool :=
-  PMF.ofFintype (fun b => cond b r (1 - r)) (by simp [hr])
+noncomputable def bernoulliWeights (r : I) : PMF Bool :=
+  PMF.ofFintype (fun b => cond b (toNNReal r)
+                                 (toNNReal <| unitInterval.invert r)) (by
+    rw [Fintype.sum_bool, Bool.cond_true, Bool.cond_false, ← ENNReal.coe_add,
+      ENNReal.coe_eq_one]
+    exact NNReal.coe_injective (by simp [unitInterval.invert]))
 
 @[simp]
-lemma bernoulliWeights_apply (r : NNReal) (hr : r ≤ 1) (b : Bool) :
-    bernoulliWeights r hr b = cond b (r : ℝ≥0∞) ((1 - r : NNReal) : ℝ≥0∞) := by
+lemma bernoulliWeights_apply (r : I) (b : Bool) :
+    bernoulliWeights r b = cond b (toNNReal r : ℝ≥0∞) (1 - (toNNReal r : ℝ≥0∞)) := by
   rw [bernoulliWeights, PMF.ofFintype_apply]
-  cases b <;> rfl
+  cases b
+  · have hle : toNNReal r ≤ 1 := NNReal.coe_le_coe.mp (by simpa using (Set.mem_Icc.mp r.2).2)
+    rw [Bool.cond_false, Bool.cond_false, ← ENNReal.coe_one, ← ENNReal.coe_sub]
+    congr 1
+    exact NNReal.coe_injective (by simp [unitInterval.invert, NNReal.coe_sub hle])
+  · rfl
 
-lemma mem_support_bernoulliWeights_false {r : NNReal} {hr : r ≤ 1} (h : r ≠ 1) :
-    false ∈ (bernoulliWeights r hr).support := by
-  rw [PMF.mem_support_iff, bernoulliWeights_apply]
-  simp only [Bool.cond_false, ne_eq, ENNReal.coe_eq_zero]
+lemma mem_support_bernoulliWeights_false {r : I} (h : r ≠ 1) :
+    false ∈ (bernoulliWeights r).support := by
+  rw [PMF.mem_support_iff, bernoulliWeights_apply, Bool.cond_false]
   intro hc
-  rw [tsub_eq_zero_iff_le] at hc
-  exact h (le_antisymm hr hc)
+  rw [tsub_eq_zero_iff_le, ENNReal.one_le_coe_iff, ← NNReal.coe_le_coe, coe_toNNReal,
+    NNReal.coe_one] at hc
+  exact h (Subtype.ext (le_antisymm r.2.2 hc))
 
-lemma mem_support_bernoulliWeights_true {r : NNReal} {hr : r ≤ 1} (h : r ≠ 0) :
-    true ∈ (bernoulliWeights r hr).support := by
-  rw [PMF.mem_support_iff, bernoulliWeights_apply]
-  simpa using h
+lemma mem_support_bernoulliWeights_true {r : I} (h : r ≠ 0) :
+    true ∈ (bernoulliWeights r).support := by
+  rw [PMF.mem_support_iff, bernoulliWeights_apply, Bool.cond_true, ne_eq, ENNReal.coe_eq_zero,
+    ← NNReal.coe_eq_zero, coe_toNNReal]
+  exact fun hc ↦ h (Subtype.ext hc)
 
-noncomputable def PSpace.wsum₂ (r : NNReal) (hr : r ≤ 1) (p₀ p₁ : PSpace Ω) : PSpace Ω :=
-  PSpace.wsum (bernoulliWeights r hr) (fun b => if b then p₁ else p₀)
+noncomputable def PSpace.wsum₂ (r : I) (p₀ p₁ : PSpace Ω) : PSpace Ω :=
+  PSpace.wsum (bernoulliWeights r) (fun b => if b then p₁ else p₀)
 
-lemma PSpace.wsum₂_apply (r : NNReal) (hr : r ≤ 1) (p₀ p₁ : PSpace Ω) {E : Set Ω}
-    (hE : MeasurableSet[(PSpace.wsum₂ r hr p₀ p₁).ms] E) :
-    (PSpace.wsum₂ r hr p₀ p₁).μ E
-      = (1 - (r : ℝ≥0∞)) * p₀.μ E + (r : ℝ≥0∞) * p₁.μ E :=
-  calc (PSpace.wsum₂ r hr p₀ p₁).μ E
-      = ∑' b, (bernoulliWeights r hr) b * (if b then p₁ else p₀ : PSpace Ω).μ E :=
+lemma PSpace.wsum₂_apply (r : I) (p₀ p₁ : PSpace Ω) {E : Set Ω}
+    (hE : MeasurableSet[(PSpace.wsum₂ r p₀ p₁).ms] E) :
+    (PSpace.wsum₂ r p₀ p₁).μ E
+      = (1 - (toNNReal r : ℝ≥0∞)) * p₀.μ E + (toNNReal r : ℝ≥0∞) * p₁.μ E :=
+  calc (PSpace.wsum₂ r p₀ p₁).μ E
+      = ∑' b, (bernoulliWeights r) b * (if b then p₁ else p₀ : PSpace Ω).μ E :=
         PSpace.wsumMeasure_apply _ _ hE
-    _ = (1 - (r : ℝ≥0∞)) * p₀.μ E + (r : ℝ≥0∞) * p₁.μ E := by
+    _ = (1 - (toNNReal r : ℝ≥0∞)) * p₀.μ E + (toNNReal r : ℝ≥0∞) * p₁.μ E := by
         rw [tsum_bool]
-        simp [ENNReal.coe_sub]
+        simp
 
-noncomputable def PSp.wsum₂ (r : NNReal) (hr : r ≤ 1) : PSp Ω → PSp Ω → PSp Ω
-  | .some p₀, .some p₁ => .some (PSpace.wsum₂ r hr p₀ p₁)
+noncomputable def PSp.wsum₂ (r : I) : PSp Ω → PSp Ω → PSp Ω
+  | .some p₀, .some p₁ => .some (PSpace.wsum₂ r p₀ p₁)
   | _, _ => ⊤
 
 @[simp]
@@ -1774,21 +1785,22 @@ noncomputable def PSp.map (f : Ω → Ω') : PSp Ω → PSp Ω'
 This is the shape that arises when interpreting a probabilistic computation: each branch
 supplies its own randomness, relocated by `f₀`/`f₁` onto the random-choice identifiers that
 branch owns, and the result mixes the two with weights `1 - r` and `r`. -/
-lemma PSpace.wsum₂_map_apply (r : NNReal) (hr : r ≤ 1) (f₀ f₁ : Ω → Ω') (p₀ p₁ : PSpace Ω)
+lemma PSpace.wsum₂_map_apply (r : I) (f₀ f₁ : Ω → Ω') (p₀ p₁ : PSpace Ω)
     {S : Set Ω'}
-    (hS : MeasurableSet[(PSpace.wsum₂ r hr (PSpace.map f₀ p₀) (PSpace.map f₁ p₁)).ms] S) :
-    (PSpace.wsum₂ r hr (PSpace.map f₀ p₀) (PSpace.map f₁ p₁)).μ S
-      = (1 - (r : ℝ≥0∞)) * p₀.μ (f₀ ⁻¹' S) + (r : ℝ≥0∞) * p₁.μ (f₁ ⁻¹' S) := by
-  rw [PSpace.wsum₂_apply r hr _ _ hS]
+    (hS : MeasurableSet[(PSpace.wsum₂ r (PSpace.map f₀ p₀) (PSpace.map f₁ p₁)).ms] S) :
+    (PSpace.wsum₂ r (PSpace.map f₀ p₀) (PSpace.map f₁ p₁)).μ S
+      = (1 - (toNNReal r : ℝ≥0∞)) * p₀.μ (f₀ ⁻¹' S)
+        + (toNNReal r : ℝ≥0∞) * p₁.μ (f₁ ⁻¹' S) := by
+  rw [PSpace.wsum₂_apply r _ _ hS]
   congr 1
   · rcases eq_or_ne r 1 with rfl | h0
     · simp
     · rw [PSpace.map_apply f₀ p₀
-        (PSpace.wsumSpace_le (mem_support_bernoulliWeights_false (hr := hr) h0) S hS)]
+        (PSpace.wsumSpace_le (mem_support_bernoulliWeights_false h0) S hS)]
   · rcases eq_or_ne r 0 with rfl | h1
     · simp
     · rw [PSpace.map_apply f₁ p₁
-        (PSpace.wsumSpace_le (mem_support_bernoulliWeights_true (hr := hr) h1) S hS)]
+        (PSpace.wsumSpace_le (mem_support_bernoulliWeights_true h1) S hS)]
 
 /-! ### Measurability helpers for pushforwards and weighted sums -/
 
@@ -1800,9 +1812,9 @@ lemma PSpace.map_ms_eq_top {p : PSpace Ω} {f : Ω → Ω'}
   PSpace.ms_eq_top_of_all (fun S => h S)
 
 /-- An event measurable in both branches is measurable in their weighted sum. -/
-lemma PSpace.measurableSet_wsum₂ {r : NNReal} {hr : r ≤ 1} {p₀ p₁ : PSpace Ω} {E : Set Ω}
+lemma PSpace.measurableSet_wsum₂ {r : I} {p₀ p₁ : PSpace Ω} {E : Set Ω}
     (h₀ : MeasurableSet[p₀.ms] E) (h₁ : MeasurableSet[p₁.ms] E) :
-    MeasurableSet[(PSpace.wsum₂ r hr p₀ p₁).ms] E :=
+    MeasurableSet[(PSpace.wsum₂ r p₀ p₁).ms] E :=
   MeasurableSpace.measurableSet_iInf.mpr (fun v =>
     MeasurableSpace.measurableSet_iInf.mpr (fun _ => by cases v <;> simpa))
 

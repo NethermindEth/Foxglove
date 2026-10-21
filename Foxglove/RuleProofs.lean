@@ -1103,7 +1103,7 @@ theorem WP_SAMP {α : Type} [Inhabited α] [Countable α] (t : BernoulliM α) (�
 /-- `wp-samp` (Bluebell, Fig. 10), for a coin. -/
 theorem WP_FLIP {p : I} :
     ⊢ wp (Interp.flip p)
-        ⦃X, X ~ bernoulliWeights (toNNReal p) (Interp.toNNReal_le_one p)⦄ := by
+        ⦃X, X ~ bernoulliWeights p⦄ := by
   refine WP_SAMP (Interp.flip p) _ (fun b ↦ ?_)
   unfold lawOf
   have h0 : runValue (Interp.flip p) ⁻¹' {b} = prefixEqEvent [b] := preimage_head b

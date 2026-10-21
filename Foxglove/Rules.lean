@@ -74,7 +74,8 @@ theorem C_UNIT_R : E ~ μ ⊣⊢ 𝒞⟨μ⟩ v; ⌈E = v⌉ :=
   Proofs.C_UNIT_R
 
 variable {μ₀ : PMF (α × β)} {κ : α → PMF β} {K : (α × β) → FProp} in
-theorem C_ASSOC (h : μ₀ = (PMF.bind μ fun v ↦ PMF.bind (κ v) fun w ↦ PMF.pure (v, w))) :
+theorem C_ASSOC
+  (h : μ₀ = (PMF.bind μ fun v ↦ PMF.bind (κ v) fun w ↦ PMF.pure (v, w))) :
   𝒞⟨μ⟩ v; 𝒞⟨κ v⟩ w; K (v, w) ⊢ 𝒞⟨μ₀⟩ (v, w); K (v, w) :=
   Proofs.C_ASSOC h
 
@@ -166,7 +167,8 @@ Derived, not in either paper
 -/
 
 variable {μ : PMF (α × β)} in
-theorem C_PROJ_OF_CONVEX (hK : ∀ a, Convex (K a)) : 𝒞⟨μ⟩ p; K p.1 ⊢ 𝒞⟨μ ∘ π₁⁻¹⟩ a; K a :=
+theorem C_PROJ_OF_CONVEX
+  (hK : ∀ a, Convex (K a)) : 𝒞⟨μ⟩ p; K p.1 ⊢ 𝒞⟨μ ∘ π₁⁻¹⟩ a; K a :=
   Proofs.C_PROJ_OF_CONVEX hK
 
 end JointConditioningDerived
@@ -246,13 +248,8 @@ section ProgramWpRules
 variable {α : Type} [Inhabited α]
          {m : Type → Type} [Monad m] [Interp.LawfulBernoulliInterpretable m]
 
-variable [Countable α] {t : BernoulliM α} {ν : PMF α} in
-theorem WP_SAMP (hν : ∀ a : α, lawOf t a = ν a) :
-  ⊢ wp t ⦃X, X ~ ν⦄ :=
-  Proofs.WP_SAMP t ν hν
-
 theorem WP_FLIP {p : I} :
-  ⊢ wp (Interp.flip p) ⦃X, X ~ bernoulliWeights (toNNReal p) (Interp.toNNReal_le_one p)⦄ :=
+  ⊢ wp (Interp.flip p) ⦃X, X ~ bernoulliWeights p⦄ :=
   Proofs.WP_FLIP
 
 end ProgramWpRules
@@ -269,20 +266,6 @@ variable {Q : RV α → FProp} {x : α} in
 theorem WP_PURE : Q (fun _ ↦ x) ⊢ wp (pure x : m α) Q :=
   Proofs.WP_PURE
 
-section WP_BIND
-
-variable {C : m α} {F : α → m β} {ν : PMF α} {Q : α → RV β → FProp} in
-theorem WP_BIND_COND (hQ : ∀ v, AEProper (Q v)) :
-  wp C ⦃X, 𝒞⟨ν⟩ v; (⌈X = v⌉ ∗ wp (F v) (Q v))⦄ ⊢ wp (C >>= F) ⦃Y, 𝒞⟨ν⟩ v; Q v Y⦄ :=
-  Proofs.WP_BIND_COND hQ
-
-variable {C : m α} {F : α → m β} {Q : α → RV β → FProp} in
-theorem WP_BIND_C (hQ : ∀ v, AEProper (Q v)) :
-  wp C ⦃X, valuePost X (fun v ↦ wp (F v) (Q v))⦄ ⊢ wp (C >>= F) ⦃Y, ∃ ν : PMF α, 𝒞⟨ν⟩ v; Q v Y⦄ :=
-  Proofs.WP_BIND_C hQ
-
-end WP_BIND
-
 /-
 Derived, not in either paper
 -/
@@ -291,11 +274,6 @@ variable {C : m α} {F : α → m β} {Q : RV β → FProp} in
 theorem WP_BIND (hQ : AEProper Q) (hC : ∀ X : RV β, Convex (Q X)) :
   wp C ⦃X, valuePost X (fun v ↦ wp (F v) Q)⦄ ⊢ wp (C >>= F) Q :=
   Proofs.WP_BIND hQ hC
-
-variable [Countable β] {t : BernoulliM α} {f : α → BernoulliM β} {ν : PMF α} {κ : α → PMF β}
-theorem WP_BIND_DIST (hν : ∀ a, lawOf t a = ν a) (hκ : ∀ a b, lawOf (f a) b = κ a b) :
-  ⊢ wp (t >>= f) ⦃X, X ~ ν.bind κ⦄ :=
-  Proofs.WP_BIND_DIST t f ν κ hν hκ
 
 end WeakestPreconditionModality
 

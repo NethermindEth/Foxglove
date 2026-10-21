@@ -52,27 +52,25 @@ lemma wp_flip_valuePost :
         ⦃X, valuePost X (fun v ↦ wp (pure v : Interp.BernoulliM Bool) constQ)⦄ :=
   entails_trans WP_FLIP (WP_CONS fun _ ↦ valuePost_of_law fun v ↦ wp_pure_constQ v)
 
-lemma toNNReal_half_ne_zero : unitInterval.toNNReal Interp.half ≠ 0 := by
+lemma half_ne_zero : Interp.half ≠ 0 := by
   intro h
-  have hc : ((unitInterval.toNNReal Interp.half : NNReal) : ℝ) = 0 := by rw [h]; simp
-  rw [unitInterval.coe_toNNReal] at hc
+  have hc := congrArg Subtype.val h
   norm_num [Interp.half] at hc
 
-lemma toNNReal_half_ne_one : unitInterval.toNNReal Interp.half ≠ 1 := by
+lemma half_ne_one : Interp.half ≠ 1 := by
   intro h
-  have hc : ((unitInterval.toNNReal Interp.half : NNReal) : ℝ) = 1 := by rw [h]; simp
-  rw [unitInterval.coe_toNNReal] at hc
+  have hc := congrArg Subtype.val h
   norm_num [Interp.half] at hc
 
 /-- A nondegenerate coin is not a point mass. -/
-lemma delta_ne_bernoulli (v : Bool) {r : NNReal} {hr : r ≤ 1} (h0 : r ≠ 0) (h1 : r ≠ 1) :
-    (δ v : PMF Bool) ≠ bernoulliWeights r hr := by
+lemma delta_ne_bernoulli (v : Bool) {r : I} (h0 : r ≠ 0) (h1 : r ≠ 1) :
+    (δ v : PMF Bool) ≠ bernoulliWeights r := by
   intro h
   cases v
-  · have hm : true ∈ (bernoulliWeights r hr).support := mem_support_bernoulliWeights_true h0
+  · have hm : true ∈ (bernoulliWeights r).support := mem_support_bernoulliWeights_true h0
     rw [← h] at hm
     simp [δ] at hm
-  · have hm : false ∈ (bernoulliWeights r hr).support := mem_support_bernoulliWeights_false h1
+  · have hm : false ∈ (bernoulliWeights r).support := mem_support_bernoulliWeights_false h1
     rw [← h] at hm
     simp [δ] at hm
 
@@ -103,9 +101,9 @@ theorem not_convex_constQ : ¬ ∀ X : RV Bool, Convex (constQ X) := by
     · exact or_intro_l
   have hcond := C_CONS hstep _ hvS (C_UNIT_R.1 _ hvS hlaw)
   rcases hconv _ _ _ hvS hcond with h1 | h1
-  · exact delta_ne_bernoulli true toNNReal_half_ne_zero toNNReal_half_ne_one
+  · exact delta_ne_bernoulli true half_ne_zero half_ne_one
       (DIST_INJ _ hvS ⟨SURE_DIRAC.2 _ hvS h1, hlaw⟩)
-  · exact delta_ne_bernoulli false toNNReal_half_ne_zero toNNReal_half_ne_one
+  · exact delta_ne_bernoulli false half_ne_zero half_ne_one
       (DIST_INJ _ hvS ⟨SURE_DIRAC.2 _ hvS h1, hlaw⟩)
 
 /-- **Sequencing is unsound at `AEProper`.**  Take `C := flip half`, `F := pure` (so that
@@ -139,9 +137,9 @@ theorem WPBind_counterexample :
     have h := hb'₁; rwa [mul_one] at h
   have h2 := hb'₃ _ hvS hb'S
   rcases hb₃ _ hvS hbS with h1 | h1
-  · exact delta_ne_bernoulli true toNNReal_half_ne_zero toNNReal_half_ne_one
+  · exact delta_ne_bernoulli true half_ne_zero half_ne_one
       (DIST_INJ _ hvS ⟨SURE_DIRAC.2 _ hvS h1, h2⟩)
-  · exact delta_ne_bernoulli false toNNReal_half_ne_zero toNNReal_half_ne_one
+  · exact delta_ne_bernoulli false half_ne_zero half_ne_one
       (DIST_INJ _ hvS ⟨SURE_DIRAC.2 _ hvS h1, h2⟩)
 
 /-- **The two sequencing directions cannot be packaged as one bi-entailment**: a `⊣⊢` would
@@ -163,8 +161,7 @@ theorem WPBindInv_counterexample :
         AEProper Q → wp (C >>= F) Q ⊢ wp C ⦃X, valuePost X (fun v ↦ wp (F v) Q)⦄ := by
   intro hinv
   set Ber : PMF Bool :=
-    bernoulliWeights (unitInterval.toNNReal Interp.half) (Interp.toNNReal_le_one Interp.half)
-    with hBer
+    bernoulliWeights Interp.half with hBer
   have hpre : ⊢ wp (Interp.flip Interp.half >>= (pure : Bool → Interp.BernoulliM Bool))
       ⦃X, X ~ Ber⦄ := by
     rw [bind_pure]
@@ -258,7 +255,7 @@ theorem WPBindInv_counterexample :
   have hδ := (SURE_DIRAC (E := fun _ : Ω ↦ v) (v := v)).2 b' hvb'
     (liftPred_of_forall (a := fun ω ↦ LiftBinary.lift (fun _ : Ω ↦ v) v ω) (fun _ ↦ rfl)
       b' hvb' PSp.one_le)
-  exact delta_ne_bernoulli v toNNReal_half_ne_zero toNNReal_half_ne_one
+  exact delta_ne_bernoulli v half_ne_zero half_ne_one
     (DIST_INJ _ hvb' ⟨hδ, hlaw⟩)
 
 end

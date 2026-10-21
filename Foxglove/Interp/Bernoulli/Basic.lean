@@ -5,6 +5,7 @@ public import Foxglove.Algebra.OURA
 public import Cslib.Foundations.Data.PFunctor.Free
 public import Foxglove.Basic
 public import Init.Data.Rat.Basic
+public import Foxglove.Wheels
 
 
 @[expose] public section
@@ -120,8 +121,6 @@ def split (tree : ProbTree α) : ProbTree α :=
     | .pure _ => tree
     | .liftBind _ cont => .node (.leaf (cont true)) (.leaf (cont false))
   | .node l r => .node l.split r.split
-
-def _root_.unitInterval.invert (i : I) : I := ⟨(1 : ℝ) - i, by grind⟩
 
 @[instance_reducible]
 def ms {α : Type} (tree : ProbTree α) : MeasurableSpace Ω := MeasurableSpace.generateFrom tree.events
@@ -1523,7 +1522,7 @@ lemma reports_oneFlipTree (v : Bool → α) :
 abbrev twoFlipTree (v : Bool → Bool → α) : ProbTree α :=
   .node (oneFlipTree (v true)) (oneFlipTree (v false))
 
-/-- The measure two flips, of biases `p` then `q`, put on that tree. -/
+/-- The measure for two flips, of biases `p` then `q`, put on that tree. -/
 noncomputable def twoFlipMeasure (v : Bool → Bool → α) (p q : I) :
     Measure[(twoFlipTree v).ms] Ω :=
   joinMeasure (ProbTree.flipWeight p true • flipMeasure (oneFlipTree (v true)).ms q)
@@ -1914,11 +1913,9 @@ lemma ofTree_psp' {α : Type} [Inhabited α] (W : TreeWithMeasure α)
 
 /-- The flip weights are the Bernoulli weights. -/
 lemma flipWeight_eq_bernoulliWeights (p : I) (b : Bool) :
-    flipWeight p b = bernoulliWeights (toNNReal p) (toNNReal_le_one p) b := by
+    flipWeight p b = bernoulliWeights p b := by
   rw [bernoulliWeights_apply, flipWeight]
-  cases b
-  · simp [ENNReal.coe_sub]
-  · simp
+  cases b <;> rfl
 
 /-- Running a program from a leaf reports `runValue`. -/
 lemma reports_fixpoint_rootTree (m : BernoulliM α) :

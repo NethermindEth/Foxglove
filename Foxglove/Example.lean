@@ -163,8 +163,7 @@ theorem wp_split' {N : ℕ} :
       have hK2 : 2 ≤ N + 1 - m.1 := by have := m.isLt; omega
       set pr : unitInterval := ⟨((mkRat 1 (N + 1 - m.1) : ℚ) : ℝ), mkRat_mem_I hK1⟩ with hpr
       set m' : Fin (N + 1) := ⟨m.1 + 1, hm'lt⟩ with hm'
-      set Ber : PMF Bool :=
-        bernoulliWeights (unitInterval.toNNReal pr) (toNNReal_le_one pr) with hBer
+      set Ber : PMF Bool := bernoulliWeights pr with hBer
       set κ : Bool → PMF (Fin (N + 1)) := fun b ↦
         if b then δ m else PMF.uniformOfFinset (Finset.Ici m') Finset.nonempty_Ici
         with hκ
@@ -180,7 +179,7 @@ theorem wp_split' {N : ℕ} :
         rw [PMF.bind_apply, tsum_bool, hU i]
         simp only [hBer, hκ, hm', bernoulliWeights_apply, Bool.cond_false, Bool.cond_true,
           Bool.false_eq_true, ↓reduceIte, PMF.pure_apply, PMF.uniformOfFinset_apply,
-          Finset.mem_Ici, Fin.card_Ici, ENNReal.coe_sub, ENNReal.coe_one, hp]
+          Finset.mem_Ici, Fin.card_Ici, hp]
         have hi := i.isLt
         rcases lt_trichotomy i.1 m.1 with hlt | heq | hgt
         · have h1 : ¬ i = m := fun h ↦ by rw [h] at hlt; exact lt_irrefl _ hlt
