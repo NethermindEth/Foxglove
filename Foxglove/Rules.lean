@@ -266,6 +266,11 @@ variable {Q : RV α → FProp} {x : α} in
 theorem WP_PURE : Q (fun _ ↦ x) ⊢ wp (pure x : m α) Q :=
   Proofs.WP_PURE
 
+variable {C : m α} {F : α → m β} {ν : PMF α} {Q : α → RV β → FProp} in
+theorem WP_BIND_COND (hQ : ∀ v, AEProper (Q v)) :
+  wp C ⦃X, 𝒞⟨ν⟩ v; (⌈X = v⌉ ∗ wp (F v) (Q v))⦄ ⊢ wp (C >>= F) ⦃Y, 𝒞⟨ν⟩ v; Q v Y⦄ :=
+  Proofs.WP_BIND_COND hQ
+
 /-
 Derived, not in either paper
 -/

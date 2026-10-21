@@ -4,6 +4,8 @@ public import Foxglove.Rules
 public import Foxglove.Rules.WP.Post
 public import Foxglove.Interp.OracleComp.Basic
 public import Foxglove.Interp.Bernoulli.Helper
+public import Mathlib.Algebra.Field.ZMod
+public import Mathlib.Algebra.Polynomial.Roots
 
 @[expose] public section
 namespace Foxglove
@@ -241,6 +243,111 @@ theorem wp_unifSpec_query (n : ℕ) :
     ⦃X, X ~ PMF.uniformOfFintype (Fin (n + 1))⦄
   rw [hq, hlaw]
   exact wp_split' (n + 1) 0 (by simp)
+
+/-- **Sequencing with a deterministic continuation.**  A sampler followed by a pure function
+reports the push-forward of the sampler's law: `WP_BIND_COND` at that law, `WP_PURE` and
+`DISTR_DIRAC` in every fibre, `C_BIND` to recollect the fibres. -/
+theorem wp_bind_pure {m : Type → Type} [Monad m] [LawfulBernoulliInterpretable m]
+    {α β : Type} [Inhabited α] [Inhabited β] {C : m α} {ν : PMF α} (g : α → β)
+    (hC : ⊢ wp C ⦃X, X ~ ν⦄) :
+    ⊢ wp (C >>= fun x ↦ pure (g x)) ⦃Y, Y ~ PMF.map g ν⦄ := by
+  have hcont : ∀ v : α, ⊢ wp (pure (g v) : m β) ⦃Y, Y ~ δ (g v)⦄ := fun v ↦ by
+    iapply (WP_PURE (Q := fun Y ↦ Y ~ δ (g v)))
+    exact DISTR_DIRAC
+  have hfib : ∀ (X : RV α) (v : α), (⌈X = v⌉ : FProp) ⊢
+      ⌈X = v⌉ ∗ wp (pure (g v) : m β) ⦃Y, Y ~ δ (g v)⦄ := by
+    intro X v
+    iintro H
+    isplitl [H]
+    · iexact H
+    · exact hcont v
+  have hmix : ν.bind (fun v ↦ δ (g v)) = PMF.map g ν := PMF.bind_pure_comp g ν
+  rw [← hmix]
+  iapply (WP_CONS fun Y ↦ C_BIND (μ := ν) (κ := fun v ↦ δ (g v)) (X := Y))
+  iapply (WP_BIND_COND (ν := ν) fun v ↦ aeProper_hasDistribution (δ (g v)))
+  iapply (WP_CONS fun X ↦ entails_trans (C_UNIT_R (E := X) (μ := ν)).1 (C_CONS (hfib X)))
+  exact hC
+
+/-! ### Polynomial identity testing -/
+
+section RootTest
+
+variable {p : ℕ} [Fact p.Prime]
+
+/-- **Root test.**  Draw `x` uniformly from `ZMod p` (`unifSpec.query`, on `Fin (p - 1 + 1)`
+recast) and report whether `f x = 0`. -/
+def rootTest (f : Polynomial (ZMod p)) : OracleComp unifSpec Bool := do
+  let x ← (unifSpec.query (p - 1) : OracleComp unifSpec (Fin (p - 1 + 1)))
+  pure (decide (f.eval (x.val : ZMod p) = 0))
+
+/-- A bijection carries the uniform law to the uniform law. -/
+lemma uniformOfFintype_map_of_bijective {α β : Type} [Fintype α] [Nonempty α] [Fintype β]
+    [Nonempty β] {e : α → β} (he : Function.Bijective e) :
+    PMF.map e (PMF.uniformOfFintype α) = PMF.uniformOfFintype β := by
+  refine PMF.ext fun b ↦ ?_
+  obtain ⟨a, rfl⟩ := he.2 b
+  rw [PMF.map_apply, tsum_eq_single a (fun a' ha' ↦ ite_eq_right fun h ↦ ha' (he.1 h.symm)),
+    ite_eq_left rfl, PMF.uniformOfFintype_apply, PMF.uniformOfFintype_apply,
+    Fintype.card_of_bijective he]
+
+/-- The recast `Fin (p - 1 + 1) → ZMod p`, `x ↦ x.val`, is a bijection. -/
+lemma fin_val_cast_bijective :
+    Function.Bijective fun x : Fin (p - 1 + 1) ↦ (x.val : ZMod p) := by
+  have hp : p - 1 + 1 = p := Nat.sub_one_add_one (NeZero.ne p)
+  refine ⟨fun x y hxy ↦ Fin.ext ?_,
+    fun b ↦ ⟨⟨b.val, b.val_lt.trans_eq hp.symm⟩, ZMod.natCast_zmod_val b⟩⟩
+  have hxy' : (x.val : ZMod p) = (y.val : ZMod p) := hxy
+  rw [← ZMod.val_cast_of_lt (x.isLt.trans_eq hp), hxy', ZMod.val_cast_of_lt (y.isLt.trans_eq hp)]
+
+/-- The law of the report: `true` with the probability that a uniform point is a root. -/
+def rootLaw (f : Polynomial (ZMod p)) : PMF Bool :=
+  PMF.map (fun x ↦ decide (f.eval x = 0)) (PMF.uniformOfFintype (ZMod p))
+
+/-- A nonzero `f` is reported as having a root with probability `|roots f| / p`. -/
+lemma rootLaw_true (f : Polynomial (ZMod p)) (hf : f ≠ 0) :
+    rootLaw f (true : Bool) = (f.roots.toFinset.card : ℝ≥0∞) / p := by
+  have hs : (Finset.univ.filter fun x : ZMod p ↦ (true : Bool) = decide (f.eval x = 0))
+      = f.roots.toFinset := by
+    ext x
+    simp only [Finset.mem_filter, Finset.mem_univ, _root_.true_and, Multiset.mem_toFinset,
+      Polynomial.mem_roots hf, Polynomial.IsRoot.def]
+    exact ⟨fun h ↦ of_decide_eq_true h.symm, fun h ↦ (decide_eq_true h).symm⟩
+  simp only [rootLaw, PMF.map_apply, tsum_fintype, PMF.uniformOfFintype_apply, ZMod.card,
+    Finset.sum_ite, Finset.sum_const_zero, add_zero, Finset.sum_const, nsmul_eq_mul,
+    div_eq_mul_inv, hs]
+
+/-- A nonzero `f` has at most `deg f` roots. -/
+lemma rootLaw_true_le (f : Polynomial (ZMod p)) (hf : f ≠ 0) :
+    rootLaw f (true : Bool) ≤ (f.natDegree : ℝ≥0∞) / p := by
+  rw [rootLaw_true f hf]
+  exact ENNReal.div_le_div_right
+    (by exact_mod_cast (Multiset.toFinset_card_le _).trans (Polynomial.card_roots' f)) _
+
+/-- **Schwartz–Zippel**, one variable: for a nonzero `f`, the report of `rootTest f` has a law
+`μ` with `μ true ≤ deg f / p`.  The point is uniform (`wp_unifSpec_query`, recast along
+`fin_val_cast_bijective`), the test is a deterministic continuation (`wp_bind_pure`), and the
+law so obtained is `rootLaw f` (`rootLaw_true_le`). -/
+theorem wp_rootTest (f : Polynomial (ZMod p)) (hf : f ≠ 0) :
+    ⊢ wp (rootTest f)
+        ⦃B, ∃ μ : PMF Bool, ⌜μ (true : Bool) ≤ (f.natDegree : ℝ≥0∞) / p⌝ ∗ B ~ μ⦄ := by
+  -- the law of the report
+  have hlaw : ⊢ wp (rootTest f) ⦃B, B ~ rootLaw f⦄ := by
+    have hmap : PMF.map (fun x : Fin (p - 1 + 1) ↦ (x.val : ZMod p))
+        (PMF.uniformOfFintype (Fin (p - 1 + 1))) = PMF.uniformOfFintype (ZMod p) :=
+      uniformOfFintype_map_of_bijective fin_val_cast_bijective
+    rw [rootLaw, ← hmap, PMF.map_comp]
+    exact wp_bind_pure (C := (unifSpec.query (p - 1) : OracleComp unifSpec (Fin (p - 1 + 1))))
+      (fun x ↦ decide (f.eval (x.val : ZMod p) = 0)) (wp_unifSpec_query (p - 1))
+  -- it witnesses the bound
+  refine entails_trans hlaw (WP_CONS fun B ↦ ?_)
+  iintro H
+  iexists rootLaw f
+  isplitl []
+  · ipureintro
+    exact rootLaw_true_le f hf
+  · iexact H
+
+end RootTest
 
 end Sampling
 

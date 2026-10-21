@@ -64,6 +64,21 @@ instance {α} {oSpec : OracleSpec α} [OracleBernoulliInterpretable oSpec] :
   BernoulliInterpretable (OracleComp oSpec) where
     interp := interp
 
+open OracleBernoulliInterpretable in
+/-- `interp` is a monad morphism, by induction on the free monad: the `wp` rules for `pure`
+and `>>=` apply to `OracleComp` programs directly. -/
+instance {α} {oSpec : OracleSpec α} [OracleBernoulliInterpretable oSpec] :
+    LawfulBernoulliInterpretable (OracleComp oSpec) where
+  interp_pure _ := rfl
+  interp_bind t f := by
+    induction t with
+    | pure a => rfl
+    | queryBind op k ih =>
+      show (interp_op op >>= fun x ↦ BernoulliInterpretable.interp (k x >>= f))
+        = (interp_op op >>= fun x ↦ BernoulliInterpretable.interp (k x))
+          >>= fun a ↦ BernoulliInterpretable.interp (f a)
+      simp only [ih, bind_assoc]
+
 end Interp
 
 end Foxglove
