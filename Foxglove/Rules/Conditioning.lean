@@ -18,31 +18,6 @@ What `𝒞⟨μ⟩ v; K v` satisfies at the level of resources: monotonicity, fr
 conditioning is unpacked into a mixture of fibres (`cond_elim`).  `valuePost` is a
 conditioning on a law, so it is read off a resource the same way (`valuePost_elim`). -/
 
-/-- Conditioning is monotone in its continuation. -/
-lemma jointConditioning_mono {A : Type} {ν : PMF A} {K K' : A → FProp}
-    (h : ∀ x, K x ⊢ K' x) : jointConditioning ν K ⊢ jointConditioning ν K' := by
-  unfold jointConditioning
-  exact exists_mono fun m ↦ exists_mono fun κ ↦ sep_mono_right (sep_mono_right
-    (forall_mono fun v ↦ wand_mono_right (h v)))
-
-/-- A resource held outside a conditioning can be pushed into every fibre: one `∗`-splitting
-serves every value at once, so nothing has to be duplicated. -/
-lemma jointConditioning_frame {A : Type} {ν : PMF A} {K : A → FProp} {R : FProp} :
-    iprop(R ∗ jointConditioning ν K) ⊢ jointConditioning ν (fun x ↦ iprop(R ∗ K x)) := by
-  unfold jointConditioning
-  iintro ⟨HR, %m, %κ, Hm, %hmix, Hall⟩
-  iexists m, κ
-  isplitl [Hm]
-  · iexact Hm
-  · isplitl []
-    · ipureintro
-      exact hmix
-    · iintro %v Hv
-      ispecialize Hall $$ %v Hv
-      isplitl [HR]
-      · iexact HR
-      · iexact Hall
-
 set_option linter.style.haveILetI false in
 open MeasureTheory in
 /-- **Unpacking a conditioning.**  A valid resource owning `𝒞⟨ν⟩ v; Kc v` contains a space
@@ -152,31 +127,6 @@ theorem cond_elim {γ : Type} {ν : PMF γ} {Kc : γ → FProp} {r : BoundedFoot
       ⟨_, ⟨hbfk, rfl⟩,
         le_refl (⟨((ℓ v : PSpace Ω) : PSp Ω), hbfk⟩ : BoundedFootprintSpace Bool)⟩
     exact ⟨_, hval, fun y _ hy ↦ UpperSet.upper _ hy hmem⟩
-
-/-- A deterministic result needs no conditioning: at a constant random variable `valuePost`
-is just the postcondition at that value.  Mix over `δ x`, whose only fibre is the trivial
-space, and the sure fact `x = x` is free. -/
-lemma valuePost_const {α : Type} (x : α) (Q : α → FProp) : Q x ⊢ valuePost (fun _ ↦ x) Q := by
-  unfold valuePost jointConditioning
-  iintro HQ
-  iexists (δ x), (1 : PSpace Ω), unitKernel α
-  isplitl []
-  · exact ownP_one
-  · isplitl []
-    · ipureintro
-      show PSpace.μ 1 = (((δ x) : PMF α).toMeasureWithMs ⊤).bind (fun _ ↦ PSpace.μ 1)
-      simp [PMF.toMeasureWithMs]
-    · iintro %y Hy
-      have hy : (y : α) = x := by simpa using y.2
-      simp only [hy]
-      isplitl []
-      · dsimp only [LiftPred.lift]
-        iexists (1 : PSpace Ω)
-        isplitl []
-        · exact ownP_one
-        · ipureintro
-          simp [LiftUnary.lift]
-      · iexact HQ
 
 /-- `valuePost` at a given law `ν` of `X`: on the fibre at `x` the result surely is `x` and
 `Q x` holds.  `valuePost X Q` is `∃ ν, condValue ν X Q`. -/

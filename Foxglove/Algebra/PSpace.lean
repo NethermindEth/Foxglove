@@ -37,13 +37,6 @@ lemma PSpace.le_of_measure_eq {p q : PSpace Ω} (hms : p.ms ≤ q.ms)
   intro u hu
   exact (hμ u hu).trans (_root_.Measure.le_preserves_measure (h := hms) (μ := q.μ) (hu := hu)).symm
 
-/-- A space below `S` that measures no more than `f` sits below `S` trimmed to `f`. -/
-lemma PSpace.le_trim_of_le {p S : PSpace Ω} {f : MeasurableSpace Ω} (hf : f ≤ S.ms)
-    (hpS : p ≤ S) (hpf : p.ms ≤ f) : p ≤ @PSpace.trim Ω S f hf := by
-  refine PSpace.le_of_ms_le hpf fun E hE ↦ ?_
-  show (MeasureOnSpace.trim hf).μ E = p.μ E
-  rw [MeasureOnSpace.trim_eq hf (hpf E hE), MeasureOnSpace.le_preserves_measure hpS hE]
-
 /-- A set integral of a function the smaller space measures can be taken in either space. -/
 lemma PSpace.setLIntegral_of_le {s P : PSpace Ω} (hsP : s ≤ P) {g : Ω → ENNReal}
     (hg : Measurable[s.ms] g) {A : Set Ω} (hA : MeasurableSet[s.ms] A) :

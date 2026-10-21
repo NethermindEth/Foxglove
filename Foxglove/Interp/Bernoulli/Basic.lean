@@ -30,9 +30,6 @@ abbrev BernoulliM := PFunctor.FreeM BernoulliPFunctor
 class BernoulliInterpretable (m : Type → Type) where
   interp {α : Type} : m α → BernoulliM α
 
-class BernoulliInterpretable' (P : PFunctor) where
-  interp {α : Type} : PFunctor.FreeM P α → BernoulliM α
-
 /-- `BernoulliM` is its own interpretation. -/
 instance : BernoulliInterpretable BernoulliM where
   interp := id
@@ -52,14 +49,6 @@ class LawfulBernoulliInterpretable (m : Type → Type) [Monad m] extends
   interp_bind {α β : Type} (t : m α) (f : α → m β) :
     BernoulliInterpretable.interp (t >>= f)
       = BernoulliInterpretable.interp t >>= fun a ↦ BernoulliInterpretable.interp (f a)
-
-class LawfulBernoulliInterpretable' (P : PFunctor)  extends
-    BernoulliInterpretable' P where
-  interp_pure {α : Type} (a : α) :
-    BernoulliInterpretable'.interp (pure a : PFunctor.FreeM P α) = PFunctor.FreeM.pure a
-  interp_bind {α β : Type} (t : PFunctor.FreeM P α) (f : α → PFunctor.FreeM P β) :
-    BernoulliInterpretable'.interp (t >>= f)
-      = BernoulliInterpretable'.interp t >>= fun a ↦ BernoulliInterpretable'.interp (f a)
 
 /-- `BernoulliM` interprets itself, and does so lawfully. -/
 instance : LawfulBernoulliInterpretable BernoulliM where
@@ -86,10 +75,10 @@ lemma consFlip_zero (b : Bool) (ω : Ω) : consFlip b ω 0 = b := rfl
 @[simp]
 lemma consFlip_succ (b : Bool) (ω : Ω) (n : ℕ) : consFlip b ω (n + 1) = ω n := rfl
 
-def shift (ω : Ω) : Ω := fun n => ω (n + 1)
+def tailFlip (ω : Ω) : Ω := fun n => ω (n + 1)
 
 @[simp]
-lemma shift_consFlip (b : Bool) (ω : Ω) : shift (consFlip b ω) = ω := rfl
+lemma shift_consFlip (b : Bool) (ω : Ω) : tailFlip (consFlip b ω) = ω := rfl
 
 inductive ProbTree (α : Type) where
   | leaf (m : BernoulliM α)
@@ -133,25 +122,6 @@ def split (tree : ProbTree α) : ProbTree α :=
   | .node l r => .node l.split r.split
 
 def _root_.unitInterval.invert (i : I) : I := ⟨(1 : ℝ) - i, by grind⟩
-
-/--
-Get it? A `tape... measure`? No? Ok :(.
--/
-def updateMeasure (tree : ProbTree α) (tape : BoolSeq) (μ : BoolSeq → I) : BoolSeq → I :=
-  letI lTape := tape ++ [true]
-  letI rTape := tape ++ [false]
-  match tree, μ with
-  | .leaf m, μ =>
-    match m with
-    | .pure _ => μ
-    | .liftBind a _ =>
-      letI p := a.1
-      letI lProb := p * μ tape
-      letI rProb := unitInterval.invert p * μ tape
-      letI updateLeft := Function.update μ lTape lProb
-      letI updateRight := Function.update updateLeft rTape rProb
-      updateRight
-  | .node l r, μ => r.updateMeasure rTape (l.updateMeasure lTape μ)
 
 @[instance_reducible]
 def ms {α : Type} (tree : ProbTree α) : MeasurableSpace Ω := MeasurableSpace.generateFrom tree.events
@@ -275,7 +245,7 @@ instance flipMeasure_isProbabilityMeasure {m : MeasurableSpace Ω} {p : I} :
     simp only [Set.mem_univ, ite_true]
     exact add_tsub_cancel_of_le (by exact_mod_cast toNNReal_le_one p)
 
-def descend (b : Bool) (ω : Ω) : Ω := if ω 0 = b then shift ω else fun _ ↦ b
+def descend (b : Bool) (ω : Ω) : Ω := if ω 0 = b then tailFlip ω else fun _ ↦ b
 
 /-- Descending into the `b` branch is measurable from the node into the `b`-subtree.  On the
 tapes starting with `b` it is the shift, so the preimage of the subtree's event for `p` is the
@@ -758,12 +728,12 @@ namespace ProbTree
 /-- The value a program reports on a tape: follow the flips the tape dictates. -/
 def runValue {α : Type} : BernoulliM α → Ω → α
   | .pure a, _ => a
-  | .liftBind _ c, ρ => runValue (c (ρ 0)) (shift ρ)
+  | .liftBind _ c, ρ => runValue (c (ρ 0)) (tailFlip ρ)
 
 /-- The path a program takes on a tape: the bits it reads. -/
 def runPath {α : Type} : BernoulliM α → Ω → BoolSeq
   | .pure _, _ => []
-  | .liftBind _ c, ρ => ρ 0 :: runPath (c (ρ 0)) (shift ρ)
+  | .liftBind _ c, ρ => ρ 0 :: runPath (c (ρ 0)) (tailFlip ρ)
 
 /-- **A program's value is determined by the bits it read.**  `runValue` and `runPath`
 recurse on the same program and consume the same bits, so a tape is pinned down as far as
@@ -789,7 +759,7 @@ lemma tapeOf_nil : tapeOf [] = fun _ ↦ false := by
   simp [tapeOf]
 
 @[simp]
-lemma shift_tapeOf_cons (b : Bool) (π : BoolSeq) : shift (tapeOf (b :: π)) = tapeOf π := by
+lemma shift_tapeOf_cons (b : Bool) (π : BoolSeq) : tailFlip (tapeOf (b :: π)) = tapeOf π := by
   funext i
   rfl
 
@@ -800,11 +770,11 @@ lemma runPath_tapeOf {α : Type} (m : BernoulliM α) :
   | pure a => intro ρ; rfl
   | liftBind op c ih =>
     intro ρ
-    show tapeOf (ρ 0 :: runPath (c (ρ 0)) (shift ρ)) 0
-        :: runPath (c (tapeOf (ρ 0 :: runPath (c (ρ 0)) (shift ρ)) 0))
-          (shift (tapeOf (ρ 0 :: runPath (c (ρ 0)) (shift ρ))))
-      = ρ 0 :: runPath (c (ρ 0)) (shift ρ)
-    rw [show tapeOf (ρ 0 :: runPath (c (ρ 0)) (shift ρ)) 0 = ρ 0 from rfl, shift_tapeOf_cons, ih]
+    show tapeOf (ρ 0 :: runPath (c (ρ 0)) (tailFlip ρ)) 0
+        :: runPath (c (tapeOf (ρ 0 :: runPath (c (ρ 0)) (tailFlip ρ)) 0))
+          (tailFlip (tapeOf (ρ 0 :: runPath (c (ρ 0)) (tailFlip ρ))))
+      = ρ 0 :: runPath (c (ρ 0)) (tailFlip ρ)
+    rw [show tapeOf (ρ 0 :: runPath (c (ρ 0)) (tailFlip ρ)) 0 = ρ 0 from rfl, shift_tapeOf_cons, ih]
 
 /-- Replaying the bits a program read, followed by anything at all, makes it read them
 again: a program's path depends only on the bits it reads. -/
@@ -814,11 +784,11 @@ lemma runPath_tapeOf_append {α : Type} (m : BernoulliM α) :
   | pure a => intro ρ rest; rfl
   | liftBind op c ih =>
     intro ρ rest
-    show tapeOf (ρ 0 :: (runPath (c (ρ 0)) (shift ρ) ++ rest)) 0
-        :: runPath (c (tapeOf (ρ 0 :: (runPath (c (ρ 0)) (shift ρ) ++ rest)) 0))
-          (shift (tapeOf (ρ 0 :: (runPath (c (ρ 0)) (shift ρ) ++ rest))))
-      = ρ 0 :: runPath (c (ρ 0)) (shift ρ)
-    rw [show tapeOf (ρ 0 :: (runPath (c (ρ 0)) (shift ρ) ++ rest)) 0 = ρ 0 from rfl,
+    show tapeOf (ρ 0 :: (runPath (c (ρ 0)) (tailFlip ρ) ++ rest)) 0
+        :: runPath (c (tapeOf (ρ 0 :: (runPath (c (ρ 0)) (tailFlip ρ) ++ rest)) 0))
+          (tailFlip (tapeOf (ρ 0 :: (runPath (c (ρ 0)) (tailFlip ρ) ++ rest))))
+      = ρ 0 :: runPath (c (ρ 0)) (tailFlip ρ)
+    rw [show tapeOf (ρ 0 :: (runPath (c (ρ 0)) (tailFlip ρ) ++ rest)) 0 = ρ 0 from rfl,
       shift_tapeOf_cons, ih]
 
 /-- A program reads the same bits on any tape that starts with the bits it read. -/
@@ -829,7 +799,7 @@ lemma runPath_eq_of_mem_prefixEqEvent {α : Type} (m : BernoulliM α) :
   | liftBind op c ih =>
     intro ρ ρ' h
     rw [runPath, mem_prefixEqEvent_cons] at h
-    show ρ' 0 :: runPath (c (ρ' 0)) (shift ρ') = ρ 0 :: runPath (c (ρ 0)) (shift ρ)
+    show ρ' 0 :: runPath (c (ρ' 0)) (tailFlip ρ') = ρ 0 :: runPath (c (ρ 0)) (tailFlip ρ)
     rw [h.1]
     exact congrArg _ (ih (ρ 0) h.2)
 
@@ -840,9 +810,9 @@ lemma mem_prefixEqEvent_runPath {α : Type} (m : BernoulliM α) :
   | pure a => intro ρ; exact fun i ↦ i.elim0
   | liftBind op c ih =>
     intro ρ
-    show ρ ∈ prefixEqEvent (ρ 0 :: runPath (c (ρ 0)) (shift ρ))
+    show ρ ∈ prefixEqEvent (ρ 0 :: runPath (c (ρ 0)) (tailFlip ρ))
     rw [mem_prefixEqEvent_cons]
-    exact ⟨rfl, ih (ρ 0) (shift ρ)⟩
+    exact ⟨rfl, ih (ρ 0) (tailFlip ρ)⟩
 
 /-- The tape that spells out a path starts with it. -/
 lemma mem_prefixEqEvent_tapeOf (π : BoolSeq) : tapeOf π ∈ prefixEqEvent π := by
@@ -1069,16 +1039,16 @@ lemma flipMeasure_apply_singleton {m : MeasurableSpace Ω} (p : I) (b : Bool)
 
 /-! ### Tapes: `consFlip`, `shift`, `descend` -/
 
-lemma descend_of_eq {b : Bool} {ρ : Ω} (h : ρ 0 = b) : descend b ρ = shift ρ := ite_eq_left h
+lemma descend_of_eq {b : Bool} {ρ : Ω} (h : ρ 0 = b) : descend b ρ = tailFlip ρ := ite_eq_left h
 
-lemma consFlip_shift {b : Bool} {ρ : Ω} (h : ρ 0 = b) : consFlip b (shift ρ) = ρ := by
+lemma consFlip_shift {b : Bool} {ρ : Ω} (h : ρ 0 = b) : consFlip b (tailFlip ρ) = ρ := by
   funext n
   cases n with
   | zero => exact h.symm
   | succ k => rfl
 
 @[simp]
-lemma shift_consFlip (b : Bool) (ρ : Ω) : shift (consFlip b ρ) = ρ := rfl
+lemma shift_consFlip (b : Bool) (ρ : Ω) : tailFlip (consFlip b ρ) = ρ := rfl
 
 @[simp]
 lemma mem_prefixEqEvent_consFlip (b : Bool) (ρ : Ω) : consFlip b ρ ∈ prefixEqEvent [b] := by
@@ -1348,18 +1318,18 @@ lemma measure_leaf_ext {m : BernoulliM α} {μ ν : Measure[(ProbTree.leaf m).ms
 /-! ### Composing `Reports` -/
 
 lemma reports_node {l r : ProbTree α} {gt gf : Ω → α} (hl : Reports l gt) (hr : Reports r gf) :
-    Reports (ProbTree.node l r) (fun ρ ↦ if ρ 0 then gt (shift ρ) else gf (shift ρ)) := by
+    Reports (ProbTree.node l r) (fun ρ ↦ if ρ 0 then gt (tailFlip ρ) else gf (tailFlip ρ)) := by
   intro q hq ρ hρ
   rcases mem_prefixes_node_iff.mp hq with ⟨q', hq', rfl⟩ | ⟨q', hq', rfl⟩
   · rw [mem_prefixEqEvent_cons] at hρ
     simp only [hρ.1, ↓reduceIte]
-    exact hl q' hq' (shift ρ) hρ.2
+    exact hl q' hq' (tailFlip ρ) hρ.2
   · rw [mem_prefixEqEvent_cons] at hρ
     simp only [hρ.1, Bool.false_eq_true, ↓reduceIte]
-    exact hr q' hq' (shift ρ) hρ.2
+    exact hr q' hq' (tailFlip ρ) hρ.2
 
 lemma preimage_consFlip_ite (b : Bool) {β : Type} (gt gf : Ω → β) (S : Set β) :
-    consFlip b ⁻¹' ((fun ρ ↦ if ρ 0 then gt (shift ρ) else gf (shift ρ)) ⁻¹' S)
+    consFlip b ⁻¹' ((fun ρ ↦ if ρ 0 then gt (tailFlip ρ) else gf (tailFlip ρ)) ⁻¹' S)
       = (if b then gt else gf) ⁻¹' S := by
   ext ρ
   cases b <;> simp [Set.mem_preimage]
@@ -2263,17 +2233,17 @@ def shiftBy (n : ℕ) (ρ : Ω) : Ω := fun i ↦ ρ (i + n)
 
 @[simp] lemma shiftBy_zero (ρ : Ω) : shiftBy 0 ρ = ρ := rfl
 
-lemma shiftBy_succ (n : ℕ) (ρ : Ω) : shiftBy (n + 1) ρ = shift (shiftBy n ρ) := by
+lemma shiftBy_succ (n : ℕ) (ρ : Ω) : shiftBy (n + 1) ρ = tailFlip (shiftBy n ρ) := by
   funext i
   show ρ (i + (n + 1)) = ρ (i + 1 + n)
   congr 1
   omega
 
-lemma shift_shiftBy (n : ℕ) (ρ : Ω) : shift (shiftBy n ρ) = shiftBy (n + 1) ρ :=
+lemma shift_shiftBy (n : ℕ) (ρ : Ω) : tailFlip (shiftBy n ρ) = shiftBy (n + 1) ρ :=
   (shiftBy_succ n ρ).symm
 
 /-- A tape extending `p` extends `p ++ [b]` exactly when its next bit is `b`. -/
-lemma shiftBy_shift (n : ℕ) (ρ : Ω) : shiftBy n (shift ρ) = shiftBy (n + 1) ρ := rfl
+lemma shiftBy_shift (n : ℕ) (ρ : Ω) : shiftBy n (tailFlip ρ) = shiftBy (n + 1) ρ := rfl
 
 lemma shiftBy_shiftBy (n k : ℕ) (ρ : Ω) : shiftBy n (shiftBy k ρ) = shiftBy (k + n) ρ := by
   funext i
@@ -2291,10 +2261,10 @@ lemma runValue_bind {β : Type} (q : α → BernoulliM β) :
   | pure a => intro ρ; rfl
   | liftBind op c ih =>
     intro ρ
-    show runValue ((c (ρ 0)) >>= q) (shift ρ) = _
-    rw [ih (ρ 0) (shift ρ)]
-    show _ = runValue (q (runValue (c (ρ 0)) (shift ρ)))
-      (shiftBy ((ρ 0 :: runPath (c (ρ 0)) (shift ρ)).length) ρ)
+    show runValue ((c (ρ 0)) >>= q) (tailFlip ρ) = _
+    rw [ih (ρ 0) (tailFlip ρ)]
+    show _ = runValue (q (runValue (c (ρ 0)) (tailFlip ρ)))
+      (shiftBy ((ρ 0 :: runPath (c (ρ 0)) (tailFlip ρ)).length) ρ)
     rw [List.length_cons, shiftBy_shift]
 
 /-- The path of a sequenced program: the first program's path, then the continuation's. -/
@@ -2306,11 +2276,11 @@ lemma runPath_bind {β : Type} (q : α → BernoulliM β) :
   | pure a => intro ρ; rfl
   | liftBind op c ih =>
     intro ρ
-    show ρ 0 :: runPath ((c (ρ 0)) >>= q) (shift ρ) = _
-    rw [ih (ρ 0) (shift ρ)]
-    show _ = (ρ 0 :: runPath (c (ρ 0)) (shift ρ)) ++
-      runPath (q (runValue (c (ρ 0)) (shift ρ)))
-        (shiftBy ((ρ 0 :: runPath (c (ρ 0)) (shift ρ)).length) ρ)
+    show ρ 0 :: runPath ((c (ρ 0)) >>= q) (tailFlip ρ) = _
+    rw [ih (ρ 0) (tailFlip ρ)]
+    show _ = (ρ 0 :: runPath (c (ρ 0)) (tailFlip ρ)) ++
+      runPath (q (runValue (c (ρ 0)) (tailFlip ρ)))
+        (shiftBy ((ρ 0 :: runPath (c (ρ 0)) (tailFlip ρ)).length) ρ)
     rw [List.cons_append, List.length_cons, shiftBy_shift]
 
 lemma mem_prefixEqEvent_append (q : BoolSeq) {ρ : Ω} (hρ : ρ ∈ prefixEqEvent q) (b : Bool)
@@ -2335,7 +2305,7 @@ leaves contribute nothing to any measure, which is all the fresh-randomness argu
 is left of the tape. -/
 def leafValue : ProbTree α → Ω → α
   | .leaf n, ρ => runValue n ρ
-  | .node l r, ρ => if ρ 0 then leafValue l (shift ρ) else leafValue r (shift ρ)
+  | .node l r, ρ => if ρ 0 then leafValue l (tailFlip ρ) else leafValue r (tailFlip ρ)
 
 /-- Running any tree reports `leafValue`. -/
 lemma reports_fixpoint_leafValue : ∀ (t : ProbTree α) (ν : Measure[t.ms] Ω),
@@ -2644,7 +2614,7 @@ produces (`ofTree`), which is what sequencing needs. -/
 /-- The root-to-leaf path a tape ends at once a tree is run. -/
 def fullPath : ProbTree α → Ω → BoolSeq
   | .leaf n, ρ => runPath n ρ
-  | .node l r, ρ => ρ 0 :: (if ρ 0 then fullPath l (shift ρ) else fullPath r (shift ρ))
+  | .node l r, ρ => ρ 0 :: (if ρ 0 then fullPath l (tailFlip ρ) else fullPath r (tailFlip ρ))
 
 lemma runPath_mem_prefixes_fixpoint_rootTree (m : BernoulliM α) :
     ∀ ρ : Ω, runPath m ρ ∈ (fixpoint (rootTree m)).1.prefixes := by
@@ -2656,10 +2626,10 @@ lemma runPath_mem_prefixes_fixpoint_rootTree (m : BernoulliM α) :
   | liftBind op c ih =>
     intro ρ
     rw [fixpoint_rootTree_liftBind op c]
-    show ρ 0 :: runPath (c (ρ 0)) (shift ρ) ∈ (ProbTree.node _ _).prefixes
+    show ρ 0 :: runPath (c (ρ 0)) (tailFlip ρ) ∈ (ProbTree.node _ _).prefixes
     cases h0 : ρ 0
-    · exact mem_prefixes_node false (by simpa using ih false (shift ρ))
-    · exact mem_prefixes_node true (by simpa using ih true (shift ρ))
+    · exact mem_prefixes_node false (by simpa using ih false (tailFlip ρ))
+    · exact mem_prefixes_node true (by simpa using ih true (tailFlip ρ))
 
 lemma fullPath_mem_prefixes_fixpoint : ∀ (t : ProbTree α) (ν : Measure[t.ms] Ω) (ρ : Ω),
     fullPath t ρ ∈ (fixpoint ⟨t, ν⟩).1.prefixes := by
@@ -2672,13 +2642,13 @@ lemma fullPath_mem_prefixes_fixpoint : ∀ (t : ProbTree α) (ν : Measure[t.ms]
   | node l r ihl ihr =>
     intro ν ρ
     rw [congrArg Sigma.fst (fixpoint_node ν)]
-    show ρ 0 :: (if ρ 0 then fullPath l (shift ρ) else fullPath r (shift ρ))
+    show ρ 0 :: (if ρ 0 then fullPath l (tailFlip ρ) else fullPath r (tailFlip ρ))
       ∈ (ProbTree.node _ _).prefixes
     cases h0 : ρ 0
     · simp only [Bool.false_eq_true, ↓reduceIte]
-      exact mem_prefixes_node false (by simpa using ihr _ (shift ρ))
+      exact mem_prefixes_node false (by simpa using ihr _ (tailFlip ρ))
     · simp only [↓reduceIte]
-      exact mem_prefixes_node true (by simpa using ihl _ (shift ρ))
+      exact mem_prefixes_node true (by simpa using ihl _ (tailFlip ρ))
 
 lemma mem_prefixEqEvent_fullPath : ∀ (t : ProbTree α) (ρ : Ω),
     ρ ∈ prefixEqEvent (fullPath t ρ) := by
@@ -2687,12 +2657,12 @@ lemma mem_prefixEqEvent_fullPath : ∀ (t : ProbTree α) (ρ : Ω),
   | leaf n => intro ρ; exact mem_prefixEqEvent_runPath n ρ
   | node l r ihl ihr =>
     intro ρ
-    show ρ ∈ prefixEqEvent (ρ 0 :: (if ρ 0 then fullPath l (shift ρ) else fullPath r (shift ρ)))
+    show ρ ∈ prefixEqEvent (ρ 0 :: (if ρ 0 then fullPath l (tailFlip ρ) else fullPath r (tailFlip ρ)))
     rw [mem_prefixEqEvent_cons]
     refine ⟨rfl, ?_⟩
     cases h0 : ρ 0
-    · simp only [Bool.false_eq_true, ↓reduceIte]; exact ihr (shift ρ)
-    · simp only [↓reduceIte]; exact ihl (shift ρ)
+    · simp only [Bool.false_eq_true, ↓reduceIte]; exact ihr (tailFlip ρ)
+    · simp only [↓reduceIte]; exact ihl (tailFlip ρ)
 
 /-- The atom a run lands a tape in is the event of the path the tape ends at. -/
 lemma prefixes_ofTree_atomOf (W : TreeWithMeasure α) [IsProbabilityMeasure W.2]
@@ -2758,7 +2728,7 @@ lemma fullPath_toTree (bfpsp : BoundedFootprintPsp) (programs : bfpsp.atoms → 
 /-- The path a tree reads past its own: the leaf's own path on what is left of the tape. -/
 def leafPath : ProbTree α → Ω → BoolSeq
   | .leaf n, ρ => runPath n ρ
-  | .node l r, ρ => if ρ 0 then leafPath l (shift ρ) else leafPath r (shift ρ)
+  | .node l r, ρ => if ρ 0 then leafPath l (tailFlip ρ) else leafPath r (tailFlip ρ)
 
 lemma leafPath_toTree_go (bfpsp : BoundedFootprintPsp) (programs : bfpsp.atoms → BernoulliM α) :
     ∀ (p : BoolSeq), (∀ X : bfpsp.atoms, bfpsp.prefixes X <+: p → bfpsp.prefixes X = p) →
@@ -3385,11 +3355,6 @@ lemma freshMs_of_valid (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM 
     freshMs b m = MeasurableSpace.comap (prunedPath b h m) ⊤ := by
   rw [freshMs, dite_eq_left h]
 
-lemma footprintPath_reweight {b : BoundedFootprintPsp} {h : ✓b.psp}
-    {ν : Measure[(ValidPSp.toPSpace ⟨b.psp, h⟩).ms] Ω} {hν : IsProbabilityMeasure ν}
-    (m : BernoulliM α) :
-    footprintPath (BoundedFootprintPsp.reweight b h ν hν) m = footprintPath b m := rfl
-
 /-- The pruned path, read off the pruned tree. -/
 lemma prunedPath_eq_leafPath (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α) :
     prunedPath b h m = fun ρ ↦ if ρ ∈ deadAtoms b h then none
@@ -3545,7 +3510,7 @@ lemma ConstOnAtoms.measurableSet_preimage {γ : Type} {t : ProbTree α} {g : Ω 
 
 lemma constOnAtoms_node {γ : Type} {l r : ProbTree α} {gt gf : Ω → γ}
     (hl : ConstOnAtoms l gt) (hr : ConstOnAtoms r gf) :
-    ConstOnAtoms (ProbTree.node l r) (fun ρ ↦ if ρ 0 then gt (shift ρ) else gf (shift ρ)) := by
+    ConstOnAtoms (ProbTree.node l r) (fun ρ ↦ if ρ 0 then gt (tailFlip ρ) else gf (tailFlip ρ)) := by
   intro q hq ρ hρ ρ' hρ'
   rcases mem_prefixes_node_iff.mp hq with ⟨q', hq', rfl⟩ | ⟨q', hq', rfl⟩
   · rw [mem_prefixEqEvent_cons] at hρ hρ'
@@ -3566,8 +3531,8 @@ lemma constOnAtoms_fixpoint_rootTree (m : BernoulliM α) :
   | liftBind op c ih =>
     rw [fixpoint_rootTree_liftBind op c]
     have heq : runPath (PFunctor.FreeM.liftBind op c)
-        = fun ρ ↦ if ρ 0 then (fun ρ ↦ true :: runPath (c true) ρ) (shift ρ)
-          else (fun ρ ↦ false :: runPath (c false) ρ) (shift ρ) := by
+        = fun ρ ↦ if ρ 0 then (fun ρ ↦ true :: runPath (c true) ρ) (tailFlip ρ)
+          else (fun ρ ↦ false :: runPath (c false) ρ) (tailFlip ρ) := by
       funext ρ
       cases h0 : ρ 0 <;> simp [runPath, h0]
     rw [heq]
@@ -3909,8 +3874,8 @@ lemma mem_prefixEqEvent_append_iff : ∀ (p q : BoolSeq) (ρ : Ω),
     intro q ρ
     rw [List.cons_append, mem_prefixEqEvent_cons, mem_prefixEqEvent_cons, List.length_cons,
       ← shiftBy_shift]
-    show ρ 0 = b ∧ shift ρ ∈ prefixEqEvent (p ++ q)
-      ↔ (ρ 0 = b ∧ shift ρ ∈ prefixEqEvent p) ∧ shiftBy p.length (shift ρ) ∈ prefixEqEvent q
+    show ρ 0 = b ∧ tailFlip ρ ∈ prefixEqEvent (p ++ q)
+      ↔ (ρ 0 = b ∧ tailFlip ρ ∈ prefixEqEvent p) ∧ shiftBy p.length (tailFlip ρ) ∈ prefixEqEvent q
     rw [ih, and_assoc]
 
 /-! ### Sequencing: the run of `m >>= f`
@@ -3965,13 +3930,6 @@ lemma run_measure_eq (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α
   obtain ⟨S, hS, -, -, hpres, -⟩ := run_const b m h
   rw [ValidPSp.toPSpace_eq _ hS]
   exact hpres hE
-
-lemma run_ms_le (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α) :
-    (ValidPSp.toPSpace ⟨b.psp, h⟩).ms
-      ≤ (ValidPSp.toPSpace ⟨(run m b).1.psp, valid_run_psp b h m⟩).ms := by
-  obtain ⟨S, hS, hle, -, -, -⟩ := run_const b m h
-  rw [ValidPSp.toPSpace_eq _ hS]
-  exact hle
 
 /-- A tape in a live atom after a run was in a live atom before it. -/
 lemma not_dead_of_run {b : BoundedFootprintPsp} {h : ✓b.psp} {m : BernoulliM α} {ρ : Ω}

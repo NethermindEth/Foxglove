@@ -177,9 +177,9 @@ lemma split'_spec {n : ℕ} : ∀ (k : ℕ) (m : Fin n), n - m.1 ≤ k →
       rw [fixpoint_rootTree_pure, hfix'] at hpeel
       have hrep := reports_node (reports_leaf_pure m) hrep'
       refine ⟨_, _, _, hpeel, hrep, fun i ↦ ?_⟩
-      have hTpre : consFlip true ⁻¹' ((fun ρ : Ω ↦ if ρ 0 then m else g' (shift ρ)) ⁻¹' {i})
+      have hTpre : consFlip true ⁻¹' ((fun ρ : Ω ↦ if ρ 0 then m else g' (tailFlip ρ)) ⁻¹' {i})
           = (fun _ : Ω ↦ m) ⁻¹' {i} := by ext ρ; simp
-      have hFpre : consFlip false ⁻¹' ((fun ρ : Ω ↦ if ρ 0 then m else g' (shift ρ)) ⁻¹' {i})
+      have hFpre : consFlip false ⁻¹' ((fun ρ : Ω ↦ if ρ 0 then m else g' (tailFlip ρ)) ⁻¹' {i})
           = g' ⁻¹' {i} := by ext ρ; simp
       rw [joinMeasure_smul_preimage _ _ _ _ hTpre hFpre (hrep.measurableSet_preimage {i}),
         hmass', ProbTree.flipWeight, ProbTree.flipWeight, ite_eq_left rfl,

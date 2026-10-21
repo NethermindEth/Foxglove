@@ -194,13 +194,6 @@ open PSpace
 
 notation:60 (priority := high) r " =ᵢ " p " ⊕ᵢ " q:arg => isIndependentProduct r p q
 
-lemma PSpace.ms_eq_of_isIndependentProduct {r r' p q : PSpace Ω}
-  (h₁ : r =ᵢ p ⊕ᵢ q) (h₂ : r' =ᵢ p ⊕ᵢ q) :
-  r.1.ms = r'.1.ms := by
-  rcases h₁ with ⟨a, _⟩
-  rcases h₂ with ⟨c, _⟩
-  aesop
-
 section GeneratingPiSystem
 
 variable {Ω : Type*} (p q : MeasureOnSpace Ω)
@@ -532,11 +525,6 @@ variable [Inhabited Ω]
 `PSp.one_le` proof below.  Use `attribute [local simp]` where they are wanted. -/
 
 lemma PSpace.one_ms : (1 : PSpace Ω).ms = (⊥ : MeasurableSpace Ω) := rfl
-
-lemma PSpace.one_measure_univ : (1 : PSpace Ω).μ Set.univ = 1 :=
-  (1 : PSpace Ω).2.measure_univ
-
-lemma PSpace.one_measure_empty : (1 : PSpace Ω).μ (∅ : Set Ω) = 0 := measure_empty
 
 end UnitSpace
 
@@ -1085,35 +1073,6 @@ theorem PSpace.lintegral_rect [Inhabited Ω] {c m s : PSpace Ω} (hs : s =ᵢ c 
     simp_rw [hall]
     rw [ENNReal.mul_iSup]
 
-/-- **Reweighting one factor of an independent product.**  If `s` is the independent product
-of `c` and `m`, then `c` is also independent of `m` carrying any other probability measure
-`ν ≪ m.μ` on the same σ-algebra: tilt `s` by `dν/dm.μ`.  This is what lets a conditioning
-kernel's fibre be owned alongside a frame that was independent of the mixture. -/
-theorem PSpace.isIndependentProduct_reweight [Inhabited Ω] {c m s : PSpace Ω}
-    (hs : s =ᵢ c ⊕ᵢ m) (ν : Measure[m.ms] Ω) [IsProbabilityMeasure ν] (hac : ν ≪ m.μ) :
-    ∃ s' : PSpace Ω, s' =ᵢ c ⊕ᵢ (⟨⟨m.ms, ν⟩, inferInstance⟩ : PSpace Ω) := by
-  have hms := hs.1
-  have hmle : m.ms ≤ s.ms := (PSpace.le_of_isIndependentProduct_right hs).1
-  have hcle : c.ms ≤ s.ms := (PSpace.le_of_isIndependentProduct_left hs).1
-  have hcp := c.2
-  have hmp := m.2
-  have : SigmaFinite (m.μ) := inferInstance
-  have : ν.HaveLebesgueDecomposition (m.μ) := inferInstance
-  set f := ν.rnDeriv m.μ with hfdef
-  have hfmeas : Measurable[m.ms] f := Measure.measurable_rnDeriv ν m.μ
-  have hrect : ∀ E, MeasurableSet[c.ms] E → ∀ F, MeasurableSet[m.ms] F →
-      (s.μ.withDensity f) (E ∩ F) = c.μ E * ν F := by
-    intro E hE F hF
-    rw [withDensity_apply _ ((hcle _ hE).inter (hmle _ hF)),
-      PSpace.lintegral_rect hs hfmeas hE hF, ← withDensity_apply _ hF, hfdef,
-      Measure.withDensity_rnDeriv_eq ν m.μ hac]
-  have hprob : IsProbabilityMeasure (s.μ.withDensity f) := by
-    constructor
-    have h := hrect Set.univ MeasurableSet.univ Set.univ MeasurableSet.univ
-    rw [Set.inter_univ] at h
-    rw [h, measure_univ, measure_univ, one_mul]
-  exact ⟨⟨⟨s.ms, s.μ.withDensity f⟩, hprob⟩, hms, hrect⟩
-
 /-- A space on which every measurable set has measure `0` or `1` is independent of itself. -/
 theorem PSpace.isIndependentProduct_self {p : PSpace Ω}
     (h01 : ∀ t, MeasurableSet[p.ms] t → p.μ t = 0 ∨ p.μ t = 1) : p =ᵢ p ⊕ᵢ p := by
@@ -1295,46 +1254,6 @@ theorem PSp.mul_comm [Inhabited Ω] {p q : PSp Ω} : p.mul q = q.mul p :=
       simp [h, h']
       rfl
 
-lemma PSp.le_of_mul_left
-  [Inhabited Ω] {a b : PSp Ω}
-  : a ≤ a * b := by
-  cases a with
-  | none =>
-    cases b with
-    | none => exact le_refl _
-    | some y => exact le_refl _
-  | some x =>
-    cases b with
-    | none => exact le_top
-    | some y =>
-      show (↑x : PSp Ω) ≤ ↑x * ↑y
-      by_cases h : ∃ s : PSpace Ω, s =ᵢ x ⊕ᵢ y
-      · have hmul : (↑x : PSp Ω) * ↑y = ↑h.choose := by
-          change PSp.mul (some x) (some y) = some h.choose
-          simp [h]
-          rfl
-        rw [hmul]
-        exact WithTop.coe_le_coe.2
-          (PSpace.le_of_isIndependentProduct_left h.choose_spec)
-      · have hmul : (↑x : PSp Ω) * ↑y = (⊤ : PSp Ω) := by
-          change PSp.mul (some x) (some y) = (⊤ : PSp Ω)
-          simp [h]; rfl
-        rw [hmul]
-        exact le_top
-
-lemma PSp.le_of_mul_right
-  [Inhabited Ω] {a b : PSp Ω}
-  : a ≤ b * a := by
-  have : b * a = a * b := PSp.mul_comm
-  rw [this]
-  apply PSp.le_of_mul_left
-
-lemma PSp.some_mono
-  [Inhabited Ω] {a b : PSpace Ω}
-  (h : (some a : PSp Ω) = (some b : PSp Ω))
-  : a = b := by
-  simp_all only [Option.some.injEq]
-
 lemma PSp.inversion [Inhabited Ω] {p : PSp Ω}
   (h : p ≠ (⊤ : PSp Ω))
   : ∃ x, p = some x := by
@@ -1448,9 +1367,6 @@ instance [Inhabited Ω] : PartialOrder (PSp Ω) := {
 
 lemma PSp.ge_top_imp_top {p : PSp Ω} (h : (⊤ : PSp Ω) ≤ p) : p = (⊤ : PSp Ω) := by
   cases p; rfl; contradiction
-
-lemma PSp.le_top' {p : PSp Ω} : p ≤ (⊤ : PSp Ω) := by
-  apply le_top
 
 lemma PSp.one_le [Inhabited Ω] {a : PSp Ω} : (1 : PSp Ω)  ≤ a := by
   rw [WithTop.le_def]
@@ -1876,10 +1792,6 @@ lemma PSpace.wsum₂_map_apply (r : NNReal) (hr : r ≤ 1) (f₀ f₁ : Ω → �
 
 /-! ### Measurability helpers for pushforwards and weighted sums -/
 
-@[simp]
-lemma PSpace.measurableSet_map {f : Ω → Ω'} {p : PSpace Ω} {S : Set Ω'} :
-    MeasurableSet[(PSpace.map f p).ms] S ↔ MeasurableSet[p.ms] (f ⁻¹' S) := Iff.rfl
-
 /-- If every subset of the target has a `p`-measurable preimage, the pushforward's
 σ-algebra is the discrete one. -/
 lemma PSpace.map_ms_eq_top {p : PSpace Ω} {f : Ω → Ω'}
@@ -2275,9 +2187,6 @@ instance [Finite α] : Iris.OrderedUnitalResourceAlgebra (BoundedFootprintSpace 
   Iris.OrderedUnitalResourceAlgebra.subalgebra
     (inferInstance : Iris.OrderedUnitalResourceAlgebra (PSp (Tape α)))
     hasBoundedFootprint_one fun _ _ ↦ hasBoundedFootprint_mul
-
-example {α : Type} {x : α} : x ∈ (∅ : Set α) ↔ False := by
-  simp only [Set.mem_empty_iff_false]
 
 instance {α : Type} [Inhabited α] : One (BoundedFootprintPsp α) where
   one := {
