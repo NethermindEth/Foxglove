@@ -69,33 +69,6 @@ instance : LawfulBernoulliInterpretable BernoulliM where
 def flip (r : I) : BernoulliM Bool :=
   PFunctor.FreeM.liftBind (BernoulliOps.Flip r) PFunctor.FreeM.pure
 
-def split' {n : ℕ} (m : Fin n) : BernoulliM (Fin n) := do
-  if h₁ : n = m.1 + 1
-    then pure m
-    else
-      let b ← flip
-        ⟨
-          (mkRat 1 (n - m.1) : ℝ),
-          by
-            simp only [Set.mem_Icc, Rat.cast_nonneg, zero_le_one, Rat.mkRat_nonneg, true_and]
-            norm_cast
-            refine Rat.num_le_denom_iff.mp ?_
-            unfold mkRat
-            split_ifs with h
-            · simp
-            · simp only [Rat.num_normalize, isUnit_one, Int.natAbs_of_isUnit, Fin.is_le',
-              isUnit_iff_eq_one, IsUnit.dvd, Nat.gcd_sub_left_right_of_dvd, Nat.gcd_one_left,
-              Nat.cast_one, ne_eq, one_ne_zero, not_false_eq_true, EuclideanDomain.div_self,
-              Rat.den_normalize, Nat.div_one, Nat.cast_sub]
-              omega⟩
-      if b
-        then pure m
-        else split' (⟨m.1 + 1, (by omega)⟩ : Fin n)
-termination_by n - m.1
-decreasing_by have := m.isLt; omega
-
-def split (n : ℕ) : BernoulliM (Fin (n + 1)) :=
-  split' (0 : Fin (n + 1))
 
 /-- The `ℝ≥0` value of a point of the unit interval is at most `1`. -/
 lemma toNNReal_le_one (r : I) : unitInterval.toNNReal r ≤ 1 :=
@@ -113,10 +86,10 @@ lemma consFlip_zero (b : Bool) (ω : Ω) : consFlip b ω 0 = b := rfl
 @[simp]
 lemma consFlip_succ (b : Bool) (ω : Ω) (n : ℕ) : consFlip b ω (n + 1) = ω n := rfl
 
-@[simp]
-lemma shift_consCoin (b : Bool) (ω : Ω) : (fun n => consFlip b ω (n + 1)) = ω := rfl
-
 def shift (ω : Ω) : Ω := fun n => ω (n + 1)
+
+@[simp]
+lemma shift_consFlip (b : Bool) (ω : Ω) : shift (consFlip b ω) = ω := rfl
 
 inductive ProbTree (α : Type) where
   | leaf (m : BernoulliM α)
@@ -1901,7 +1874,7 @@ lemma result_measurableSet (W : TreeWithMeasure α) (hW : IsProbabilityMeasure W
       exact hX
   have hfin : (@ofTree α W hW).atoms.Finite :=
     Set.Finite.image _ (Finset.finite_toSet W.1.prefixes)
-  haveI : Countable (@ofTree α W hW).atoms := hfin.countable.to_subtype
+  have : Countable (@ofTree α W hW).atoms := hfin.countable.to_subtype
   rw [hEq]
   exact MeasurableSet.iUnion fun X ↦ MeasurableSet.iUnion fun _ ↦
     MeasurableSpace.measurableSet_generateFrom X.2
@@ -3404,6 +3377,7 @@ noncomputable def prunedPath (b : BoundedFootprintPsp) (h : ✓b.psp) (m : Berno
 
 /-- The randomness a run adds, as a σ-algebra: the pruned path.  On a footprint that is not a
 probability space nothing runs, and nothing is fresh. -/
+@[instance_reducible]
 noncomputable def freshMs (b : BoundedFootprintPsp) (m : BernoulliM α) : MeasurableSpace Ω :=
   if h : ✓b.psp then MeasurableSpace.comap (prunedPath b h m) ⊤ else ⊥
 

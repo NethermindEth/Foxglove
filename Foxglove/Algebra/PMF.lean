@@ -161,7 +161,7 @@ lemma fuse_eq_bind {μ : PMF α} {κ : α → PMF β} :
   ext ⟨a, b⟩
   rw [PMF.bind_apply, tsum_eq_single a]
   · rw [PMF.map_apply, tsum_eq_single b]
-    · simp only [if_true]
+    · simp only [ite_true]
       rfl
     · intro w hw
       simp [Ne.symm hw]
@@ -169,6 +169,13 @@ lemma fuse_eq_bind {μ : PMF α} {κ : α → PMF β} :
     rw [PMF.map_apply]
     simp [Ne.symm hv]
 
+
+/-- Forgetting the first component of a fused law is binding. -/
+lemma fuse_map_snd {μ : PMF α} {κ : α → PMF β} : (μ -< κ).map Prod.snd = μ.bind κ := by
+  rw [fuse_eq_bind, PMF.map_bind]
+  refine congrArg _ (funext fun v ↦ ?_)
+  rw [PMF.map_comp]
+  exact PMF.map_id _
 
 end
 

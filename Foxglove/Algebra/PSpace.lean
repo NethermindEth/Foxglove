@@ -268,7 +268,9 @@ lemma PSpace.withDensity_mixture {ι : Type} [Countable ι] {m P : PSpace Ω} (h
   have hfm : ∀ i, Measurable[m.ms] ((ν i).rnDeriv m.μ) := fun i ↦ Measure.measurable_rnDeriv _ _
   have hfP : ∀ i, Measurable[P.ms] ((ν i).rnDeriv m.μ) := fun i ↦ (hfm i).mono hmP.1 le_rfl
   set g : Ω → ENNReal := fun x ↦ ∑' i, w i * (ν i).rnDeriv m.μ x with hg
-  have hgm : Measurable[m.ms] g := Measurable.ennreal_tsum fun i ↦ (hfm i).const_mul _
+  have hgm : Measurable[m.ms] g := by
+    let _ : MeasurableSpace Ω := m.ms
+    exact Measurable.tsum fun i ↦ (hfm i).const_mul _
   -- `g` is the density of `m.μ` against itself
   have hg1 : g =ᵐ[m.μ] 1 := by
     refine @ae_eq_of_forall_setLIntegral_eq_of_sigmaFinite Ω m.ms m.μ _ g 1 hgm
@@ -508,7 +510,7 @@ theorem PSpace.product_law_of_split {E₁ : Ω → α} {E₂ : Ω → β} {μ₁
       exact (PMF.toMeasure_apply_eq_zero_iff μ₁ MeasurableSpace.measurableSet_top).2
         disjoint_compl_right
     refine ham₁.ae_eq_mk.trans (ae_iff.2 (measure_mono_null (fun ω hω ↦ ?_) hnull))
-    simp only [Set.mem_setOf_eq, hf₁def] at hω
+    simp only [Set.mem_ofPred_eq, hf₁def] at hω
     split_ifs at hω with h
     · exact absurd rfl hω
     · exact h
@@ -521,7 +523,7 @@ theorem PSpace.product_law_of_split {E₁ : Ω → α} {E₂ : Ω → β} {μ₁
       exact (PMF.toMeasure_apply_eq_zero_iff μ₂ MeasurableSpace.measurableSet_top).2
         disjoint_compl_right
     refine ham₂.ae_eq_mk.trans (ae_iff.2 (measure_mono_null (fun ω hω ↦ ?_) hnull))
-    simp only [Set.mem_setOf_eq, hf₂def] at hω
+    simp only [Set.mem_ofPred_eq, hf₂def] at hω
     split_ifs at hω with h
     · exact absurd rfl hω
     · exact h

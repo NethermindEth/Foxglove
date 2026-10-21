@@ -17,9 +17,10 @@ noncomputable section
 set_option linter.style.haveILetI false in
 set_option maxHeartbeats 1000000 in
 open Interp Interp.ProbTree Interp.ProbTree.BoundedFootprintPsp ProbabilityTheory MeasureTheory in
-/-- The semantic core of `WPBindC`: from a witness of `C`'s run whose resource is a `valuePost`
-over the continuation's `wp`, a witness of the run of `C >>= F` whose resource is the
-conditioning of the continuation's postconditions.
+/-- The semantic core of `WPBindCond` and `WPBindC`: from a witness of `C`'s run whose
+resource conditions, on a law `ν` of the result, the continuation's `wp` at each value, a
+witness of the run of `C >>= F` whose resource conditions the continuation's postconditions
+on the same `ν`.
 
 The proof is the mixing argument of `CWPSwap_core`, with the second stage of the sequenced
 run (`secondStage`) in place of the one program: the fibres of the conditioning are the second
@@ -30,16 +31,16 @@ composite's off those atoms (`result_run_fibre`), which `AEProper` turns into `Q
 composite's result through a null-set space (`PSpace.nullSpace_mul_le`). -/
 lemma WPBindC_core {α β : Type} {m : Type → Type} [Monad m]
     [Interp.LawfulBernoulliInterpretable m] [Inhabited α] [Inhabited β]
-    {C : m α} {F : α → m β} {Q : α → RV β → FProp} (hQ : ∀ v, AEProper (Q v))
+    {C : m α} {F : α → m β} {ν : PMF α} {Q : α → RV β → FProp} (hQ : ∀ v, AEProper (Q v))
     (μ₀ : BoundedFootprintPsp) (hvalid : ✓μ₀.psp) (a c : BoundedFootprintSpace Bool)
     (hva : ✓a) (hle : a * c ≤ μ₀.toSpace) (b : BoundedFootprintSpace Bool)
     (hbc : b * c ≤ (run C μ₀).1.toSpace) (hvb : ✓b)
     (hbms : msOf b ≤ msOf a ⊔ freshMs μ₀ (Interp.BernoulliInterpretable.interp C))
-    (hbQ : own b ⊢ valuePost (result (run C μ₀)) (fun v ↦ wp (F v) (Q v))) :
+    (hbQ : own b ⊢ condValue ν (result (run C μ₀)) (fun v ↦ wp (F v) (Q v))) :
     ∃ b' : BoundedFootprintSpace Bool,
       b' * c ≤ (run (C >>= F) μ₀).1.toSpace ∧ ✓b' ∧
         msOf b' ≤ msOf a ⊔ freshMs μ₀ (Interp.BernoulliInterpretable.interp (C >>= F)) ∧
-        (own b' ⊢ iprop(∃ ν : PMF α, 𝒞⟨ν⟩ v; Q v (result (run (C >>= F) μ₀)))) := by
+        (own b' ⊢ 𝒞⟨ν⟩ v; Q v (result (run (C >>= F) μ₀))) := by
   set Cb : BernoulliM α := BernoulliInterpretable.interp C with hCb
   set Fb : α → BernoulliM β := fun v ↦ BernoulliInterpretable.interp (F v) with hFb
   have hCF : BernoulliInterpretable.interp (C >>= F) = Cb >>= Fb :=
@@ -68,10 +69,10 @@ lemma WPBindC_core {α β : Type} {m : Type → Type} [Monad m]
     exact WithTop.coe_le_coe.1 h
   set X : RV α := result (run Cb μ₀) with hX
   have hbc' : b * c ≤ μ₁.toSpace := hbc
-  have hbQ' : own b ⊢ valuePost X (fun v ↦ wp (F v) (Q v)) := hbQ
+  have hbQ' : own b ⊢ condValue ν X (fun v ↦ wp (F v) (Q v)) := hbQ
   have hbms' : msOf b ≤ msOf a ⊔ freshMs μ₀ Cb := hbms
   -- the conditioning inside the premise's postcondition
-  obtain ⟨ν, mm, hbfm, κ, R, hmix, hMR, hfib⟩ := valuePost_elim hvb hbQ'
+  obtain ⟨mm, hbfm, κ, R, hmix, hMR, hfib⟩ := condValue_elim hvb hbQ'
   set M : BoundedFootprintSpace Bool := ⟨(mm : PSp Ω), hbfm⟩ with hM
   have hmp := mm.2
   have hMRc : (M * R) * c ≤ μ₁.toSpace := le_trans (mul_le_mul_right_le hMR c) hbc'
@@ -417,8 +418,7 @@ lemma WPBindC_core {α β : Type} {m : Type → Type} [Monad m]
     show (HSMul.hSMul (ν i) (fixpoint ⟨T, (ρ i).cast T.ms⟩).2) G = _
     rw [Measure.smul_apply, smul_eq_mul]
   show own (⟨(B : PSp Ω), hbfB⟩ : BoundedFootprintSpace Bool)
-    ⊢ iprop(∃ ν' : PMF α, 𝒞⟨ν'⟩ v; Q v (result (run (Cb >>= Fb) μ₀)))
-  refine entails_trans ?_ (exists_intro ν)
+    ⊢ 𝒞⟨ν⟩ v; Q v (result (run (Cb >>= Fb) μ₀))
   unfold jointConditioning
   refine entails_trans ?_ (exists_intro B)
   refine entails_trans ?_ (exists_intro κ')

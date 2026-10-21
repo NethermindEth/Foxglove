@@ -12,6 +12,36 @@ namespace Interp
 class OracleBernoulliInterpretable {α : Type} (oSpec : OracleSpec α) where
   interp_op (op : oSpec.toPFunctor.A) : BernoulliM (oSpec.toPFunctor.B op)
 
+/-- Rejection sampling from `m` upwards: uniform on `{m, …, n - 1}` (`split'_spec`). -/
+def split' {n : ℕ} (m : Fin n) : BernoulliM (Fin n) := do
+  if h₁ : n = m.1 + 1
+    then pure m
+    else
+      let b ← flip
+        ⟨
+          (mkRat 1 (n - m.1) : ℝ),
+          by
+            simp only [Set.mem_Icc, Rat.cast_nonneg, zero_le_one, Rat.mkRat_nonneg, true_and]
+            norm_cast
+            refine Rat.num_le_denom_iff.mp ?_
+            unfold mkRat
+            split_ifs with h
+            · simp
+            · simp only [Rat.num_normalize, isUnit_one, Int.natAbs_of_isUnit, Fin.is_le',
+              isUnit_iff_eq_one, IsUnit.dvd, Nat.gcd_sub_left_right_of_dvd, Nat.gcd_one_left,
+              Nat.cast_one, ne_eq, one_ne_zero, not_false_eq_true, EuclideanDomain.div_self,
+              Rat.den_normalize, Nat.div_one, Nat.cast_sub]
+              omega⟩
+      if b
+        then pure m
+        else split' (⟨m.1 + 1, (by omega)⟩ : Fin n)
+termination_by n - m.1
+decreasing_by have := m.isLt; omega
+
+/-- A uniform sample from `Fin (n + 1)`: the Bernoulli implementation of `unifSpec`'s oracle. -/
+def split (n : ℕ) : BernoulliM (Fin (n + 1)) :=
+  split' (0 : Fin (n + 1))
+
 instance : OracleBernoulliInterpretable unifSpec where
   interp_op := split
 

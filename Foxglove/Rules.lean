@@ -766,7 +766,7 @@ theorem C_PROJ_OF_CONVEX {μ : PMF (α × β)} {K : α → FProp}
           rw [← h, hmarg]
           exact ENNReal.le_tsum (f := fun b ↦ μ (a, b)) b
         rw [h, zero_mul, hab]
-      · simp only [cond, dif_neg h]
+      · simp only [cond, dite_eq_right h]
         rw [PMF.filter_apply, hind,
           Set.indicator_of_mem (s := {p : α × β | p.1 = a}) (show (a, b).1 = a from rfl),
           mul_comm, mul_assoc, ENNReal.inv_mul_cancel h (PMF.apply_ne_top _ _), mul_one]
@@ -823,12 +823,42 @@ theorem C_DIST_PROJ {A B C : Type} {μ₁ : PMF (A × B)} {μ₂ : A → PMF C} 
     fun a ↦ fun ν ↦ DIST_CONVEX (μ := ν) (E := E a) (μ' := μ₂ a)
   exact h
 
+/-- `c-bind` (Amaryllis, Fig. 1). -/
+theorem C_BIND {κ : α → PMF β} {X : RV β} : 𝒞⟨μ⟩ v; X ~ κ v ⊢ X ~ μ.bind κ := by
+  have hw : ∀ p : β × α, ((μ -< κ).map Prod.swap) p = (μ -< κ) p.swap := by
+    intro p
+    rw [PMF.map_apply, tsum_eq_single p.swap]
+    · simp
+    · intro q hq
+      rw [ite_eq_right fun h ↦ hq (by rw [h, Prod.swap_swap])]
+  have hbij : Set.BijOn Prod.swap ((μ -< κ).map Prod.swap).support (μ -< κ).support := by
+    refine ⟨fun p hp ↦ ?_, Prod.swap_injective.injOn, fun q hq ↦ ⟨q.swap, ?_, Prod.swap_swap q⟩⟩
+    · rw [PMF.mem_support_iff] at hp ⊢
+      rwa [hw] at hp
+    · rw [PMF.mem_support_iff] at hq ⊢
+      rwa [hw, Prod.swap_swap]
+  have hμ : ((μ -< κ).map Prod.swap) ∘ π₁⁻¹ = μ.bind κ := by
+    rw [PMF.map_comp]
+    exact fuse_map_snd
+  refine entails_trans (C_CONS fun _ ↦ C_UNIT_R.1) ?_
+  refine entails_trans (C_FUSE (κ := κ) (K := fun p ↦ ⌈X = p.2⌉)).1 ?_
+  refine entails_trans (C_TRANSF (f := Prod.swap) hbij fun p _ ↦ hw p) ?_
+  refine entails_trans
+    (C_SURE_PROJ (μ := (μ -< κ).map Prod.swap) (E := fun w ρ ↦ X ρ = w)).1 ?_
+  rw [hμ]
+  exact C_UNIT_R.2
+
 /-! ### Ownership and laws -/
 
 /-- `sure-dirac` (Bluebell, Fig. 11). -/
 theorem SURE_DIRAC {v : α} : E ~ δ v ⊣⊢ ⌈E = v⌉ := by
   rw [hasDistribution_dirac]
   exact ⟨entails_rfl, entails_rfl⟩
+
+/-- `distr-dirac` (Amaryllis, Fig. 1). -/
+theorem DIST_DIRAC {v : α} : ⊢ (fun _ : Ω ↦ v) ~ δ v :=
+  entails_trans (liftPred_of_forall (a := fun ω ↦ LiftBinary.lift (fun _ : Ω ↦ v) v ω)
+    fun _ ↦ rfl) SURE_DIRAC.2
 
 /-- `sure-eq-inj` (Bluebell, Fig. 11). -/
 theorem SURE_EQ_INJ {E : RV α} {v v' : α} : ⌈(E = v)⌉ ∗ ⌈(E = v')⌉ ⊢ ⌜v = v'⌝ :=
@@ -897,8 +927,7 @@ theorem SURE_SUB {E₁ : RV α} {E₂ : RV β} {f : α → β} :
   refine ⟨_, ⟨y, rfl⟩, m, 1, ?_, ⟨_, ⟨hbfy, rfl⟩, le_of_eq hmy⟩, ?_, ?_⟩
   · rw [mul_one]
   · exact hfE₁.congr hae.symm
-  · show @MeasureTheory.Measure.map Ω β y.ms ⊤ E₂ y.μ = (μ.map f).toMeasureWithMs ⊤
-    rw [MeasureTheory.Measure.map_congr hae, ← AEMeasurable.map_map_of_aemeasurable hf.aemeasurable ham₁y,
+  · rw [MeasureTheory.Measure.map_congr hae, ← AEMeasurable.map_map_of_aemeasurable hf.aemeasurable ham₁y,
       hlaw₁y, PMF.toMeasureWithMs, PMF.toMeasureWithMs]
     exact PMF.toMeasure_map (p := μ) (hf := hf)
 
@@ -1086,8 +1115,20 @@ theorem WPFlip {p : I} :
   rw [flipMeasure_apply_singleton p b (measurableSet_prefixEqEvent_singleton b),
     flipWeight_eq_bernoulliWeights]
 
-/-- `wp-bind` (Amaryllis, Fig. 2), for the monadic `wp`: the continuation runs once per fibre
-of `C`'s law, and the conclusion keeps the conditioning. -/
+/-- `wp-bind` (Amaryllis, Fig. 2), for the monadic `wp`, at a law `ν` of `C`'s result: the
+continuation runs once per fibre, conditioning in and conditioning out. -/
+theorem WPBindCond {α β : Type} {m : Type → Type} [Monad m]
+    [Interp.LawfulBernoulliInterpretable m] [Inhabited α] [Inhabited β]
+    {C : m α} {F : α → m β} {ν : PMF α} {Q : α → RV β → FProp}
+    (hQ : ∀ v, AEProper (Q v)) :
+    wp C (fun X ↦ 𝒞⟨ν⟩ v; (⌈X = v⌉ ∗ wp (F v) (Q v)))
+      ⊢ wp (C >>= F) (fun Y ↦ 𝒞⟨ν⟩ v; Q v Y) := by
+  intro a hva ha μ₀ c hvalid hle
+  obtain ⟨b, hbc, hvb, hbms, hbQ⟩ := ha μ₀ c hvalid hle
+  exact WPBindC_core hQ μ₀ hvalid a c hva hle b hbc hvb hbms hbQ
+
+/-- `wp-bind` (Amaryllis, Fig. 2), for the monadic `wp`, at whatever law the premise
+conditions on. -/
 theorem WPBindC {α β : Type} {m : Type → Type} [Monad m]
     [Interp.LawfulBernoulliInterpretable m] [Inhabited α] [Inhabited β]
     {C : m α} {F : α → m β} {Q : α → RV β → FProp}
@@ -1096,7 +1137,10 @@ theorem WPBindC {α β : Type} {m : Type → Type} [Monad m]
       ⊢ wp (C >>= F) (fun Y ↦ iprop(∃ ν : PMF α, 𝒞⟨ν⟩ v; Q v Y)) := by
   intro a hva ha μ₀ c hvalid hle
   obtain ⟨b, hbc, hvb, hbms, hbQ⟩ := ha μ₀ c hvalid hle
-  exact WPBindC_core hQ μ₀ hvalid a c hva hle b hbc hvb hbms hbQ
+  obtain ⟨ν, hbQ'⟩ := own_exists_elim hvb hbQ
+  obtain ⟨b', h₁, h₂, h₃, h₄⟩ := WPBindC_core hQ μ₀ hvalid a c hva hle b hbc hvb hbms hbQ'
+  refine ⟨b', h₁, h₂, h₃, entails_trans h₄ ?_⟩
+  exact exists_intro (Ψ := fun ν' : PMF α ↦ 𝒞⟨ν'⟩ v; Q v (result (run (C >>= F) μ₀))) ν
 
 /-- `wp-bind` with the conditioning collapsed, which needs `Convex` (`WPBind_counterexample`). -/
 theorem WPBind {α β : Type} {m : Type → Type} [Monad m]

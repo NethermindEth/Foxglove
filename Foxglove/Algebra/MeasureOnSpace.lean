@@ -711,8 +711,7 @@ theorem independentProduct_assoc [Inhabited Ω] {pq p q s r : PSpace Ω}
       aesop
       have := @mem_sup_inter Ω p.1.ms q.1.ms u v hu hv
       have : p.1.ms ⊔ q.1.ms = pq.1.ms := by rw [h_pq.1]
-      rw [←this]
-      assumption
+      rwa [← this]
       exact hw
       {
         intro t ht h
@@ -882,8 +881,7 @@ theorem PSpace.dependent_mono_left {p q r qr : PSpace Ω}
           rw [hx.2]
           aesop
           have := @mem_sup_l Ω q.1.ms r.1.ms v hv
-          rw [hqr.1]
-          assumption
+          rwa [hqr.1]
         have : x'.1.μ (u ∩ v) = x.1.μ (u ∩ v) := by aesop
         grind
       have : p.1.μ u * qr.1.μ (v ∩ Set.univ) = p.1.μ u * (q.1.μ v * r.1.μ Set.univ) := by

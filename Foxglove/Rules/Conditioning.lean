@@ -178,11 +178,16 @@ lemma valuePost_const {α : Type} (x : α) (Q : α → FProp) : Q x ⊢ valuePos
           simp [LiftUnary.lift]
       · iexact HQ
 
-/-- What owning a resource that satisfies `valuePost X K` provides: a conditioning whose
-fibres each make `X` sure and carry `K` of that value. -/
-lemma valuePost_elim {β : Type} {X : RV β} {K : β → FProp} {b : BoundedFootprintSpace Bool}
-    (hv : ✓b) (h : own b ⊢ valuePost X K) :
-    ∃ (ν : PMF β) (mm : PSpace Ω) (hbf : HasBoundedFootprint (mm : PSp Ω))
+/-- `valuePost` at a given law `ν` of `X`: on the fibre at `x` the result surely is `x` and
+`Q x` holds.  `valuePost X Q` is `∃ ν, condValue ν X Q`. -/
+def condValue {α : Type} (ν : PMF α) (X : RV α) (Q : α → FProp) : FProp :=
+  𝒞⟨ν⟩ x; (⌈fun ρ ↦ X ρ = x⌉ ∗ Q x)
+
+/-- What owning a resource that satisfies `condValue ν X K` provides: the conditioned space
+as a `ν`-mixture of a kernel, whose fibres each make `X` sure and carry `K` of that value. -/
+lemma condValue_elim {β : Type} {X : RV β} {K : β → FProp} {ν : PMF β}
+    {b : BoundedFootprintSpace Bool} (hv : ✓b) (h : own b ⊢ condValue ν X K) :
+    ∃ (mm : PSpace Ω) (hbf : HasBoundedFootprint (mm : PSp Ω))
       (κ : ProbabilityTheory.TrivialMarkovKernel β mm) (R : BoundedFootprintSpace Bool),
       mm.μ = (ν.toMeasureWithMs ⊤).bind κ ∧
       (⟨(mm : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool) * R ≤ b ∧
@@ -192,8 +197,7 @@ lemma valuePost_elim {β : Type} {X : RV β} {K : β → FProp} {b : BoundedFoot
     choose U hU using fun v ↦ Quotient.exists_rep (K v)
     exact ⟨U, funext fun v ↦ (hU v).symm⟩
   subst hU
-  obtain ⟨q, ⟨ν, hq⟩, hqb⟩ := h b hv (le_refl b)
-  obtain ⟨q', ⟨mm, hq'⟩, hq'b⟩ := (Quotient.exact hq).2 b hv hqb
+  obtain ⟨q', ⟨mm, hq'⟩, hq'b⟩ := h b hv (le_refl b)
   obtain ⟨q'', ⟨κ, hq''⟩, hq''b⟩ := (Quotient.exact hq').2 b hv hq'b
   obtain ⟨b₁, b₂, hle, hown, hrest⟩ := (Quotient.exact hq'').2 b hv hq''b
   obtain ⟨c₁, c₂, hle', hmix, hall⟩ := hrest
@@ -201,7 +205,7 @@ lemma valuePost_elim {β : Type} {X : RV β} {K : β → FProp} {b : BoundedFoot
   have hvb₁ : ✓b₁ := valid_mono (le_trans (le_mul_of_one_le PSp.one_le) hle) hv
   have hmb₁ := (Quotient.exact hr₁).2 b₁ hvb₁ hb₁
   have hc₂b₂ : c₂ ≤ b₂ := le_trans (by rw [mul_comm]; exact le_mul_of_one_le PSp.one_le) hle'
-  refine ⟨ν, mm, hbfm, κ, c₂, hmix, ?_, ?_⟩
+  refine ⟨mm, hbfm, κ, c₂, hmix, ?_, ?_⟩
   · exact le_trans (mul_le_mul_right_le hmb₁ c₂) (le_trans (mul_le_mul_left_le hc₂b₂ b₁) hle)
   · intro v hv' hk y hvy hy
     have hvc₂K : ✓(c₂ * ⟨((κ v : PSpace Ω) : PSp Ω), hk⟩) := valid_mono hy hvy
@@ -209,6 +213,19 @@ lemma valuePost_elim {β : Type} {X : RV β} {K : β → FProp} {b : BoundedFoot
       (show (⟨((κ v : PSpace Ω) : PSp Ω), hk⟩ : BoundedFootprintSpace Bool)
         ≤ ⟨((κ v : PSpace Ω) : PSp Ω), hk⟩ from le_refl _)⟩
     exact (UpperSetBI.sep _ _).upper' hy hmem
+
+/-- What owning a resource that satisfies `valuePost X K` provides: `condValue_elim` at the
+law the resource conditions on. -/
+lemma valuePost_elim {β : Type} {X : RV β} {K : β → FProp} {b : BoundedFootprintSpace Bool}
+    (hv : ✓b) (h : own b ⊢ valuePost X K) :
+    ∃ (ν : PMF β) (mm : PSpace Ω) (hbf : HasBoundedFootprint (mm : PSp Ω))
+      (κ : ProbabilityTheory.TrivialMarkovKernel β mm) (R : BoundedFootprintSpace Bool),
+      mm.μ = (ν.toMeasureWithMs ⊤).bind κ ∧
+      (⟨(mm : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool) * R ≤ b ∧
+      ∀ v ∈ ν.support, ∀ hk : HasBoundedFootprint ((κ v : PSpace Ω) : PSp Ω),
+        own (R * ⟨((κ v : PSpace Ω) : PSp Ω), hk⟩) ⊢ iprop(⌈fun ρ ↦ X ρ = v⌉ ∗ K v) := by
+  obtain ⟨ν, h'⟩ := own_exists_elim hv h
+  exact ⟨ν, condValue_elim hv h'⟩
 
 /-- An assertion recoverable from the fibres of any conditioning (Amaryllis's *strongly
 convex* assertions).  `WPBind` needs it to collapse the conditioning `WPBindC` returns;

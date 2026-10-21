@@ -1,6 +1,9 @@
 module
 
 public import Foxglove.Rules
+public import Foxglove.Rules.WP.Post
+public import Foxglove.Interp.OracleComp.Basic
+public import Foxglove.Interp.Bernoulli.Helper
 
 @[expose] public section
 namespace Foxglove
@@ -95,6 +98,137 @@ theorem true_subst_star (h : Q ⊣⊢ ftrue) : P ⊢ P ∗ Q := by
   isplitl [h₁]
   · iexact h₁
   · exact entails_trans entails_ftrue h.2
+
+
+/-! ### Sampling in `OracleComp unifSpec`
+
+The uniform selection oracle of `unifSpec` (VCVio's `$[0..n]`), implemented by rejection
+sampling on coin flips (`Interp.split`). -/
+
+section Sampling
+
+open Interp Interp.Helper
+open scoped ENNReal
+
+/-- Rejection sampling from `m` upwards is uniform on `{m, …, N}`: `WPFlip` for the coin,
+`WPBindCond` to sequence it with the two continuations, `C_BIND` to mix their laws, by
+induction on the number of values left. -/
+theorem wp_split' {N : ℕ} :
+    ∀ (k : ℕ) (m : Fin (N + 1)), N + 1 - m.1 ≤ k →
+      ⊢ wp (split' m)
+          (fun X ↦ X ~ PMF.uniformOfFinset (Finset.Ici m) Finset.nonempty_Ici) := by
+  intro k
+  induction k with
+  | zero => intro m hk; exact absurd m.isLt (by omega)
+  | succ k ih =>
+    intro m hk
+    have hU : ∀ i : Fin (N + 1),
+        PMF.uniformOfFinset (Finset.Ici m) Finset.nonempty_Ici i
+          = if m ≤ i then ((N + 1 - m.1 : ℕ) : ℝ≥0∞)⁻¹ else 0 := fun i ↦ by
+      simp only [PMF.uniformOfFinset_apply, Finset.mem_Ici, Fin.card_Ici]
+    by_cases h₁ : N + 1 = m.1 + 1
+    · -- nothing above `m`: the program returns `m`, and the uniform law is `δ m`
+      have hsplit : split' m = (pure m : BernoulliM (Fin (N + 1))) := by
+        rw [split', dite_eq_left h₁]
+      have hlaw : PMF.uniformOfFinset (Finset.Ici m) Finset.nonempty_Ici = δ m := by
+        refine PMF.ext fun i ↦ ?_
+        rw [hU, PMF.pure_apply]
+        have hi := i.isLt
+        by_cases hi' : i = m
+        · rw [ite_eq_left (le_of_eq hi'.symm), ite_eq_left hi', show N + 1 - m.1 = 1 by omega]
+          simp
+        · rw [ite_eq_right fun (h : m ≤ i) ↦ hi' (Fin.ext (le_antisymm (by omega) h)),
+            ite_eq_right hi']
+      rw [hsplit, hlaw]
+      iapply (WPPure (Q := fun Y ↦ Y ~ δ m))
+      exact DIST_DIRAC
+    · -- flip a coin: report `m` with probability `1 / (N + 1 - m)`, otherwise recurse
+      have hm'lt : m.1 + 1 < N + 1 := by have := m.isLt; omega
+      have hK1 : 1 ≤ N + 1 - m.1 := by have := m.isLt; omega
+      have hK2 : 2 ≤ N + 1 - m.1 := by have := m.isLt; omega
+      set pr : unitInterval := ⟨((mkRat 1 (N + 1 - m.1) : ℚ) : ℝ), mkRat_mem_I hK1⟩ with hpr
+      set m' : Fin (N + 1) := ⟨m.1 + 1, hm'lt⟩ with hm'
+      set Ber : PMF Bool :=
+        bernoulliWeights (unitInterval.toNNReal pr) (toNNReal_le_one pr) with hBer
+      set κ : Bool → PMF (Fin (N + 1)) := fun b ↦
+        if b then δ m else PMF.uniformOfFinset (Finset.Ici m') Finset.nonempty_Ici
+        with hκ
+      have hsplit : split' m = Interp.flip pr >>= fun b ↦
+          if b then (pure m : BernoulliM (Fin (N + 1))) else split' m' := by
+        rw [split', dite_eq_right h₁]
+      have hp : (unitInterval.toNNReal pr : ℝ≥0∞) = ((N + 1 - m.1 : ℕ) : ℝ≥0∞)⁻¹ :=
+        toNNReal_mkRat (N + 1 - m.1) (by omega) _
+      -- the two branches' laws mix to the uniform law
+      have hmix : Ber.bind κ
+          = PMF.uniformOfFinset (Finset.Ici m) Finset.nonempty_Ici := by
+        refine PMF.ext fun i ↦ ?_
+        rw [PMF.bind_apply, tsum_bool, hU i]
+        simp only [hBer, hκ, hm', bernoulliWeights_apply, Bool.cond_false, Bool.cond_true,
+          Bool.false_eq_true, ↓reduceIte, PMF.pure_apply, PMF.uniformOfFinset_apply,
+          Finset.mem_Ici, Fin.card_Ici, ENNReal.coe_sub, ENNReal.coe_one, hp]
+        have hi := i.isLt
+        rcases lt_trichotomy i.1 m.1 with hlt | heq | hgt
+        · have h1 : ¬ i = m := fun h ↦ by rw [h] at hlt; exact lt_irrefl _ hlt
+          have h2 : ¬ m ≤ i := by rw [Fin.le_def]; omega
+          have h3 : ¬ (⟨m.1 + 1, hm'lt⟩ : Fin (N + 1)) ≤ i := by
+            rw [Fin.le_def]; show ¬ m.1 + 1 ≤ i.1; omega
+          simp only [eq_false h1, eq_false h2, eq_false h3, ↓reduceIte, mul_zero, add_zero]
+        · have h1 : i = m := Fin.ext heq
+          have h2 : m ≤ i := le_of_eq h1.symm
+          have h3 : ¬ (⟨m.1 + 1, hm'lt⟩ : Fin (N + 1)) ≤ i := by
+            rw [Fin.le_def]; show ¬ m.1 + 1 ≤ i.1; omega
+          simp only [eq_true h1, eq_true h2, eq_false h3, ↓reduceIte, mul_zero, mul_one,
+            zero_add]
+        · have h1 : ¬ i = m := fun h ↦ by rw [h] at hgt; exact lt_irrefl _ hgt
+          have h2 : m ≤ i := by rw [Fin.le_def]; omega
+          have h3 : (⟨m.1 + 1, hm'lt⟩ : Fin (N + 1)) ≤ i := by
+            rw [Fin.le_def]; show m.1 + 1 ≤ i.1; omega
+          simp only [eq_false h1, eq_true h2, eq_true h3, ↓reduceIte, mul_zero, add_zero]
+          rw [show N + 1 - (m.1 + 1) = N + 1 - m.1 - 1 by omega]
+          exact mix_step (N + 1 - m.1) hK2
+      -- each continuation has its law: `pure m` by `WPPure`, the recursive call by induction
+      have hcont : ∀ v : Bool,
+          ⊢ wp (if v then (pure m : BernoulliM (Fin (N + 1))) else split' m')
+              (fun Y ↦ Y ~ κ v) := by
+        intro v
+        cases v
+        · exact ih m' (by show N + 1 - (m.1 + 1) ≤ k; omega)
+        · show ⊢ wp (pure m : BernoulliM (Fin (N + 1))) (fun Y ↦ Y ~ δ m)
+          iapply (WPPure (Q := fun Y ↦ Y ~ δ m))
+          exact DIST_DIRAC
+      have hfib : ∀ (X : RV Bool) (v : Bool), (⌈X = v⌉ : FProp) ⊢
+          ⌈X = v⌉ ∗ wp (if v then (pure m : BernoulliM (Fin (N + 1))) else split' m')
+            (fun Y ↦ Y ~ κ v) := by
+        intro X v
+        iintro H
+        isplitl [H]
+        · iexact H
+        · exact hcont v
+      rw [hsplit, ← hmix]
+      iapply (WPCons fun Y ↦ C_BIND (μ := Ber) (κ := κ) (X := Y))
+      iapply (WPBindCond (ν := Ber) fun v ↦ aeProper_hasDistribution (κ v))
+      iapply (WPCons fun X ↦ entails_trans (C_UNIT_R (E := X) (μ := Ber)).1 (C_CONS (hfib X)))
+      exact WPFlip
+
+/-- **Uniform sampling.**  The query `unifSpec.query n` reports a value uniformly distributed
+on `Fin (n + 1)`: it interprets to `split n`, rejection sampling from `0` (`wp_split'`). -/
+theorem wp_unifSpec_query (n : ℕ) :
+    ⊢ wp (unifSpec.query n : OracleComp unifSpec (Fin (n + 1)))
+        (fun X ↦ X ~ PMF.uniformOfFintype (Fin (n + 1))) := by
+  have hq : BernoulliInterpretable.interp (unifSpec.query n : OracleComp unifSpec (Fin (n + 1)))
+      = split n := by
+    show (split n >>= fun x ↦ pure x) = split n
+    exact bind_pure _
+  have hlaw : PMF.uniformOfFintype (Fin (n + 1))
+      = PMF.uniformOfFinset (Finset.Ici (0 : Fin (n + 1))) Finset.nonempty_Ici := by
+    refine PMF.ext fun i ↦ ?_
+    simp [PMF.uniformOfFintype_apply, PMF.uniformOfFinset_apply]
+  show ⊢ wp (BernoulliInterpretable.interp (unifSpec.query n : OracleComp unifSpec (Fin (n + 1))))
+    (fun X ↦ X ~ PMF.uniformOfFintype (Fin (n + 1)))
+  rw [hq, hlaw]
+  exact wp_split' (n + 1) 0 (by simp)
+
+end Sampling
 
 end
 

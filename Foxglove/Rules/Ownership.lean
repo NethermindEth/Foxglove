@@ -64,6 +64,16 @@ lemma msOf_mul {x y : BoundedFootprintSpace Bool} {p q : PSpace Ω}
   rw [msOf_of_val hz]
   exact (PSp.mul_inversion hz').1
 
+/-- Owning a resource that satisfies an existential satisfies one of its instances. -/
+lemma own_exists_elim {γ : Type} {P : γ → FProp} {b : BoundedFootprintSpace Bool} (hv : ✓b)
+    (h : own b ⊢ iprop(∃ x, P x)) : ∃ x, own b ⊢ P x := by
+  obtain ⟨U, hU⟩ : ∃ U : γ → UpperSet (BoundedFootprintSpace Bool), P = fun x ↦ fmk (U x) := by
+    choose U hU using fun x ↦ Quotient.exists_rep (P x)
+    exact ⟨U, funext fun x ↦ (hU x).symm⟩
+  subst hU
+  obtain ⟨q, ⟨x, hq⟩, hqb⟩ := h b hv (le_refl b)
+  exact ⟨x, fun y hvy hy ↦ (Quotient.exact hq).2 y hvy (q.upper' hy hqb)⟩
+
 end
 
 end Foxglove

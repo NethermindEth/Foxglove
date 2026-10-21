@@ -168,6 +168,7 @@ unaffected. -/
 
 /-- The σ-algebra a resource measures.  `⊤` on the undefined resource, which keeps `msOf`
 monotone and makes the clause below vacuous there. -/
+@[instance_reducible]
 def msOf (x : BoundedFootprintSpace Bool) : MeasurableSpace Ω :=
   match (x : PSp Ω) with
   | none => ⊤

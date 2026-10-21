@@ -1,6 +1,7 @@
 module
 
 public import Foxglove.Interp.Bernoulli.Helper
+public import Foxglove.Interp.OracleComp.Basic
 
 
 @[expose] public section
