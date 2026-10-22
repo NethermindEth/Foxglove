@@ -228,6 +228,15 @@ def wp {α : Type} [Inhabited α] {m : Type → Type} [Interp.BernoulliInterpret
 
 macro "⦃" x:Lean.Parser.Term.funBinder ", " Q:term "⦄" : term => `(fun $x ↦ iprop($Q))
 
+open Lean PrettyPrinter Delaborator SubExpr Elab Term in
+@[app_unexpander wp]
+meta def unexpWp : Unexpander
+  | `($_ $t $Q) => do
+    match Q with
+    | `(fun $x ↦ $y) => `($(mkIdent `wp) $t ⦃$x, $y⦄)
+    | _              => `($(mkIdent `wp) $t $Q)
+  | `($_) => throw ()
+
 end
 
 section
