@@ -3,6 +3,7 @@ module
 public import Foxglove.Rules
 public import Foxglove.Rules.WP.Post
 public import Foxglove.Interp.OracleComp.Basic
+public import Foxglove.Interp.OracleComp.WP
 public import Foxglove.Interp.Bernoulli.Helper
 public import Foxglove.Algebra.UniformPMF
 public import Mathlib.Algebra.Field.ZMod
@@ -245,6 +246,14 @@ theorem wp_unifSpec_query (n : ℕ) :
     ⦃X, X ~ PMF.uniformOfFintype' (Fin (n + 1))⦄
   rw [hq, hlaw]
   exact wp_split' (n + 1) 0 (by simp)
+
+/-- **Uniform sampling, from VCVio.**  The same specification, read off VCVio's measure of the
+query (`OracleComp.evalDist_liftM_unifSpec_query`) through `wp_of_evalDist`, with no reasoning
+about `split` in the logic. -/
+example (n : ℕ) :
+    ⊢ wp (unifSpec.query n : OracleComp unifSpec (Fin (n + 1)))
+        ⦃X, X ~ PMF.uniformOfFintype' (Fin (n + 1))⦄ :=
+  wp_of_evalDist fun i ↦ by simp [ProbabilityTheory.uniformOn_univ]
 
 /-- **Sequencing two samplers.**  The law of `C >>= F` is the law of `C` bound with the laws
 of the continuations: `WP_BIND_COND` at the law of `C`, `C_BIND` to recollect the fibres. -/
