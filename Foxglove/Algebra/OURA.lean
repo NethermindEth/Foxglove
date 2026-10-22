@@ -10,7 +10,7 @@ public import Iris.BI.BI
 public import Mathlib.Algebra.Group.Pi.Basic
 public import Mathlib.Algebra.Group.Prod
 public import Mathlib.Algebra.Order.Monoid.Unbundled.Basic
-public import Mathlib.Data.Setoid.Basic
+public import Mathlib.Order.Setoid.Basic
 public import Mathlib.Order.UpperLower.CompleteLattice
 
 /-!
@@ -83,7 +83,7 @@ instance instOFEDiscrete : OFE.Discrete M := ⟨id⟩
 instance instCMRA : CMRA M :=
   CMRA.ofDiscreteTotal (fun _ ↦ 1) (· * ·) valid
     (fun x y z ↦ (mul_assoc x y z).symm) mul_comm one_mul (fun _ ↦ rfl)
-    (fun _ _ _ ↦ ⟨1, (one_mul 1).symm⟩) (fun _ _ ↦ valid_mul)
+    (fun _ _ ↦ valid_mul) (fun _ _ ↦ ⟨1, (one_mul 1).symm⟩)
 
 @[simp]
 abbrev carrier := M
@@ -249,14 +249,11 @@ lemma quotientMul_commutes_out
 
 instance instUCMRA
   {M : Type*} [ra : OrderedUnitalResourceAlgebra M]
-  : Iris.UCMRA M := {
+  : Iris.UCMRA M := Iris.UORA.ofUCMRAData {
   unit := ra.one
   unit_valid := ra.valid_one
-  unit_left_id := by
-    intro x
-    have : One.one * x = x := by change 1 * x = x; aesop
-    aesop
-  pcore_unit := by rfl
+  unit_left_id := one_mul _
+  pcore_unit := rfl
 }
 
 end OrderedUnitalResourceAlgebra
