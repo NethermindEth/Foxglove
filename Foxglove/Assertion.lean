@@ -145,6 +145,29 @@ syntax (name := liftStx) (priority := high) "⌈" term "⌉" : term
 macro_rules (kind := liftStx)
   | `(⌈$t⌉) => `(LiftPred.lift fun ω ↦ lift($t, ω))
 
+section
+
+open Lean PrettyPrinter Delaborator SubExpr Elab Term
+
+@[app_unexpander LiftPred.lift]
+meta def unexpLiftPred : Unexpander
+  | `($_ fun $_ ↦ $pred) => do `(⌈$pred⌉) 
+  | `($_) => throw ()
+
+@[delab app.Foxglove.LiftBinary.lift]
+meta def unexpLiftBinary : Delab := do
+  let expr ← getExpr
+  let_expr Foxglove.LiftBinary.lift _ _ _ lhs rhs _ := expr | failure
+  `($(←delab lhs) = $(←delab rhs))
+
+@[delab app.Foxglove.LiftUnary.lift]
+meta def unexpLiftUnary : Delab := do
+  let expr ← getExpr
+  let_expr Foxglove.LiftUnary.lift _ _ x _ := expr | failure
+  `($(←delab x))
+
+end
+
 /-- Assertions of the shape `∃ P, ownP P ∗ ⌜φ P⌝` -- the shape `hasDistribution` and
 `liftPred` share -- with pointwise equivalent side conditions are the same assertion. -/
 theorem ownP_pure_congr {φ ψ : PSpace Ω → Prop} (h : ∀ P, φ P ↔ ψ P) :
