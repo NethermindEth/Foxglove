@@ -52,6 +52,8 @@ measure zero are not stepped (`prunePrograms`). The weakest precondition has Blu
 output space), with one extra clause bounding what the witness may measure. Every rule in
 `Rules.lean` is proved against this model, with no axioms beyond Lean's own.
 
+This work was generously funded by the Ethereum Foundation.
+
 ## Layout
 
 | Path | Contents |
