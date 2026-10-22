@@ -233,8 +233,8 @@ open Lean PrettyPrinter Delaborator SubExpr Elab Term in
 meta def unexpWp : Unexpander
   | `($_ $t $Q) => do
     match Q with
-    | `(fun $x ↦ $y) => `($(mkIdent `wp) $t ⦃$x, $y⦄)
-    | _              => `($(mkIdent `wp) $t $Q)
+    | `(fun $x ↦ iprop($y)) => `($(mkIdent `wp) $t ⦃$x, $y⦄)
+    | _                     => `($(mkIdent `wp) $t $Q)
   | `($_) => throw ()
 
 end
