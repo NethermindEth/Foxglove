@@ -522,9 +522,8 @@ theorem wp_mvRootTest_card {n : ℕ} (f : MvPolynomial (Fin n) (ZMod p)) :
 /-- **Schwartz–Zippel.**  A nonzero `f` in `n` variables vanishes at a uniform point of
 `(ZMod p)^n` with probability at most `deg f / p` (`MvPolynomial.schwartz_zippel_totalDegree`).
 By consequence from `wp_mvRootTest_card`. -/
-theorem wp_mvRootTest {n : ℕ} (f : MvPolynomial (Fin n) (ZMod p)) (hf : f ≠ 0) :
-    ⊢ wp (mvRootTest f)
-        ⦃B, ∃ μ : PMF Bool, ⌜μ (true : Bool) ≤ (f.totalDegree : ℝ≥0∞) / p⌝ ∗ B ~ μ⦄ := by
+theorem wp_mvRootTest {n : ℕ} {f : MvPolynomial (Fin n) (ZMod p)} (hf : f ≠ 0) :
+  ⊢ wp (mvRootTest f) ⦃B, ∃ μ : PMF Bool, ⌜μ true ≤ f.totalDegree / p⌝ ∗ B ~ μ⦄ := by
   refine entails_trans (wp_mvRootTest_card f) (WP_CONS fun B ↦ ?_)
   iintro ⟨%μ, %hμ, H⟩
   iexists μ
