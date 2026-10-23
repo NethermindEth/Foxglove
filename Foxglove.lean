@@ -10,7 +10,9 @@ import Foxglove.Example
 import Foxglove.Interp.Bernoulli.Basic
 import Foxglove.Interp.Bernoulli.Example
 import Foxglove.Interp.Bernoulli.Helper
+import Foxglove.Interp.OracleComp.Adequacy
 import Foxglove.Interp.OracleComp.Basic
+import Foxglove.Interp.OracleComp.Expectation
 import Foxglove.Interp.OracleComp.Law
 import Foxglove.Interp.OracleComp.WP
 import Foxglove.RuleProofs

@@ -3,7 +3,7 @@ module
 public import Foxglove.Rules
 public import Foxglove.Rules.WP.Post
 public import Foxglove.Interp.OracleComp.Basic
-public import Foxglove.Interp.OracleComp.WP
+public import Foxglove.Interp.OracleComp.Adequacy
 public import Foxglove.Interp.Bernoulli.Helper
 public import Foxglove.Algebra.UniformPMF
 public import Mathlib.Algebra.Field.ZMod
@@ -407,6 +407,13 @@ theorem wp_rootTest_card (f : Polynomial (ZMod p)) (hf : f ≠ 0) :
     exact rootLaw_true f hf
   · iexact H
 
+/-- **The root test, in VCVio's terms.**  `wp_rootTest_card` read back through adequacy
+(`exists_prEvent_of_wp`): the probability VCVio's semantics gives the report `true`. -/
+theorem prEvent_rootTest (f : Polynomial (ZMod p)) (hf : f ≠ 0) :
+    Pr{let b ← rootTest f}[b = true] = (f.roots.toFinset.card : ℝ≥0∞) / p := by
+  obtain ⟨ν, hν, hD⟩ := exists_prEvent_of_wp (wp_rootTest_card f hf)
+  rw [hD, hν]
+
 /-- **Schwartz–Zippel**, one variable: a nonzero `f` has at most `deg f` distinct roots, so
 `rootTest f` reports `true` with probability at most `deg f / p`.  By consequence from
 `wp_rootTest_card`. -/
@@ -542,6 +549,14 @@ theorem wp_mvRootTest {n : ℕ} {f : MvPolynomial (Fin n) (ZMod p)} (hf : f ≠ 
     rw [hμ]
     exact card_zeros_div_le f hf
   · iexact H
+
+/-- **Schwartz–Zippel, in VCVio's terms.**  `wp_mvRootTest` read back through adequacy
+(`exists_prEvent_of_wp`): VCVio's probability that a nonzero `f` vanishes at a uniform point is
+at most `deg f / p`. -/
+theorem prEvent_mvRootTest_le {n : ℕ} {f : MvPolynomial (Fin n) (ZMod p)} (hf : f ≠ 0) :
+    Pr{let b ← mvRootTest f}[b = true] ≤ f.totalDegree / p := by
+  obtain ⟨ν, hν, hD⟩ := exists_prEvent_of_wp (wp_mvRootTest hf)
+  exact (hD true).trans_le hν
 
 end MvRootTest
 
