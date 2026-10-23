@@ -66,7 +66,13 @@ def jointConditioning {A : Type} (μ : PMF A) (K : A → FProp) : FProp :=
 
 /-- Precedence 36: above `⊢`/`⊣⊢` (29) and `∗`, so that `𝒞⟨μ⟩ v; K₁ v ⊢ 𝒞⟨μ⟩ v; K₂ v` and
 `P ∗ 𝒞⟨μ⟩ v; K v` parse as intended. -/
-notation:36 "𝒞" "⟨" μ "⟩" v:arg ";" K:36 => jointConditioning μ (fun v => iprop(K))
+notation:36 "𝒞" "⟨" μ "⟩ " v:arg "; " K:36 => jointConditioning μ (fun v => iprop(K))
+
+open Lean PrettyPrinter Delaborator SubExpr Elab Term in
+@[app_unexpander jointConditioning]
+meta def unexpJointConditioning : Unexpander
+  | `($_ $μ fun $v ↦ $k) => `(𝒞 ⟨ $μ ⟩ $(⟨v.1⟩) ; $k )
+  | `($_) => throw ()
 
 /-- `E` has the law `μ`: some owned space pushes `E` forward to `μ`. -/
 def hasDistribution {A : Type} (E : RV A) (μ : PMF A) : FProp :=
