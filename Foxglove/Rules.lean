@@ -328,6 +328,11 @@ theorem WP_ST_FLIP {p : I} :
   ⊢ wpSt () (Interp.flip p) ⦃X, (Prod.fst ∘ X) ~ bernoulliWeights p⦄ :=
   Proofs.WP_ST_FLIP
 
+variable {α : Type} [Inhabited α] {m : Type → Type} [Interp.BernoulliInterpretable m]
+         {t : m α} {Q : RV (α × Unit) → FProp} in
+theorem WP_ST_OF_WP : wp t ⦃X, Q fun ω ↦ (X ω, ())⦄ ⊢ wpSt () t Q :=
+  Proofs.WP_ST_OF_WP
+
 end
 
 end Foxglove
