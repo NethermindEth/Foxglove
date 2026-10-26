@@ -31,6 +31,10 @@ abbrev BernoulliM := PFunctor.FreeM BernoulliPFunctor
 class BernoulliInterpretable (m : Type → Type) where
   interp {α : Type} : m α → BernoulliM α
 
+class BernoulliInterpretableState (m : Type → Type) where
+  st : Type
+  interp {α : Type} : m α → StateT st BernoulliM α
+
 /-- `BernoulliM` is its own interpretation. -/
 instance : BernoulliInterpretable BernoulliM where
   interp := id
@@ -51,10 +55,25 @@ class LawfulBernoulliInterpretable (m : Type → Type) [Monad m] extends
     BernoulliInterpretable.interp (t >>= f)
       = BernoulliInterpretable.interp t >>= fun a ↦ BernoulliInterpretable.interp (f a)
 
+class LawfulBernoulliInterpretableState (m : Type → Type) [Monad m] extends
+    BernoulliInterpretableState m where
+  interp_pure {α : Type} (a : α) :
+    BernoulliInterpretableState.interp (pure a : m α) = StateT.lift (PFunctor.FreeM.pure a)
+  interp_bind {α β : Type} (t : m α) (f : α → m β) :
+    BernoulliInterpretableState.interp (t >>= f)
+      = BernoulliInterpretableState.interp t >>= fun a ↦ BernoulliInterpretableState.interp (f a)
+
 /-- `BernoulliM` interprets itself, and does so lawfully. -/
 instance : LawfulBernoulliInterpretable BernoulliM where
   interp_pure _ := rfl
   interp_bind _ _ := rfl
+
+instance {m : Type → Type} [BernoulliInterpretable m] : BernoulliInterpretableState m where
+  st := Unit
+  interp prog := StateT.lift (BernoulliInterpretable.interp prog)
+
+instance {m : Type → Type} [BernoulliInterpretable m] :
+    Inhabited (BernoulliInterpretableState.st m) := inferInstanceAs (Inhabited Unit)
 
 def flip (r : I) : BernoulliM Bool :=
   PFunctor.FreeM.liftBind (BernoulliOps.Flip r) PFunctor.FreeM.pure
