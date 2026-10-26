@@ -1244,6 +1244,25 @@ theorem WP_ST_FLIP {p : I} :
       (μ := (bernoulliWeights p).bind fun a ↦ PMF.pure (a, ()))
     rwa [h] at hX
 
+/-- A stateless program, in the stateless embedding (`st := Unit`): `interp t ()` runs `t` and
+pairs its result with `()`, which lands in the same space and only relabels the result. -/
+theorem WP_ST_OF_WP {α : Type} [Inhabited α] {m : Type → Type} [BernoulliInterpretable m]
+    {t : m α} {Q : RV (α × Unit) → FProp} :
+    wp t ⦃X, Q fun ω ↦ (X ω, ())⦄ ⊢ wpSt () t Q := by
+  intro a hva ha μ₀ c hvalid hle
+  obtain ⟨b, hb₁, hb₂, hb₃, hb₄⟩ := ha μ₀ c hvalid hle
+  have hsp : ((run (BernoulliInterpretable.interp t >>= fun x ↦ pure (x, ())) μ₀).1.toSpace
+      : BoundedFootprintSpace Bool) = (run t μ₀).1.toSpace :=
+    Subtype.ext (run_bind_pure_psp μ₀ hvalid _ _)
+  refine ⟨b, ?_, hb₂, ?_, ?_⟩
+  · show b * c ≤ (run (BernoulliInterpretable.interp t >>= fun x ↦ pure (x, ())) μ₀).1.toSpace
+    rw [hsp]
+    exact hb₁
+  · exact le_trans hb₃ (sup_le_sup_left (freshMs_le_freshMs_bind μ₀ _ _) _)
+  · show own b ⊢ Q (result (run (BernoulliInterpretable.interp t >>= fun x ↦ pure (x, ())) μ₀))
+    rw [result_run_bind_pure μ₀ hvalid]
+    exact hb₄
+
 end WeakestPrecondition
 
 end
