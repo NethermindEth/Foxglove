@@ -1100,11 +1100,8 @@ theorem WP_SAMP {α : Type} [Inhabited α] [Countable α] (t : BernoulliM α) (�
   obtain ⟨b, hb₁, hb₂, hb₃, hb₄⟩ := WPDist_core t ν hν μ₀ hvalid c hcμ
   exact ⟨b, hb₁, hb₂, le_trans hb₃ le_sup_right, hb₄⟩
 
-/-- `wp-samp` (Bluebell, Fig. 10), for a coin. -/
-theorem WP_FLIP {p : I} :
-    ⊢ wp (Interp.flip p)
-        ⦃X, X ~ bernoulliWeights p⦄ := by
-  refine WP_SAMP (Interp.flip p) _ (fun b ↦ ?_)
+/-- The law of a coin. -/
+lemma lawOf_flip (p : I) (b : Bool) : lawOf (Interp.flip p) b = bernoulliWeights p b := by
   unfold lawOf
   have h0 : runValue (Interp.flip p) ⁻¹' {b} = prefixEqEvent [b] := preimage_head b
   rw [h0]
@@ -1112,6 +1109,12 @@ theorem WP_FLIP {p : I} :
   show flipMeasure _ p _ = _
   rw [flipMeasure_apply_singleton p b (measurableSet_prefixEqEvent_singleton b),
     flipWeight_eq_bernoulliWeights]
+
+/-- `wp-samp` (Bluebell, Fig. 10), for a coin. -/
+theorem WP_FLIP {p : I} :
+    ⊢ wp (Interp.flip p)
+        ⦃X, X ~ bernoulliWeights p⦄ :=
+  WP_SAMP (Interp.flip p) _ (lawOf_flip p)
 
 /-- `wp-bind` (Amaryllis, Fig. 2), for the monadic `wp`, at a law `ν` of `C`'s result: the
 continuation runs once per fibre, conditioning in and conditioning out. -/
@@ -1157,6 +1160,108 @@ theorem WP_BIND_DIST {α β : Type} [Inhabited α] [Inhabited β] [Countable β]
   refine WP_SAMP (t >>= f) _ (fun b ↦ ?_)
   rw [lawOf_bind, PMF.bind_apply]
   exact tsum_congr fun a ↦ by rw [hν a, hκ a b]
+
+/-! ### Stateful weakest precondition
+
+`wpSt s t Q` is `wp` of the Bernoulli program `interp t s`, so each rule is the `wp` rule at
+`BernoulliM`, after unfolding `StateT`'s `pure` and `>>=`. -/
+
+theorem wpSt_eq_wp {α : Type} [Inhabited α] {m : Type → Type}
+    [inst : Interp.BernoulliInterpretableState m] [Inhabited inst.st]
+    (s : inst.st) (t : m α) (Q : RV (α × inst.st) → FProp) :
+    wpSt s t Q = wp (BernoulliInterpretableState.interp t s) Q := rfl
+
+lemma interp_pure_apply {α : Type} {m : Type → Type} [Monad m]
+    [inst : Interp.LawfulBernoulliInterpretableState m] (x : α) (s : inst.st) :
+    BernoulliInterpretableState.interp (pure x : m α) s = pure (x, s) := by
+  rw [LawfulBernoulliInterpretableState.interp_pure]; rfl
+
+lemma interp_bind_apply {α β : Type} {m : Type → Type} [Monad m]
+    [inst : Interp.LawfulBernoulliInterpretableState m] (C : m α) (F : α → m β) (s : inst.st) :
+    BernoulliInterpretableState.interp (C >>= F) s
+      = BernoulliInterpretableState.interp C s >>=
+          fun p ↦ BernoulliInterpretableState.interp (F p.1) p.2 := by
+  rw [LawfulBernoulliInterpretableState.interp_bind]; rfl
+
+theorem WP_ST_CONS {α : Type} [Inhabited α] {m : Type → Type} [Monad m]
+    [inst : Interp.LawfulBernoulliInterpretableState m] [Inhabited inst.st]
+    {s : inst.st} {t : m α} {Q Q' : RV (α × inst.st) → FProp} (h : ∀ v, Q v ⊢ Q' v) :
+    iprop(wpSt s t Q) ⊢ wpSt s t Q' :=
+  WP_CONS (m := BernoulliM) h
+
+theorem WP_ST_FRAME {α : Type} [Inhabited α] {m : Type → Type} [Monad m]
+    [inst : Interp.LawfulBernoulliInterpretableState m] [Inhabited inst.st]
+    {P : FProp} {s : inst.st} {t : m α} {Q : RV (α × inst.st) → FProp} :
+    iprop(P ∗ wpSt s t Q) ⊢ wpSt s t ⦃v, P ∗ (Q v)⦄ :=
+  WP_FRAME (m := BernoulliM)
+
+theorem C_WP_ST_SWAP {α β : Type} [Inhabited α] {m : Type → Type} [Monad m]
+    [inst : Interp.LawfulBernoulliInterpretableState m] [Inhabited inst.st]
+    {s : inst.st} {C : m α} {μ : PMF β} {Q : β → RV (α × inst.st) → FProp}
+    (hQ : ∀ v, AEProper (Q v)) :
+    iprop(𝒞⟨μ⟩ v; wpSt s C (Q v)) ⊢ wpSt s C ⦃x, 𝒞⟨μ⟩ v; Q v x⦄ :=
+  C_WP_SWAP (m := BernoulliM) hQ
+
+theorem WP_ST_PURE {α : Type} [Inhabited α] {m : Type → Type} [Monad m]
+    [inst : Interp.LawfulBernoulliInterpretableState m] [Inhabited inst.st]
+    {s : inst.st} {Q : RV (α × inst.st) → FProp} {x : α} :
+    Q (fun _ ↦ (x, s)) ⊢ wpSt s (pure x : m α) Q := by
+  rw [wpSt_eq_wp, interp_pure_apply]
+  exact WP_PURE (m := BernoulliM)
+
+theorem WP_ST_BIND_COND {α β : Type} [Inhabited α] [Inhabited β] {m : Type → Type} [Monad m]
+    [inst : Interp.LawfulBernoulliInterpretableState m] [Inhabited inst.st]
+    {s : inst.st} {C : m α} {F : α → m β} {ν : PMF (α × inst.st)}
+    {Q : α × inst.st → RV (β × inst.st) → FProp} (hQ : ∀ v, AEProper (Q v)) :
+    wpSt s C ⦃X, 𝒞⟨ν⟩ v; (⌈X = v⌉ ∗ wpSt v.2 (F v.1) (Q v))⦄
+      ⊢ wpSt s (C >>= F) ⦃Y, 𝒞⟨ν⟩ v; Q v Y⦄ := by
+  simp only [wpSt_eq_wp, interp_bind_apply]
+  exact WP_BIND_COND (m := BernoulliM) hQ
+
+theorem WP_ST_BIND {α β : Type} [Inhabited α] [Inhabited β] {m : Type → Type} [Monad m]
+    [inst : Interp.LawfulBernoulliInterpretableState m] [Inhabited inst.st]
+    {s : inst.st} {C : m α} {F : α → m β} {Q : RV (β × inst.st) → FProp}
+    (hQ : AEProper Q) (hC : ∀ X, Convex (Q X)) :
+    wpSt s C ⦃X, valuePost X (fun v ↦ wpSt v.2 (F v.1) Q)⦄ ⊢ wpSt s (C >>= F) Q := by
+  simp only [wpSt_eq_wp, interp_bind_apply]
+  exact WP_BIND (m := BernoulliM) hQ hC
+
+/-- `wp-samp` for a coin, in the stateless embedding (`st := Unit`). -/
+theorem WP_ST_FLIP {p : I} :
+    ⊢ wpSt () (Interp.flip p) ⦃X, (Prod.fst ∘ X) ~ bernoulliWeights p⦄ := by
+  rw [wpSt_eq_wp]
+  refine entails_trans (WP_BIND_DIST (Interp.flip p) (fun a ↦ pure (a, ()))
+    (bernoulliWeights p) (fun a ↦ PMF.pure (a, ())) (lawOf_flip p) (fun a b ↦ ?_))
+    (WP_CONS fun X ↦ ?_)
+  · show lawOf (PFunctor.FreeM.pure (a, ()) : BernoulliM (Bool × Unit)) b = _
+    rw [lawOf_pure, PMF.pure_apply]
+  · have h : PMF.map Prod.fst ((bernoulliWeights p).bind fun a ↦ PMF.pure (a, ()))
+        = bernoulliWeights p := by
+      rw [PMF.map_bind]
+      simp only [PMF.pure_map]
+      exact PMF.bind_pure _
+    have hX := DIST_FUN (E := X) (f := Prod.fst)
+      (μ := (bernoulliWeights p).bind fun a ↦ PMF.pure (a, ()))
+    rwa [h] at hX
+
+/-- A stateless program, in the stateless embedding (`st := Unit`): `interp t ()` runs `t` and
+pairs its result with `()`, which lands in the same space and only relabels the result. -/
+theorem WP_ST_OF_WP {α : Type} [Inhabited α] {m : Type → Type} [BernoulliInterpretable m]
+    {t : m α} {Q : RV (α × Unit) → FProp} :
+    wp t ⦃X, Q fun ω ↦ (X ω, ())⦄ ⊢ wpSt () t Q := by
+  intro a hva ha μ₀ c hvalid hle
+  obtain ⟨b, hb₁, hb₂, hb₃, hb₄⟩ := ha μ₀ c hvalid hle
+  have hsp : ((run (BernoulliInterpretable.interp t >>= fun x ↦ pure (x, ())) μ₀).1.toSpace
+      : BoundedFootprintSpace Bool) = (run t μ₀).1.toSpace :=
+    Subtype.ext (run_bind_pure_psp μ₀ hvalid _ _)
+  refine ⟨b, ?_, hb₂, ?_, ?_⟩
+  · show b * c ≤ (run (BernoulliInterpretable.interp t >>= fun x ↦ pure (x, ())) μ₀).1.toSpace
+    rw [hsp]
+    exact hb₁
+  · exact le_trans hb₃ (sup_le_sup_left (freshMs_le_freshMs_bind μ₀ _ _) _)
+  · show own b ⊢ Q (result (run (BernoulliInterpretable.interp t >>= fun x ↦ pure (x, ())) μ₀))
+    rw [result_run_bind_pure μ₀ hvalid]
+    exact hb₄
 
 end WeakestPrecondition
 

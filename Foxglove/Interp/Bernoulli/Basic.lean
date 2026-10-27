@@ -31,6 +31,10 @@ abbrev BernoulliM := PFunctor.FreeM BernoulliPFunctor
 class BernoulliInterpretable (m : Type → Type) where
   interp {α : Type} : m α → BernoulliM α
 
+class BernoulliInterpretableState (m : Type → Type) where
+  st : Type
+  interp {α : Type} : m α → StateT st BernoulliM α
+
 /-- `BernoulliM` is its own interpretation. -/
 instance : BernoulliInterpretable BernoulliM where
   interp := id
@@ -51,10 +55,38 @@ class LawfulBernoulliInterpretable (m : Type → Type) [Monad m] extends
     BernoulliInterpretable.interp (t >>= f)
       = BernoulliInterpretable.interp t >>= fun a ↦ BernoulliInterpretable.interp (f a)
 
+class LawfulBernoulliInterpretableState (m : Type → Type) [Monad m] extends
+    BernoulliInterpretableState m where
+  interp_pure {α : Type} (a : α) :
+    BernoulliInterpretableState.interp (pure a : m α) = StateT.lift (PFunctor.FreeM.pure a)
+  interp_bind {α β : Type} (t : m α) (f : α → m β) :
+    BernoulliInterpretableState.interp (t >>= f)
+      = BernoulliInterpretableState.interp t >>= fun a ↦ BernoulliInterpretableState.interp (f a)
+
 /-- `BernoulliM` interprets itself, and does so lawfully. -/
 instance : LawfulBernoulliInterpretable BernoulliM where
   interp_pure _ := rfl
   interp_bind _ _ := rfl
+
+instance {m : Type → Type} [BernoulliInterpretable m] : BernoulliInterpretableState m where
+  st := Unit
+  interp prog := StateT.lift (BernoulliInterpretable.interp prog)
+
+instance {m : Type → Type} [Monad m] [LawfulBernoulliInterpretable m] :
+    LawfulBernoulliInterpretableState m where
+  interp_pure a := by
+    show StateT.lift (BernoulliInterpretable.interp (pure a : m _)) = _
+    rw [LawfulBernoulliInterpretable.interp_pure]
+  interp_bind t f := by
+    show StateT.lift (BernoulliInterpretable.interp (t >>= f))
+      = StateT.lift (BernoulliInterpretable.interp t) >>=
+          fun a ↦ StateT.lift (BernoulliInterpretable.interp (f a))
+    rw [LawfulBernoulliInterpretable.interp_bind]
+    ext s
+    simp [StateT.run_lift, StateT.run_bind]
+
+instance {m : Type → Type} [BernoulliInterpretable m] :
+    Inhabited (BernoulliInterpretableState.st m) := inferInstanceAs (Inhabited Unit)
 
 def flip (r : I) : BernoulliM Bool :=
   PFunctor.FreeM.liftBind (BernoulliOps.Flip r) PFunctor.FreeM.pure
@@ -4072,6 +4104,110 @@ lemma freshMs_le_freshMs_bind (b : BoundedFootprintPsp) (m : BernoulliM α) (f :
     rw [hpp, ← MeasurableSpace.comap_comp]
     exact MeasurableSpace.comap_mono le_top
   · exact le_rfl
+
+/-! #### Continuing with a `pure`
+
+Running `m >>= pure ∘ g` is running `m` and relabelling the leaves by `g`: the run lands in
+the same space and reports `g` of what `m` reports. -/
+
+omit [Inhabited α] [Inhabited β] in
+lemma done_bindLeaves_pure (g : α → β) :
+    ∀ t : ProbTree α, t.done = true → (bindLeaves (fun a ↦ pure (g a)) t).done = true
+  | .leaf (.pure _), _ => rfl
+  | .leaf (.liftBind _ _), h => by simp [done] at h
+  | .node l r, h => by
+    simp only [done, Bool.and_eq_true] at h
+    show (done _ && done _) = true
+    rw [done_bindLeaves_pure g l h.1, done_bindLeaves_pure g r h.2, Bool.and_self]
+
+omit [Inhabited α] [Inhabited β] in
+lemma leafValue_bindLeaves_pure (g : α → β) :
+    ∀ (t : ProbTree α) (ρ : Ω),
+      leafValue (bindLeaves (fun a ↦ pure (g a)) t) ρ = g (leafValue t ρ)
+  | .leaf n, ρ => by
+    show runValue (n >>= fun a ↦ pure (g a)) ρ = _
+    rw [runValue_bind]; rfl
+  | .node l r, ρ => by
+    simp only [bindLeaves, leafValue, leafValue_bindLeaves_pure g l, leafValue_bindLeaves_pure g r]
+    split_ifs <;> rfl
+
+omit [Inhabited α] [Inhabited β] in
+/-- Pruning commutes with continuing by a `pure`: a pruned leaf reports `g` of the value `m`
+would have reported. -/
+lemma prunePrograms_bind_pure (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α)
+    (g : α → β) :
+    prunePrograms b h (fun _ ↦ m >>= fun a ↦ pure (g a))
+      = fun X ↦ prunePrograms b h (fun _ ↦ m) X >>= fun a ↦ pure (g a) := by
+  funext X
+  simp only [prunePrograms]
+  split_ifs
+  · show PFunctor.FreeM.pure _ = PFunctor.FreeM.pure _
+    rw [runValue_bind]; rfl
+  · rfl
+
+/-- What the run of `m >>= pure ∘ g` reports: `g` of what the run of `m` reports. -/
+lemma result_run_bind_pure (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α)
+    (g : α → β) :
+    result (run (m >>= fun a ↦ pure (g a)) b) = g ∘ result (run m b) := by
+  funext ρ
+  rw [result_run_eq_leafValue b _ h, result_run_eq_leafValue b _ h, prunePrograms_bind_pure,
+    ← bindLeaves_toTree, Function.comp_apply, leafValue_bindLeaves_pure]
+
+omit [Inhabited α] [Inhabited β] in
+/-- A measure cast to an equal σ-algebra is the same probability space. -/
+lemma pSpace_cast_eq {M N : MeasurableSpace Ω} (h : M = N) (μ : Measure[N] Ω)
+    (i₁ : IsProbabilityMeasure (μ.cast M)) (i₂ : IsProbabilityMeasure μ) :
+    (⟨⟨M, μ.cast M⟩, i₁⟩ : PSpace Ω) = ⟨⟨N, μ⟩, i₂⟩ := by
+  subst h
+  have hμ : μ.cast M = μ :=
+    Measure.ext fun E hE ↦ Measure.le_preserves_measure (h := le_rfl) (μ := μ) (hu := hE)
+  revert i₁
+  rw [hμ]
+  intro _
+  rfl
+
+/-- The run of `m >>= pure ∘ g` lands in the same space as the run of `m`: the continuation
+reads no bits. -/
+lemma run_bind_pure_psp (b : BoundedFootprintPsp) (h : ✓b.psp) (m : BernoulliM α)
+    (g : α → β) :
+    (run (m >>= fun a ↦ pure (g a)) b).1.psp = (run m b).1.psp := by
+  set f : α → BernoulliM β := fun a ↦ pure (g a)
+  set P := ValidPSp.toPSpace ⟨b.psp, h⟩
+  set TC := toTree b (prunePrograms b h (fun _ ↦ m)) with hTC
+  set WC : TreeWithMeasure α := fixpoint ⟨TC, P.μ.cast TC.ms⟩ with hWC
+  have hT : toTree b (prunePrograms b h (fun _ ↦ m >>= f)) = bindLeaves f TC := by
+    rw [prunePrograms_bind_pure, ← bindLeaves_toTree]
+  have hmsTC : TC.ms = P.ms := by rw [hTC, toTree_ms_eq, b.sigmaAgrees h]
+  have hmsB : (bindLeaves f TC).ms = P.ms := by rw [ms_bindLeaves, hmsTC]
+  have hmsT : (toTree b (prunePrograms b h (fun _ ↦ m >>= f))).ms = P.ms := by rw [hT, hmsB]
+  -- running the continued tree is running `TC`, then relabelling the finished leaves
+  have hfix : fixpoint ⟨toTree b (prunePrograms b h (fun _ ↦ m >>= f)),
+      P.μ.cast (toTree b (prunePrograms b h (fun _ ↦ m >>= f))).ms⟩
+      = ⟨bindLeaves f WC.1, WC.2.cast (bindLeaves f WC.1).ms⟩ := by
+    rw [fixpoint_congr hT _ (P.μ.cast (bindLeaves f TC).ms) (fun E hE ↦ by
+        rw [Measure.le_preserves_measure (h := le_of_eq hmsT) (μ := P.μ) (hu := hE),
+          Measure.le_preserves_measure (h := le_of_eq hmsB) (μ := P.μ)
+            (hu := by rw [hmsB, ← hmsT]; exact hE)]),
+      fixpoint_bindLeaves f TC (P.μ.cast TC.ms) _ (fun E hE ↦ ?_)
+        (WC.2.cast (bindLeaves f WC.1).ms) (fun E hE ↦ ?_),
+      fixpoint_of_done (done_bindLeaves_pure g _ fixpoint_done)]
+    · rw [Measure.le_preserves_measure (h := le_of_eq hmsB) (μ := P.μ)
+          (hu := by rw [hmsB, ← hmsTC]; exact hE),
+        Measure.le_preserves_measure (h := le_of_eq hmsTC) (μ := P.μ) (hu := hE)]
+    · exact cast_apply_of_ms_eq (ms_bindLeaves f WC.1) WC.2 (by rw [ms_bindLeaves]; exact hE)
+  rw [run_psp_eq b h, run_psp_eq b h]
+  congr 1
+  generalize_proofs i1 i2
+  revert i1
+  rw [hfix]
+  intro i1
+  change IsProbabilityMeasure WC.2 at i2
+  change (⟨⟨(bindLeaves f WC.1).ms, WC.2.cast _⟩, i1⟩ : PSpace Ω) = ⟨⟨WC.1.ms, WC.2⟩, i2⟩
+  have hms : (bindLeaves f WC.1).ms = WC.1.ms := ms_bindLeaves f WC.1
+  clear_value WC
+  obtain ⟨W, μW⟩ := WC
+  dsimp only at hms i1 i2 ⊢
+  exact pSpace_cast_eq hms μW _ _
 
 /-- The atoms a run leaves dead are read off the pruned path of the run: the dead atoms
 before it, and the paths the program reads with no probability. -/

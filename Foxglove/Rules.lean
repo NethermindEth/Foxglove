@@ -227,7 +227,7 @@ variable {α β : Type} [Inhabited α]
          {m : Type → Type} [Monad m]
          [Interp.LawfulBernoulliInterpretable m]
          {Q Q' : RV α → FProp}
-         {t : m α} 
+         {t : m α}
          {C : m α}
 
 theorem WP_CONS (h : Q ⊢ Q') : wp t Q ⊢ wp t Q' :=
@@ -281,6 +281,57 @@ theorem WP_BIND (hQ : AEProper Q) (hC : ∀ X : RV β, Convex (Q X)) :
   Proofs.WP_BIND hQ hC
 
 end WeakestPreconditionModality
+
+section StatefulWpRules
+
+/-
+The rules above for `wpSt`
+-/
+
+variable {α β : Type} [Inhabited α]
+         {m : Type → Type} [Monad m]
+         [inst : Interp.LawfulBernoulliInterpretableState m] [Inhabited inst.st]
+         {s : inst.st}
+
+variable {t : m α} {Q Q' : RV (α × inst.st) → FProp} in
+theorem WP_ST_CONS (h : Q ⊢ Q') : wpSt s t Q ⊢ wpSt s t Q' :=
+  Proofs.WP_ST_CONS h
+
+variable {t : m α} {Q : RV (α × inst.st) → FProp} in
+theorem WP_ST_FRAME : P ∗ wpSt s t Q ⊢ wpSt s t ⦃v, P ∗ Q v⦄ :=
+  Proofs.WP_ST_FRAME
+
+variable {C : m α} {μ : PMF β} {Q : β → RV (α × inst.st) → FProp} in
+theorem C_WP_ST_SWAP (hQ : ∀ v, AEProper (Q v)) :
+  𝒞⟨μ⟩ v; wpSt s C (Q v) ⊢ wpSt s C ⦃x, 𝒞⟨μ⟩ v; Q v x⦄ :=
+  Proofs.C_WP_ST_SWAP hQ
+
+variable {Q : RV (α × inst.st) → FProp} {x : α} in
+theorem WP_ST_PURE : Q (fun _ ↦ (x, s)) ⊢ wpSt s (pure x : m α) Q :=
+  Proofs.WP_ST_PURE
+
+variable [Inhabited β] {C : m α} {F : α → m β} {ν : PMF (α × inst.st)}
+         {Q : α × inst.st → RV (β × inst.st) → FProp} in
+theorem WP_ST_BIND_COND (hQ : ∀ v, AEProper (Q v)) :
+  wpSt s C ⦃X, 𝒞⟨ν⟩ v; (⌈X = v⌉ ∗ wpSt v.2 (F v.1) (Q v))⦄
+    ⊢ wpSt s (C >>= F) ⦃Y, 𝒞⟨ν⟩ v; Q v Y⦄ :=
+  Proofs.WP_ST_BIND_COND hQ
+
+variable [Inhabited β] {C : m α} {F : α → m β} {Q : RV (β × inst.st) → FProp} in
+theorem WP_ST_BIND (hQ : AEProper Q) (hC : ∀ X, Convex (Q X)) :
+  wpSt s C ⦃X, valuePost X (fun v ↦ wpSt v.2 (F v.1) Q)⦄ ⊢ wpSt s (C >>= F) Q :=
+  Proofs.WP_ST_BIND hQ hC
+
+end StatefulWpRules
+
+theorem WP_ST_FLIP {p : I} :
+  ⊢ wpSt () (Interp.flip p) ⦃X, (Prod.fst ∘ X) ~ bernoulliWeights p⦄ :=
+  Proofs.WP_ST_FLIP
+
+variable {α : Type} [Inhabited α] {m : Type → Type} [Interp.BernoulliInterpretable m]
+         {t : m α} {Q : RV (α × Unit) → FProp} in
+theorem WP_ST_OF_WP : wp t ⦃X, Q fun ω ↦ (X ω, ())⦄ ⊢ wpSt () t Q :=
+  Proofs.WP_ST_OF_WP
 
 end
 

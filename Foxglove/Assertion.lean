@@ -255,6 +255,25 @@ def wp {α : Type} [Inhabited α] {m : Type → Type} [Interp.BernoulliInterpret
       exact ⟨b, hb1, hb2, le_trans hb3 (sup_le_sup_right (msOf_mono hxy) _), hb4⟩
   }
 
+open Interp Interp.ProbTree Iris.BI OURAProp in
+/-- **Weakest precondition**, with the locality clause `msOf b ≤ msOf a ⊔ freshMs …`. -/
+def wpSt {α : Type} [Inhabited α] {m : Type → Type} [inst : Interp.BernoulliInterpretableState m] [Inhabited inst.st]
+    (s : inst.st) (t : m α) (Q : RV (α × inst.st) → FProp) : FProp :=
+  fmk {
+    carrier := {a |
+      ∀ (μ₀ : BoundedFootprintPsp) (c : BoundedFootprintSpace Bool),
+        ✓μ₀.psp → a * c ≤ μ₀.toSpace →
+        ∃ b : BoundedFootprintSpace Bool,
+          b * c ≤ (Interp.bigStep μ₀ (fun _ ↦ Interp.BernoulliInterpretableState.interp t s)).1.toSpace ∧ ✓b ∧
+            msOf b ≤ msOf a ⊔ freshMs μ₀ (Interp.BernoulliInterpretableState.interp t s) ∧
+            (own b ⊢ Q (result (run (Interp.BernoulliInterpretableState.interp t s)  μ₀)))
+            }
+    upper' := by
+      intro x y hxy hx μ₀ c hv hle
+      obtain ⟨b, hb1, hb2, hb3, hb4⟩ := hx μ₀ c hv (le_trans (mul_le_mul_right_le hxy c) hle)
+      exact ⟨b, hb1, hb2, le_trans hb3 (sup_le_sup_right (msOf_mono hxy) _), hb4⟩
+  }
+
 macro "⦃" x:Lean.Parser.Term.funBinder ", " Q:term "⦄" : term => `(fun $x ↦ iprop($Q))
 
 open Lean PrettyPrinter Delaborator SubExpr Elab Term in
