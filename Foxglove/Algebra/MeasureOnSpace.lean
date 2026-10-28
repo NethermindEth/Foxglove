@@ -1457,7 +1457,7 @@ open unitInterval
 open scoped ENNReal
 
 noncomputable def PSpace.uniform (n : ℕ) : PSpace (Fin (n + 1)) :=
-  ⟨⟨⊤, (PMF.uniformOfFintype (Fin (n + 1))).toMeasure⟩, inferInstance⟩
+  ⟨⟨⊤, uniformOn Set.univ⟩, inferInstance⟩
 
 noncomputable def PSp.uniform (n : ℕ) : PSp (Fin (n + 1)) := .some (PSpace.uniform n)
 
@@ -1467,15 +1467,14 @@ noncomputable def PSp.uniform (n : ℕ) : PSp (Fin (n + 1)) := .some (PSpace.uni
 /-- Every point has mass `1 / (n + 1)`. -/
 lemma PSpace.uniform_apply_singleton (n : ℕ) (i : Fin (n + 1)) :
     (PSpace.uniform n).μ {i} = (n + 1 : ℝ≥0∞)⁻¹ := by
-  show (PMF.uniformOfFintype (Fin (n + 1))).toMeasure {i} = _
-  rw [PMF.toMeasure_apply_singleton _ _ (by trivial), PMF.uniformOfFintype_apply]
-  simp
+  show uniformOn Set.univ {i} = _
+  simp [uniformOn_univ]
 
 /-- More generally, an event has mass proportional to its cardinality. -/
 lemma PSpace.uniform_apply (n : ℕ) (s : Set (Fin (n + 1))) [Fintype s] :
     (PSpace.uniform n).μ s = (Fintype.card s : ℝ≥0∞) / (n + 1) := by
-  show (PMF.uniformOfFintype (Fin (n + 1))).toMeasure s = _
-  rw [PMF.toMeasure_uniformOfFintype_apply _ (by trivial)]
+  show uniformOn Set.univ s = _
+  rw [uniformOn_univ, Measure.count_apply_finite' s.toFinite trivial, Set.Finite.card_toFinset]
   simp
 
 /-- A discrete space on `Fin (n + 1)` giving every point mass `1 / (n + 1)` *is* the
@@ -2198,6 +2197,11 @@ instance [Finite α] : Iris.OrderedUnitalResourceAlgebra (BoundedFootprintSpace 
   Iris.OrderedUnitalResourceAlgebra.subalgebra
     (inferInstance : Iris.OrderedUnitalResourceAlgebra (PSp (Tape α)))
     hasBoundedFootprint_one fun _ _ ↦ hasBoundedFootprint_mul
+
+/-- The resource algebra's discrete OFE, chosen ahead of iris-lean's `OFE` on subtypes: validity
+`✓` is read through the CMRA built on this one. -/
+instance (priority := high) [Finite α] : Iris.OFE (BoundedFootprintSpace α) :=
+  Iris.OrderedUnitalResourceAlgebra.instOFE
 
 instance {α : Type} [Inhabited α] : One (BoundedFootprintPsp α) where
   one := {
