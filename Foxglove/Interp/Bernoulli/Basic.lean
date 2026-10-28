@@ -5,8 +5,6 @@ public import Foxglove.Algebra.OURA
 public import Cslib.Foundations.Data.PFunctor.Free
 public import Foxglove.Basic
 public import Init.Data.Rat.Basic
-public import Foxglove.Wheels
-
 
 @[expose] public section
 namespace Foxglove

@@ -5,7 +5,6 @@ public import Mathlib.Data.Set.Finite.List
 public import Mathlib.MeasureTheory.Measure.Decomposition.RadonNikodym
 public import Foxglove.Algebra.OURA
 public import Mathlib.Topology.UnitInterval
-public import Foxglove.Wheels
 
 /-! ## Independent product of probability measures -/
 
@@ -1705,10 +1704,10 @@ theorem PSpace.wsum_indep [Inhabited Ω] (μ : PMF A) (κ s : A → PSpace Ω) (
 here. -/
 noncomputable def bernoulliWeights (r : I) : PMF Bool :=
   PMF.ofFintype (fun b => cond b (toNNReal r)
-                                 (toNNReal <| unitInterval.invert r)) (by
+                                 (toNNReal <| unitInterval.symm r)) (by
     rw [Fintype.sum_bool, Bool.cond_true, Bool.cond_false, ← ENNReal.coe_add,
       ENNReal.coe_eq_one]
-    exact NNReal.coe_injective (by simp [unitInterval.invert]))
+    exact NNReal.coe_injective (by simp))
 
 @[simp]
 lemma bernoulliWeights_apply (r : I) (b : Bool) :
@@ -1718,7 +1717,7 @@ lemma bernoulliWeights_apply (r : I) (b : Bool) :
   · have hle : toNNReal r ≤ 1 := NNReal.coe_le_coe.mp (by simpa using (Set.mem_Icc.mp r.2).2)
     rw [Bool.cond_false, Bool.cond_false, ← ENNReal.coe_one, ← ENNReal.coe_sub]
     congr 1
-    exact NNReal.coe_injective (by simp [unitInterval.invert, NNReal.coe_sub hle])
+    exact NNReal.coe_injective (by simp [NNReal.coe_sub hle])
   · rfl
 
 lemma mem_support_bernoulliWeights_false {r : I} (h : r ≠ 1) :
