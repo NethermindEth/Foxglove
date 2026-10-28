@@ -3,6 +3,7 @@ import Foxglove.Algebra.OURA
 import Foxglove.Algebra.PMF
 import Foxglove.Algebra.Kernel
 import Foxglove.Algebra.PSpace
+import Foxglove.Algebra.UniformPMF
 import Foxglove.Assertion
 import Foxglove.Basic
 import Foxglove.Example
@@ -10,6 +11,8 @@ import Foxglove.Interp.Bernoulli.Basic
 import Foxglove.Interp.Bernoulli.Example
 import Foxglove.Interp.Bernoulli.Helper
 import Foxglove.Interp.OracleComp.Basic
+import Foxglove.Interp.OracleComp.Law
+import Foxglove.Interp.OracleComp.WP
 import Foxglove.RuleProofs
 import Foxglove.Rules
 import Foxglove.Rules.Conditioning
