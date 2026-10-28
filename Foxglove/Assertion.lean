@@ -6,7 +6,7 @@ public import Foxglove.Algebra.OURA
 public import Foxglove.Interp.Bernoulli.Basic
 public import Iris.ProofMode
 
-@[expose] public section
+public section
 namespace Foxglove
 
 open ProbSpace
@@ -33,17 +33,29 @@ open ProbabilityTheory
 
 def own {M} [OrderedUnitalResourceAlgebra M] (b : M) : OURAProp M := UpperSetBI.own b
 
+lemma own_def {M} [OrderedUnitalResourceAlgebra M] (b : M) :
+    own b = OURAProp.fmk (UpperSetBI.own b) := by
+  rfl
+
 /-- Owning the unit costs nothing: `emp` and `own 1` are the same upper set. -/
 lemma own_one {M} [OrderedUnitalResourceAlgebra M] : ⊢ (own (1 : M) : OURAProp M) :=
-  fun _ _ h ↦ h
+  fun _ _ h ↦ UpperSetBI.mem_own.2 (UpperSetBI.mem_emp.1 h)
 
 def ownP (p : PSpace Ω) : FProp :=
   iprop(∃ h : HasBoundedFootprint (p : PSp Ω), own ⟨(p : PSp Ω), h⟩)
 
+lemma ownP_def (p : PSpace Ω) :
+    ownP p = iprop(∃ h : HasBoundedFootprint (p : PSp Ω), own ⟨(p : PSp Ω), h⟩) := by
+  rfl
+
 open Iris.BI in
 lemma ownP_one : ⊢ ownP 1 := by
   unfold ownP
-  refine entails_trans ?_ (exists_intro hasBoundedFootprint_one)
+  have h : HasBoundedFootprint ((1 : PSpace Ω) : PSp Ω) := by
+    rw [PSp.coe_one]; exact hasBoundedFootprint_one
+  refine entails_trans ?_ (exists_intro h)
+  rw [show (⟨((1 : PSpace Ω) : PSp Ω), h⟩ : BoundedFootprintSpace Bool) = 1 from
+    Subtype.ext PSp.coe_one]
   exact own_one
 
 /-- `p` satisfies `P`: `p` is a resource, and owning exactly `p` establishes `P`.  In the
@@ -63,6 +75,15 @@ def jointConditioning {A : Type} (μ : PMF A) (K : A → FProp) : FProp :=
       ⌜m.μ = (μ.toMeasureWithMs ⊤).bind κ⌝ ∗
       ∀ v : μ.support, ownP (κ v) -∗ K v
   )
+
+lemma jointConditioning_def {A : Type} (μ : PMF A) (K : A → FProp) :
+    jointConditioning μ K = iprop(
+      ∃ m : PSpace Ω,
+      ∃ κ : TrivialMarkovKernel A m,
+        ownP m ∗
+        ⌜m.μ = (μ.toMeasureWithMs ⊤).bind κ⌝ ∗
+        ∀ v : μ.support, ownP (κ v) -∗ K v) := by
+  rfl
 
 /-- Precedence 36: above `⊢`/`⊣⊢` (29) and `∗`, so that `𝒞⟨μ⟩ v; K₁ v ⊢ 𝒞⟨μ⟩ v; K₂ v` and
 `P ∗ 𝒞⟨μ⟩ v; K v` parse as intended. -/
@@ -84,6 +105,16 @@ def hasDistribution {A : Type} (E : RV A) (μ : PMF A) : FProp :=
         almostMeasurable E P ∧ Eμ = μ.toMeasureWithMs ⊤
       ⌝
   )
+
+lemma hasDistribution_def {A : Type} (E : RV A) (μ : PMF A) :
+    hasDistribution E μ = iprop(
+      ∃ P : PSpace Ω,
+        ownP P ∗
+        ⌜
+          have Eμ := @P.μ.map Ω A P.ms ⊤ E
+          almostMeasurable E P ∧ Eμ = μ.toMeasureWithMs ⊤
+        ⌝) := by
+  rfl
 
 notation:100 E:100 " ~ " p:100 => hasDistribution E p
 
@@ -188,6 +219,10 @@ continuation the value it receives. -/
 def valuePost {α : Type} (X : RV α) (Q : α → FProp) : FProp :=
   iprop(∃ ν : PMF α, 𝒞⟨ν⟩ x; (⌈fun ρ ↦ X ρ = x⌉ ∗ Q x))
 
+lemma valuePost_def {α : Type} (X : RV α) (Q : α → FProp) :
+    valuePost X Q = iprop(∃ ν : PMF α, 𝒞⟨ν⟩ x; (⌈fun ρ ↦ X ρ = x⌉ ∗ Q x)) := by
+  rfl
+
 /-! ### `wp` and its locality clause
 
 `wp t Q` holds of a resource `a` when, from any ambient footprint `μ₀` containing `a` beside a
@@ -205,6 +240,12 @@ def msOf (x : BoundedFootprintSpace Bool) : MeasurableSpace Ω :=
   match (x : PSp Ω) with
   | none => ⊤
   | some p => p.ms
+
+lemma msOf_def (x : BoundedFootprintSpace Bool) :
+    msOf x = match (x : PSp Ω) with
+      | none => ⊤
+      | some p => p.ms := by
+  rfl
 
 lemma msOf_mono {x y : BoundedFootprintSpace Bool} (hxy : x ≤ y) : msOf x ≤ msOf y := by
   unfold msOf
@@ -235,7 +276,7 @@ lemma msOf_mul_le {x y : BoundedFootprintSpace Bool} (h : ✓(x * y)) :
   rw [hx', hy'] at hmul
   unfold msOf
   rw [hs, hx', hy']
-  exact le_of_eq (PSp.mul_inversion hmul).1
+  exact le_of_eq (PSpace.isIndependentProduct_def.1 (PSp.mul_inversion hmul)).1
 
 open Interp Interp.ProbTree Iris.BI OURAProp in
 /-- **Weakest precondition**, with the locality clause `msOf b ≤ msOf a ⊔ freshMs …`. -/
@@ -256,6 +297,24 @@ def wp {α : Type} [Inhabited α] {m : Type → Type} [Interp.BernoulliInterpret
   }
 
 open Interp Interp.ProbTree Iris.BI OURAProp in
+lemma wp_def {α : Type} [Inhabited α] {m : Type → Type} [Interp.BernoulliInterpretable m]
+    (t : m α) (Q : RV α → FProp) :
+    wp t Q = fmk {
+      carrier := {a |
+        ∀ (μ₀ : BoundedFootprintPsp) (c : BoundedFootprintSpace Bool),
+          ✓μ₀.psp → a * c ≤ μ₀.toSpace →
+          ∃ b : BoundedFootprintSpace Bool,
+            b * c ≤ (run t μ₀).1.toSpace ∧ ✓b ∧
+              msOf b ≤ msOf a ⊔ freshMs μ₀ (Interp.BernoulliInterpretable.interp t) ∧
+              (own b ⊢ Q (result (run t μ₀)))}
+      upper' := by
+        intro x y hxy hx μ₀ c hv hle
+        obtain ⟨b, hb1, hb2, hb3, hb4⟩ := hx μ₀ c hv (le_trans (mul_le_mul_right_le hxy c) hle)
+        exact ⟨b, hb1, hb2, le_trans hb3 (sup_le_sup_right (msOf_mono hxy) _), hb4⟩
+    } := by
+  rfl
+
+open Interp Interp.ProbTree Iris.BI OURAProp in
 /-- **Weakest precondition**, with the locality clause `msOf b ≤ msOf a ⊔ freshMs …`. -/
 def wpSt {α : Type} [Inhabited α] {m : Type → Type} [inst : Interp.BernoulliInterpretableState m] [Inhabited inst.st]
     (s : inst.st) (t : m α) (Q : RV (α × inst.st) → FProp) : FProp :=
@@ -274,6 +333,26 @@ def wpSt {α : Type} [Inhabited α] {m : Type → Type} [inst : Interp.Bernoulli
       exact ⟨b, hb1, hb2, le_trans hb3 (sup_le_sup_right (msOf_mono hxy) _), hb4⟩
   }
 
+open Interp Interp.ProbTree Iris.BI OURAProp in
+lemma wpSt_def {α : Type} [Inhabited α] {m : Type → Type}
+    [inst : Interp.BernoulliInterpretableState m] [Inhabited inst.st]
+    (s : inst.st) (t : m α) (Q : RV (α × inst.st) → FProp) :
+    wpSt s t Q = fmk {
+      carrier := {a |
+        ∀ (μ₀ : BoundedFootprintPsp) (c : BoundedFootprintSpace Bool),
+          ✓μ₀.psp → a * c ≤ μ₀.toSpace →
+          ∃ b : BoundedFootprintSpace Bool,
+            b * c ≤ (Interp.bigStep μ₀
+                (fun _ ↦ Interp.BernoulliInterpretableState.interp t s)).1.toSpace ∧ ✓b ∧
+              msOf b ≤ msOf a ⊔ freshMs μ₀ (Interp.BernoulliInterpretableState.interp t s) ∧
+              (own b ⊢ Q (result (run (Interp.BernoulliInterpretableState.interp t s) μ₀)))}
+      upper' := by
+        intro x y hxy hx μ₀ c hv hle
+        obtain ⟨b, hb1, hb2, hb3, hb4⟩ := hx μ₀ c hv (le_trans (mul_le_mul_right_le hxy c) hle)
+        exact ⟨b, hb1, hb2, le_trans hb3 (sup_le_sup_right (msOf_mono hxy) _), hb4⟩
+    } := by
+  rfl
+
 macro "⦃" x:Lean.Parser.Term.funBinder ", " Q:term "⦄" : term => `(fun $x ↦ iprop($Q))
 
 open Lean PrettyPrinter Delaborator SubExpr Elab Term in
@@ -291,9 +370,9 @@ section
 
 open Iris BI UpperSetBI OURAProp
 
-noncomputable def ftrue : FProp := fmk UpperSetBI.true
+noncomputable def ftrue : FProp := iprop(True)
 
-noncomputable def ffalse : FProp := fmk UpperSetBI.false
+noncomputable def ffalse : FProp := iprop(False)
 
 variable {P Q R : FProp}
 
@@ -303,7 +382,9 @@ variable {P Q R : FProp}
 logic is affine: resources may always be thrown away.  Through iris-lean's generic instance
 this also makes every `FProp` `Absorbing`. -/
 instance : BIAffine FProp where
-  affine P := ⟨by induction P using Quotient.ind; exact fun _ _ _ ↦ PSp.one_le⟩
+  affine P := ⟨by
+    induction P using Quotient.ind
+    exact fun _ _ _ ↦ UpperSetBI.mem_emp.2 PSp.one_le⟩
 
 /-- `<pers> P` holds either of everything or of nothing, according to whether `P` already
 holds of the unit resource, so `Persistent P` says exactly that owning nothing suffices for
@@ -312,7 +393,8 @@ valid `b`, `own b` is persistent exactly when `b ≤ 1`.  The persistent fragmen
 and `emp_persistent`. -/
 lemma persistent_iff {U : UpperSet (BoundedFootprintSpace Bool)} :
     Persistent (fmk U) ↔ ∀ m, ✓m → m ∈ U → (1 : BoundedFootprintSpace Bool) ∈ U :=
-  ⟨fun h ↦ h.persistent, fun h ↦ ⟨h⟩⟩
+  ⟨fun h m hv hm ↦ UpperSetBI.mem_persistently.1 (h.persistent m hv hm),
+    fun h ↦ ⟨fun m hv hm ↦ UpperSetBI.mem_persistently.2 (h m hv hm)⟩⟩
 
 attribute [grind .] and_intro entails_rfl pure_intro or_intro_l or_intro_r or_elim
                     Iris.BI.BIBase.pure and_elim_l and_elim_r Iris.BI.BIBase.BiEntails.mk

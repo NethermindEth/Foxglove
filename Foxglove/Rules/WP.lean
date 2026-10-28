@@ -3,7 +3,7 @@ module
 public import Foxglove.Rules.Conditioning
 public import Foxglove.Rules.Distribution
 
-@[expose] public section
+public section
 namespace Foxglove
 
 open ProbSpace
@@ -24,9 +24,9 @@ witness of a run be known valid, which `WP_FRAME` needs. -/
 lemma valid_run {α : Type} [Inhabited α] {m : Type → Type} [Interp.BernoulliInterpretable m]
     (t : m α) (μ₀ : BoundedFootprintPsp) (hv : ✓μ₀.psp) :
     ✓((run t μ₀).1.toSpace) := by
-  show ((run t μ₀).1.psp) ≠ (⊤ : PSp Ω)
-  rw [run, bigStep, dite_eq_left hv, ofTree_psp']
-  exact Option.some_ne_none _
+  show ((run t μ₀).1.toSpace).val ≠ (⊤ : PSp Ω)
+  rw [(run t μ₀).1.toSpace_val, run_def]
+  exact bigStep_valid _ _ hv
 
 /-- Where a tilt of an atomic space gives an atom no mass: the atom had none, or the density
 vanishes there.  The density is measurable for the atoms, so it is constant on each. -/

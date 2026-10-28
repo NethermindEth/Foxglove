@@ -4,7 +4,7 @@ public import Foxglove.Rules.WP.Swap
 public import Foxglove.Rules.WP.Bind
 public import Foxglove.Rules.WP.Dist
 
-@[expose] public section
+public section
 namespace Foxglove.Proofs
 
 open ProbSpace Iris BI UpperSetBI OURAProp
@@ -29,23 +29,26 @@ variable {P Q : FProp} {α β : Type} {v₀ : α} {E E₁ : RV α} {E₂ : RV β
 open MeasureTheory in
 /-- `dist-inj` (Bluebell, Fig. 9). -/
 theorem DIST_INJ : E ~ μ ∧ E ~ μ' ⊢ ⌜μ = μ'⌝ := by
+  simp only [hasDistribution_def, ownP_def, own_def]
   intro m hv h
-  obtain ⟨h₁, h₂⟩ := h
+  obtain ⟨h₁, h₂⟩ := UpperSetBI.mem_and.1 h
   -- the ambient space the two claims share
   obtain ⟨y, hy⟩ : ∃ y : PSpace Ω, m.val = some y :=
     Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hv)
   -- the space witnessing `E ~ μ`, and its resource, sit below `m`
-  obtain ⟨q₁, ⟨P, hq₁P⟩, hq₁m⟩ := h₁
-  obtain ⟨b₁, b₂, hle₁, hown₁, hpure₁⟩ := (Quotient.exact hq₁P).2 m hv hq₁m
-  obtain ⟨r₁, ⟨hbf₁, hr₁⟩, hb₁⟩ := hown₁
+  obtain ⟨q₁, ⟨P, hq₁P⟩, hq₁m⟩ := UpperSetBI.mem_sExists.1 h₁
+  obtain ⟨b₁, b₂, hle₁, hown₁, hpure₁⟩ :=
+    UpperSetBI.mem_sep.1 ((Quotient.exact hq₁P).2 m hv hq₁m)
+  obtain ⟨r₁, ⟨hbf₁, hr₁⟩, hb₁⟩ := UpperSetBI.mem_sExists.1 hown₁
   have hb₁m : b₁ ≤ m := le_trans (le_mul_of_one_le PSp.one_le) hle₁
-  have hPb₁ := (Quotient.exact hr₁).2 b₁ (valid_mono hb₁m hv) hb₁
+  have hPb₁ := UpperSetBI.mem_own.1 ((Quotient.exact hr₁).2 b₁ (valid_mono hb₁m hv) hb₁)
   -- and the same for `E ~ μ'`
-  obtain ⟨q₂, ⟨P', hq₂P'⟩, hq₂m⟩ := h₂
-  obtain ⟨c₁, c₂, hle₂, hown₂, hpure₂⟩ := (Quotient.exact hq₂P').2 m hv hq₂m
-  obtain ⟨r₂, ⟨hbf₂, hr₂⟩, hc₁⟩ := hown₂
+  obtain ⟨q₂, ⟨P', hq₂P'⟩, hq₂m⟩ := UpperSetBI.mem_sExists.1 h₂
+  obtain ⟨c₁, c₂, hle₂, hown₂, hpure₂⟩ :=
+    UpperSetBI.mem_sep.1 ((Quotient.exact hq₂P').2 m hv hq₂m)
+  obtain ⟨r₂, ⟨hbf₂, hr₂⟩, hc₁⟩ := UpperSetBI.mem_sExists.1 hown₂
   have hc₁m : c₁ ≤ m := le_trans (le_mul_of_one_le PSp.one_le) hle₂
-  have hP'c₁ := (Quotient.exact hr₂).2 c₁ (valid_mono hc₁m hv) hc₁
+  have hP'c₁ := UpperSetBI.mem_own.1 ((Quotient.exact hr₂).2 c₁ (valid_mono hc₁m hv) hc₁)
   have hPy : P ≤ y := by
     have hPm : (P : PSp Ω) ≤ (m : PSp Ω) := le_trans hPb₁ hb₁m
     rw [hy] at hPm
@@ -55,14 +58,15 @@ theorem DIST_INJ : E ~ μ ∧ E ~ μ' ⊢ ⌜μ = μ'⌝ := by
     rw [hy] at hP'm
     exact WithTop.coe_le_coe.1 hP'm
   -- both push `E` forward along the one ambient measure, so the two laws agree
-  obtain ⟨ham, hμ₁⟩ := hpure₁
-  obtain ⟨ham', hμ₂⟩ := hpure₂
-  show μ = μ'
+  obtain ⟨ham, hμ₁⟩ := UpperSetBI.mem_pure.1 hpure₁
+  obtain ⟨ham', hμ₂⟩ := UpperSetBI.mem_pure.1 hpure₂
+  refine UpperSetBI.mem_pure.2 ?_
   apply @PMF.toMeasure_injective _ ⊤
   calc @PMF.toMeasure _ ⊤ μ
-      = @Measure.map Ω _ P.ms ⊤ E P.μ := hμ₁.symm
-    _ = @Measure.map Ω _ P'.ms ⊤ E P'.μ := PSpace.map_eq_of_le hPy hP'y ham ham'
-    _ = @PMF.toMeasure _ ⊤ μ' := hμ₂
+      = @Measure.map Ω _ P.ms ⊤ E P.μ := (PMF.toMeasureWithMs_def _ _).symm.trans hμ₁.symm
+    _ = @Measure.map Ω _ P'.ms ⊤ E P'.μ := PSpace.map_eq_of_le hPy hP'y
+      ((almostMeasurable_some _ _).1 ham) ((almostMeasurable_some _ _).1 ham')
+    _ = @PMF.toMeasure _ ⊤ μ' := hμ₂.trans (PMF.toMeasureWithMs_def _ _)
 
 /-- `sure-merge` (Bluebell, Fig. 9). -/
 theorem SURE_MERGE {E₁ E₂ : RV Prop} : ⌈E₁⌉ ∗ ⌈E₂⌉ ⊣⊢ ⌈E₁ ∧ E₂⌉ :=
@@ -71,13 +75,16 @@ theorem SURE_MERGE {E₁ E₂ : RV Prop} : ⌈E₁⌉ ∗ ⌈E₂⌉ ⊣⊢ ⌈E
 /-- `sure-and-star` (Bluebell, Fig. 9). -/
 theorem SURE_AND_STAR {a : Ω → Prop} : ⌈a⌉ ∧ P ⊢ ⌈a⌉ ∗ P := by
   induction P using Quotient.ind
-  intro m hv ⟨hE, hP⟩
-  obtain ⟨q, ⟨W, hq⟩, hqm⟩ := hE
-  obtain ⟨d₁, d₂, hle, hown, hpure⟩ := (Quotient.exact hq).2 m hv hqm
-  obtain ⟨r₁, ⟨hbfW, hr₁⟩, hd₁⟩ := hown
+  simp only [LiftPred.lift, ownP_def, own_def]
+  intro m hv hEP
+  obtain ⟨hE, hP⟩ := UpperSetBI.mem_and.1 hEP
+  obtain ⟨q, ⟨W, hq⟩, hqm⟩ := UpperSetBI.mem_sExists.1 hE
+  obtain ⟨d₁, d₂, hle, hown, hpure⟩ := UpperSetBI.mem_sep.1 ((Quotient.exact hq).2 m hv hqm)
+  replace hpure := UpperSetBI.mem_pure.1 hpure
+  obtain ⟨r₁, ⟨hbfW, hr₁⟩, hd₁⟩ := UpperSetBI.mem_sExists.1 hown
   have hd₁m : d₁ ≤ m := le_trans (le_mul_of_one_le PSp.one_le) hle
   have hWm : (⟨(W : PSp Ω), hbfW⟩ : BoundedFootprintSpace Bool) ≤ m :=
-    le_trans ((Quotient.exact hr₁).2 d₁ (valid_mono hd₁m hv) hd₁) hd₁m
+    le_trans (UpperSetBI.mem_own.1 ((Quotient.exact hr₁).2 d₁ (valid_mono hd₁m hv) hd₁)) hd₁m
   obtain ⟨y, hy⟩ : ∃ y : PSpace Ω, m.val = (y : PSp Ω) :=
     Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hv)
   have hWy : W ≤ y := by
@@ -91,37 +98,42 @@ theorem SURE_AND_STAR {a : Ω → Prop} : ⌈a⌉ ∧ P ⊢ ⌈a⌉ ∗ P := by
     MeasurableSpace.generateFrom_le (by rintro t rfl; exact hNmeas)
   set W₀ : PSpace Ω := @PSpace.trim Ω W _ hgen with hW₀
   have hW₀W : W₀ ≤ W := PSpace.trim_le hgen
-  have hNmeas₀ : @MeasurableSet Ω W₀.ms N := MeasurableSpace.measurableSet_generateFrom rfl
+  have hW₀ms : W₀.ms = MeasurableSpace.generateFrom {N} := by rw [hW₀, PSpace.trim_ms]
+  have hNmeas₀ : @MeasurableSet Ω W₀.ms N := by
+    rw [hW₀ms]; exact MeasurableSpace.measurableSet_generateFrom rfl
   have hN₀ : W₀.μ N = 0 := by
-    rw [MeasureOnSpace.le_preserves_measure hW₀W hNmeas₀]
+    rw [PSpace.le_preserves_measure hW₀W hNmeas₀]
     exact hNnull
   have hbf₀ : HasBoundedFootprint ((W₀ : PSp Ω)) :=
     hasBoundedFootprint_mono (PSp.valid_def.mpr (Option.some_ne_none _))
       (WithTop.coe_le_coe.2 hW₀W) hbfW
   -- the trim is independent of the whole space, so splitting it off costs nothing
   have hind : y =ᵢ W₀ ⊕ᵢ y :=
-    PSpace.isIndependentProduct_of_zero_one_le (le_trans hW₀W hWy)
-      (PSpace.zero_or_one_generateFrom (le_refl _) hN₀)
+    PSpace.isIndependentProduct_of_zero_one_le (le_trans hW₀W hWy) fun t ht ↦ by
+      rw [hW₀ms] at ht
+      exact PSpace.zero_or_one_generateFrom (le_of_eq hW₀ms.symm) hN₀ t ht
   have hb₀m : (⟨(W₀ : PSp Ω), hbf₀⟩ : BoundedFootprintSpace Bool) * m ≤ m := by
     show PSp.mul (W₀ : PSp Ω) m.val ≤ m.val
     rw [hy]
-    exact le_of_eq (mul_respect_independentProduct hind)
-  refine ⟨_, m, hb₀m, ⟨_, ⟨W₀, rfl⟩, ?_⟩, hP⟩
-  refine ⟨_, 1, le_of_eq (mul_one _),
-    ⟨_, ⟨hbf₀, rfl⟩, le_refl (⟨(W₀ : PSp Ω), hbf₀⟩ : BoundedFootprintSpace Bool)⟩, ?_⟩
+    exact le_of_eq (PSp.mul_respect_independentProduct hind)
+  refine UpperSetBI.mem_sep.2 ⟨_, m, hb₀m, UpperSetBI.mem_sExists.2 ⟨_, ⟨W₀, rfl⟩, ?_⟩, hP⟩
+  refine UpperSetBI.mem_sep.2 ⟨_, 1, le_of_eq (mul_one _),
+    UpperSetBI.mem_sExists.2 ⟨_, ⟨hbf₀, rfl⟩, UpperSetBI.mem_own.2
+      (le_refl (⟨(W₀ : PSp Ω), hbf₀⟩ : BoundedFootprintSpace Bool))⟩, UpperSetBI.mem_pure.2 ?_⟩
   exact MeasureTheory.measure_mono_null hNsub hN₀
 
 /-- `prod-split` (Bluebell, Fig. 9). -/
 theorem PROD_SPLIT :
   (E₁ ×ᵣ E₂) ~ (μ₁ ⊗ μ₂) ⊢ E₁ ~ μ₁ ∗ E₂ ~ μ₂ := by
+  simp only [hasDistribution_def, ownP_def, own_def]
   intro m hv h
-  obtain ⟨q, ⟨P, hq⟩, hqm⟩ := h
-  obtain ⟨d₁, d₂, hle, hown, hpure⟩ := (Quotient.exact hq).2 m hv hqm
-  obtain ⟨r₁, ⟨hbfP, hr₁⟩, hd₁⟩ := hown
-  obtain ⟨ham, hlaw⟩ := hpure
+  obtain ⟨q, ⟨P, hq⟩, hqm⟩ := UpperSetBI.mem_sExists.1 h
+  obtain ⟨d₁, d₂, hle, hown, hpure⟩ := UpperSetBI.mem_sep.1 ((Quotient.exact hq).2 m hv hqm)
+  obtain ⟨r₁, ⟨hbfP, hr₁⟩, hd₁⟩ := UpperSetBI.mem_sExists.1 hown
+  obtain ⟨ham, hlaw⟩ := UpperSetBI.mem_pure.1 hpure
   have hd₁m : d₁ ≤ m := le_trans (le_mul_of_one_le PSp.one_le) hle
   have hPm : (⟨(P : PSp Ω), hbfP⟩ : BoundedFootprintSpace Bool) ≤ m :=
-    le_trans ((Quotient.exact hr₁).2 d₁ (valid_mono hd₁m hv) hd₁) hd₁m
+    le_trans (UpperSetBI.mem_own.1 ((Quotient.exact hr₁).2 d₁ (valid_mono hd₁m hv) hd₁)) hd₁m
   obtain ⟨D₁, D₂, hD₁P, hD₂P, hmul, hlaw₁, hlaw₂⟩ := PSpace.split_of_product_law P ham hlaw
   have hbf₁ : HasBoundedFootprint (D₁ : PSp Ω) :=
     hasBoundedFootprint_mono (PSp.valid_def.mpr (Option.some_ne_none _))
@@ -129,33 +141,35 @@ theorem PROD_SPLIT :
   have hbf₂ : HasBoundedFootprint (D₂ : PSp Ω) :=
     hasBoundedFootprint_mono (PSp.valid_def.mpr (Option.some_ne_none _))
       (WithTop.coe_le_coe.2 hD₂P) hbfP
-  refine ⟨⟨D₁, hbf₁⟩, ⟨D₂, hbf₂⟩, le_trans ?_ hPm, ⟨_, ⟨D₁, rfl⟩, ?_⟩, ⟨_, ⟨D₂, rfl⟩, ?_⟩⟩
+  refine UpperSetBI.mem_sep.2 ⟨⟨D₁, hbf₁⟩, ⟨D₂, hbf₂⟩, le_trans ?_ hPm,
+    UpperSetBI.mem_sExists.2 ⟨_, ⟨D₁, rfl⟩, ?_⟩, UpperSetBI.mem_sExists.2 ⟨_, ⟨D₂, rfl⟩, ?_⟩⟩
   · exact hmul
-  · exact ⟨_, 1, le_of_eq (mul_one _),
-      ⟨_, ⟨hbf₁, rfl⟩, le_refl (⟨(D₁ : PSp Ω), hbf₁⟩ : BoundedFootprintSpace Bool)⟩, hlaw₁⟩
-  · exact ⟨_, 1, le_of_eq (mul_one _),
-      ⟨_, ⟨hbf₂, rfl⟩, le_refl (⟨(D₂ : PSp Ω), hbf₂⟩ : BoundedFootprintSpace Bool)⟩, hlaw₂⟩
+  · exact UpperSetBI.mem_sep.2 ⟨_, 1, le_of_eq (mul_one _),
+      UpperSetBI.mem_sExists.2 ⟨_, ⟨hbf₁, rfl⟩, UpperSetBI.mem_own.2
+        (le_refl (⟨(D₁ : PSp Ω), hbf₁⟩ : BoundedFootprintSpace Bool))⟩, UpperSetBI.mem_pure.2 hlaw₁⟩
+  · exact UpperSetBI.mem_sep.2 ⟨_, 1, le_of_eq (mul_one _),
+      UpperSetBI.mem_sExists.2 ⟨_, ⟨hbf₂, rfl⟩, UpperSetBI.mem_own.2
+        (le_refl (⟨(D₂ : PSp Ω), hbf₂⟩ : BoundedFootprintSpace Bool))⟩, UpperSetBI.mem_pure.2 hlaw₂⟩
 
 /-! ### Joint conditioning -/
 
 /-- `c-true` (Bluebell, Fig. 9). -/
 theorem C_TRUE : ⊢ 𝒞⟨μ⟩ _v; ftrue := by
-  unfold jointConditioning
+  rw [jointConditioning_def]
   iexists (1 : PSpace Ω), unitKernel α
   isplitl []
   · exact ownP_one
   · isplitl []
     · ipureintro
-      show PSpace.μ 1 = (μ.toMeasureWithMs ⊤).bind (fun _ ↦ PSpace.μ 1)
-      simp [PMF.toMeasureWithMs]
+      rw [unitKernel_def]
+      show PSpace.μ (1 : PSpace Ω) = (μ.toMeasureWithMs ⊤).bind (fun _ ↦ PSpace.μ (1 : PSpace Ω))
+      simp [PMF.toMeasureWithMs_def]
     · iintro %v Hv
       exact entails_ftrue
 
 /-- `c-false` (Bluebell, Fig. 9). -/
 theorem C_FALSE : 𝒞⟨μ⟩ _v; ffalse ⊢ ffalse := by
-  intro r hv h
-  have hown : own r ⊢ jointConditioning μ (fun _ ↦ ffalse) :=
-    fun _ _ hry ↦ UpperSet.upper _ hry h
+  refine entails_of_own fun r hv hown ↦ ?_
   obtain ⟨s, -, -, w, -, hX⟩ := cond_elim hv hown
   obtain ⟨v, hvsupp⟩ := μ.support_nonempty
   obtain ⟨X, hXval, hXK⟩ := hX v hvsupp
@@ -163,11 +177,13 @@ theorem C_FALSE : 𝒞⟨μ⟩ _v; ffalse ⊢ ffalse := by
     show X.val ≠ (⊤ : PSp Ω)
     rw [hXval]
     exact WithTop.coe_ne_top
-  exact False.elim (hXK X hXv (le_refl X))
+  have hF : own X ⊢ iprop(False) := entails_trans hXK ffalse_entails
+  rw [own_def] at hF
+  exact False.elim (UpperSetBI.mem_pure.1 (hF X hXv (UpperSetBI.mem_own.2 (le_refl X))))
 
 /-- `c-cons` (Bluebell, Fig. 9). -/
 theorem C_CONS (h : ∀ v, K₁ v ⊢ K₂ v) : 𝒞⟨μ⟩ v; K₁ v ⊢ 𝒞⟨μ⟩ v; K₂ v := by
-  unfold jointConditioning
+  simp only [jointConditioning_def]
   iintro ⟨%m, %κ, Hown, %hmix, Hall⟩
   iexists m, κ
   isplitl [Hown]
@@ -182,7 +198,7 @@ theorem C_CONS (h : ∀ v, K₁ v ⊢ K₂ v) : 𝒞⟨μ⟩ v; K₁ v ⊢ 𝒞�
 
 /-- `c-frame` (Bluebell, Fig. 9). -/
 theorem C_FRAME : P ∗ 𝒞⟨μ⟩ v; K v ⊢ 𝒞⟨μ⟩ v; (P ∗ K v) := by
-  unfold jointConditioning
+  simp only [jointConditioning_def]
   iintro ⟨HP, %m, %κ, Hown, %hmix, Hall⟩
   iexists m, κ
   isplitl [Hown]
@@ -201,32 +217,33 @@ open MeasureTheory in
 /-- `c-unit-l` (Bluebell, Fig. 9). -/
 theorem C_UNIT_L : 𝒞⟨δ v₀⟩ v; K v ⊣⊢ K v₀ := by
   constructor
-  · unfold jointConditioning
+  · rw [jointConditioning_def]
     iintro ⟨%m, %κ, Hown, %hmix, Hall⟩
     -- the only fibre, at `v₀`, is `m` itself
     have hκ : (κ v₀ : PSpace Ω) = m := by
-      apply Subtype.ext
-      show (⟨m.ms, κ.1 v₀⟩ : MeasureOnSpace Ω) = m.1
       have h : κ.1 v₀ = m.μ := by
         letI : MeasurableSpace α := ⊤
         rw [hmix]
-        simp only [PMF.toMeasureWithMs, PMF.toMeasure_pure]
+        simp only [PMF.toMeasureWithMs_def, PMF.toMeasure_pure]
         exact (Measure.dirac_bind (ProbabilityTheory.Kernel.measurable κ.1) v₀).symm
-      rw [h]
+      refine PSpace.ext_ms (ProbabilityTheory.TrivialMarkovKernel.ms_apply κ v₀) fun E _ ↦ ?_
+      rw [ProbabilityTheory.TrivialMarkovKernel.μ_apply, h]
     have hown : ownP m ⊢ ownP (κ v₀) := by rw [hκ]
     ispecialize Hall $$ %⟨v₀, (PMF.mem_support_pure_iff _ _).2 rfl⟩
     iapply Hall
     iapply hown
     iexact Hown
-  · unfold jointConditioning
+  · rw [jointConditioning_def]
     iintro HK
     iexists (1 : PSpace Ω), unitKernel α
     isplitl []
     · exact ownP_one
     · isplitl []
       · ipureintro
-        show PSpace.μ 1 = (((δ v₀) : PMF α).toMeasureWithMs ⊤).bind (fun _ ↦ PSpace.μ 1)
-        simp [PMF.toMeasureWithMs]
+        rw [unitKernel_def]
+        show PSpace.μ (1 : PSpace Ω)
+          = (((δ v₀) : PMF α).toMeasureWithMs ⊤).bind (fun _ ↦ PSpace.μ (1 : PSpace Ω))
+        simp [PMF.toMeasureWithMs_def]
       · iintro %v Hv
         -- the only value in the support is `v₀`
         obtain ⟨v, hv⟩ := v
@@ -239,7 +256,7 @@ open MeasureTheory in
 /-- `c-unit-r` (Bluebell, Fig. 9). -/
 theorem C_UNIT_R : E ~ μ ⊣⊢ 𝒞⟨μ⟩ v; ⌈E = v⌉ := by
   constructor
-  · unfold hasDistribution jointConditioning
+  · rw [hasDistribution_def, jointConditioning_def]
     iintro ⟨%P, HP, %hpure⟩
     obtain ⟨ham, hlaw⟩ := hpure
     obtain ⟨κ, hmix, hsure⟩ := condKernel_of_law P ham hlaw
@@ -256,9 +273,7 @@ theorem C_UNIT_R : E ~ μ ⊣⊢ 𝒞⟨μ⟩ v; ⌈E = v⌉ := by
         · iexact Hv
         · ipureintro
           exact hsure v v.2
-  · intro r hv h
-    have hown : own r ⊢ jointConditioning μ (fun v ↦ ⌈E = v⌉) :=
-      fun _ _ hry ↦ UpperSet.upper _ hry h
+  · refine entails_of_own fun r hv hown ↦ ?_
     obtain ⟨s, hbfs, hsr, w, hsmix, hX⟩ := cond_elim hv hown
     -- on each fibre the continuation made `E` surely its value
     have hsure : ∀ v ∈ μ.support, (w v).1 {ρ | ¬ E ρ = v} = 0 := by
@@ -268,16 +283,19 @@ theorem C_UNIT_R : E ~ μ ⊣⊢ 𝒞⟨μ⟩ v; ⌈E = v⌉ := by
         show X.val ≠ (⊤ : PSp Ω)
         rw [hXval]
         exact WithTop.coe_ne_top
-      obtain ⟨q₀, ⟨P', hq₀⟩, hq₀m⟩ := hXK X hXv (le_refl X)
-      obtain ⟨e₁, _, hlee, hown', hpure'⟩ := (Quotient.exact hq₀).2 _ hXv hq₀m
-      obtain ⟨r', ⟨hbf', hr'⟩, he₁⟩ := hown'
+      simp only [own_def, LiftPred.lift, ownP_def] at hXK
+      obtain ⟨q₀, ⟨P', hq₀⟩, hq₀m⟩ :=
+        UpperSetBI.mem_sExists.1 (hXK X hXv (UpperSetBI.mem_own.2 (le_refl X)))
+      obtain ⟨e₁, _, hlee, hown', hpure'⟩ := UpperSetBI.mem_sep.1 ((Quotient.exact hq₀).2 _ hXv hq₀m)
+      replace hpure' := UpperSetBI.mem_pure.1 hpure'
+      obtain ⟨r', ⟨hbf', hr'⟩, he₁⟩ := UpperSetBI.mem_sExists.1 hown'
       have he₁m := le_trans (le_mul_of_one_le PSp.one_le) hlee
-      have hP' := (Quotient.exact hr').2 e₁ (valid_mono he₁m hXv) he₁
+      have hP' := UpperSetBI.mem_own.1 ((Quotient.exact hr').2 e₁ (valid_mono he₁m hXv) he₁)
       have hP'S : P' ≤ (show PSpace Ω from ⟨⟨s.ms, (w v).1⟩, (w v).2⟩) := by
         have h : (P' : PSp Ω) ≤ X.val := le_trans hP' he₁m
         rw [hXval] at h
         exact WithTop.coe_le_coe.1 h
-      exact PSpace.null_of_le hP'S hpure'
+      exact (PSpace.μ_mk_apply _ _ _).symm.trans (PSpace.null_of_le hP'S hpure')
     -- so the mixture of the fibres gives `E` the law `μ`
     have hmix : ∀ S, @MeasurableSet Ω s.ms S →
         s.μ S = ∫⁻ v, (w v).1 S ∂(μ.toMeasureWithMs ⊤) := by
@@ -286,9 +304,13 @@ theorem C_UNIT_R : E ~ μ ⊣⊢ 𝒞⟨μ⟩ v; ⌈E = v⌉ := by
       rw [hsmix, Measure.bind_apply hS measurable_from_top.aemeasurable]
     obtain ⟨ham, hlaw⟩ := law_of_fibres s (fun v ↦ (w v).1) hmix
       (fun v _ ↦ (w v).2.measure_univ) hsure
-    exact ⟨_, ⟨s, rfl⟩, ⟨(s : PSp Ω), hbfs⟩, 1, by rw [mul_one]; exact hsr,
-      ⟨_, ⟨hbfs, rfl⟩, le_refl (⟨(s : PSp Ω), hbfs⟩ : BoundedFootprintSpace Bool)⟩,
-      ⟨ham, hlaw⟩⟩
+    simp only [own_def, hasDistribution_def, ownP_def]
+    intro r' _ hr'
+    exact UpperSetBI.mem_sExists.2 ⟨_, ⟨s, rfl⟩, UpperSetBI.mem_sep.2 ⟨⟨(s : PSp Ω), hbfs⟩, 1,
+      by rw [mul_one]; exact le_trans hsr (UpperSetBI.mem_own.1 hr'),
+      UpperSetBI.mem_sExists.2 ⟨_, ⟨hbfs, rfl⟩, UpperSetBI.mem_own.2
+        (le_refl (⟨(s : PSp Ω), hbfs⟩ : BoundedFootprintSpace Bool))⟩,
+      UpperSetBI.mem_pure.2 ⟨ham, hlaw⟩⟩⟩
 
 variable {μ₀ : PMF (α × β)} {κ : α → PMF β} {K : (α × β) → FProp} in
 set_option linter.style.haveILetI false in
@@ -301,13 +323,10 @@ theorem C_ASSOC (h : μ₀ = (PMF.bind μ fun v ↦ PMF.bind (κ v) fun w ↦ PM
   obtain ⟨Kr, rfl⟩ : ∃ Kr : α × β → UpperSet (BoundedFootprintSpace Bool),
       K = fun x ↦ fmk (Kr x) :=
     ⟨fun x ↦ (K x).out, funext fun x ↦ (Quotient.out_eq _).symm⟩
-  intro r hv hr
-  have hown : own r ⊢ jointConditioning μ
-      (fun v ↦ jointConditioning (κ v) (fun w ↦ fmk (Kr (v, w)))) :=
-    fun _ _ hry ↦ UpperSet.upper _ hry hr
+  refine entails_of_own fun r hv hown ↦ ?_
   -- the outer conditioning
   obtain ⟨s, hbfs, hsr, w, hsmix, hX⟩ := cond_elim hv hown
-  have hsp := s.2
+  have hsp : IsProbabilityMeasure s.μ := PSpace.isProbability
   -- the inner conditionings, one per value of the outer one
   have hinner : ∀ v ∈ μ.support, ∃ (sv : PSpace Ω)
       (wv : β → {p : Measure[sv.ms] Ω // IsProbabilityMeasure p}),
@@ -338,9 +357,11 @@ theorem C_ASSOC (h : μ₀ = (PMF.bind μ fun v ↦ PMF.bind (κ v) fun w ↦ PM
       @MeasurableSet Ω (sv v hv).ms A → Λμ (v, b) A = (wv v hv b).1 A := by
     intro v hv b hb A hA
     haveI := (wv v hv b).2
-    have hsvp := (sv v hv).2
+    have hsvp : IsProbabilityMeasure (sv v hv).μ := PSpace.isProbability
     have hac : (wv v hv b).1 ≪ (sv v hv).μ := bind_fibre_ac (hsvmix v hv) hb
-    simp only [Λμ, show (v, b).1 ∈ μ.support ∧ (v, b).2 ∈ (κ (v, b).1).support from ⟨hv, hb⟩]
+    simp only [Λμ, show (v, b).1 ∈ μ.support ∧ (v, b).2 ∈ (κ (v, b).1).support from ⟨hv, hb⟩,
+      and_self, dite_true]
+    refine (PSpace.withDensity_mk_apply ⟨s.ms, (w v).1⟩ (w v).2 _ A).symm.trans ?_
     refine (PSpace.withDensity_le_apply (hsvle v hv)
       (@Measure.measurable_rnDeriv Ω (sv v hv).ms (wv v hv b).1 (sv v hv).μ) hA).trans ?_
     rw [Measure.withDensity_rnDeriv_eq _ _ hac]
@@ -367,17 +388,24 @@ theorem C_ASSOC (h : μ₀ = (PMF.bind μ fun v ↦ PMF.bind (κ v) fun w ↦ PM
     rw [Measure.bind_apply hA measurable_from_top.aemeasurable]
     refine lintegral_congr_ae ?_
     filter_upwards [ae_mem_support μ] with v hv
-    refine (mixture_of_tilts (hsvle v hv) (κ v) (fun b ↦ (wv v hv b).1) (fun b ↦ (wv v hv b).2)
-      (hsvmix v hv) hA).trans ?_
+    refine ((PSpace.μ_mk_apply ⟨s.ms, (w v).1⟩ (w v).2 A).symm.trans
+      (mixture_of_tilts (hsvle v hv) (κ v) (fun b ↦ (wv v hv b).1) (fun b ↦ (wv v hv b).2)
+        (hsvmix v hv) (by rw [PSpace.ms_mk]; exact hA))).trans ?_
     refine lintegral_congr_ae ?_
     filter_upwards [ae_mem_support (κ v)] with b hb
-    rw [hΛk]
-    simp only [Λμ, show (v, b).1 ∈ μ.support ∧ (v, b).2 ∈ (κ (v, b).1).support from ⟨hv, hb⟩]
-    rfl
+    rw [hΛk, PSpace.withDensity_mk_apply]
+    simp only [Λμ, show (v, b).1 ∈ μ.support ∧ (v, b).2 ∈ (κ (v, b).1).support from ⟨hv, hb⟩,
+      and_self, dite_true]
   -- the joint conditioning, framed by nothing: each joint fibre contains `T v b`
-  refine ⟨_, ⟨s, rfl⟩, _, ⟨Λk, rfl⟩, ⟨(s : PSp Ω), hbfs⟩, 1, by rw [mul_one]; exact hsr,
-    ⟨_, ⟨hbfs, rfl⟩, le_refl (⟨(s : PSp Ω), hbfs⟩ : BoundedFootprintSpace Bool)⟩,
-    1, 1, le_of_eq (mul_one 1), hΛmix, ?_⟩
+  simp only [own_def, jointConditioning_def, ownP_def]
+  intro r' _ hr'
+  refine UpperSetBI.mem_sExists.2 ⟨_, ⟨s, rfl⟩, UpperSetBI.mem_sExists.2 ⟨_, ⟨Λk, rfl⟩,
+    UpperSetBI.mem_sep.2 ⟨⟨(s : PSp Ω), hbfs⟩, 1,
+    by rw [mul_one]; exact le_trans hsr (UpperSetBI.mem_own.1 hr'),
+    UpperSetBI.mem_sExists.2 ⟨_, ⟨hbfs, rfl⟩, UpperSetBI.mem_own.2
+      (le_refl (⟨(s : PSp Ω), hbfs⟩ : BoundedFootprintSpace Bool))⟩,
+    UpperSetBI.mem_sep.2 ⟨1, 1, le_of_eq (mul_one 1), UpperSetBI.mem_pure.2 hΛmix, ?_⟩⟩⟩⟩
+  refine UpperSetBI.mem_sForall.2 ?_
   intro p ⟨x, hxp⟩
   obtain ⟨⟨a, b⟩, hab⟩ := x
   obtain ⟨ha, hb⟩ : a ∈ μ.support ∧ b ∈ (κ a).support := by
@@ -388,37 +416,38 @@ theorem C_ASSOC (h : μ₀ = (PMF.bind μ fun v ↦ PMF.bind (κ v) fun w ↦ PM
     rw [PMF.mem_support_pure_iff] at hpb
     obtain ⟨rfl, rfl⟩ := Prod.mk.inj hpb
     exact ⟨hv, hb'⟩
-  refine (Quotient.exact hxp).1 1 valid_one fun y _ hy ↦ ?_
+  refine (Quotient.exact hxp).1 1 valid_one (UpperSetBI.mem_wand.2 fun y _ hy ↦ ?_)
   rw [one_mul]
   -- `y` owns the joint fibre, hence `T a b`, which satisfies the continuation
-  obtain ⟨q, ⟨hbfΛ, hq⟩, hyq⟩ := hy
+  obtain ⟨q, ⟨hbfΛ, hq⟩, hyq⟩ := UpperSetBI.mem_sExists.1 hy
   have hvy : ✓y := valid_mono (le_of_eq (one_mul y).symm) ‹_›
-  have hΛy := (Quotient.exact hq).2 y hvy hyq
+  have hΛy := UpperSetBI.mem_own.1 ((Quotient.exact hq).2 y hvy hyq)
   obtain ⟨Y, hYval, hYK⟩ := hY a ha b hb
-  have hTΛ : (⟨⟨(sv a ha).ms, (wv a ha b).1⟩, (wv a ha b).2⟩ : PSpace Ω)
-      ≤ (Λk (a, b) : PSpace Ω) :=
-    PSpace.le_of_measure_eq (le_trans (hsvle a ha).1 le_rfl)
-      fun u hu ↦ by
-        show _ = Λk.1 (a, b) u
-        rw [hΛk]
-        exact (hΛT a ha b hb u hu).symm
+  let T : PSpace Ω := ⟨⟨(sv a ha).ms, (wv a ha b).1⟩, (wv a ha b).2⟩
+  have hTms : T.ms = (sv a ha).ms := PSpace.ms_mk _ _
+  have hTΛ : T ≤ (Λk (a, b) : PSpace Ω) := by
+    refine PSpace.le_of_measure_eq ?_ fun u hu ↦ ?_
+    · rw [hTms, ProbabilityTheory.TrivialMarkovKernel.ms_apply]
+      exact le_trans (hsvle a ha).1 (le_of_eq (PSpace.ms_mk _ _))
+    · rw [show T.μ u = (wv a ha b).1 u from PSpace.μ_mk_apply _ _ _,
+        ProbabilityTheory.TrivialMarkovKernel.μ_apply, hΛk]
+      exact (hΛT a ha b hb u (by rwa [hTms] at hu)).symm
   have hYy : Y ≤ y := by
     refine le_trans ?_ hΛy
     show Y.val ≤ ((Λk (a, b) : PSpace Ω) : PSp Ω)
     rw [hYval]
     exact WithTop.coe_le_coe.2 hTΛ
-  exact hYK y hvy hYy
+  rw [own_def] at hYK
+  exact hYK y hvy (UpperSetBI.mem_own.2 hYy)
 
 set_option linter.style.haveILetI false in
 open MeasureTheory in
 /-- `c-unassoc` (Bluebell, Fig. 9). -/
 theorem C_UNASSOC {K : β → FProp} :
   𝒞⟨PMF.bind μ κ⟩ w; K w ⊢ 𝒞⟨μ⟩ v; 𝒞⟨κ v⟩ w; K w := by
-  intro r hv hr
-  have hown : own r ⊢ jointConditioning (μ.bind κ) (fun w ↦ K w) :=
-    fun _ _ hry ↦ UpperSet.upper _ hry hr
+  refine entails_of_own fun r hv hown ↦ ?_
   obtain ⟨s, hbfs, hsr, w, hsmix, hX⟩ := cond_elim hv hown
-  have hsp := s.2
+  have hsp : IsProbabilityMeasure s.μ := PSpace.isProbability
   -- the outer fibres: the `κ v`-mixtures of the joint fibres
   obtain ⟨ℓ, hℓ⟩ : ∃ ℓ : ProbabilityTheory.TrivialMarkovKernel α s,
       ∀ v, ℓ.1 v = ((κ v).toMeasureWithMs ⊤).bind fun b ↦ (w b).1 := by
@@ -430,7 +459,7 @@ theorem C_UNASSOC {K : β → FProp} :
     show (((κ v).toMeasureWithMs ⊤).bind fun b ↦ (w b).1) Set.univ = 1
     rw [Measure.bind_apply MeasurableSet.univ measurable_from_top.aemeasurable,
       lintegral_congr fun b ↦ (w b).2.measure_univ, lintegral_one]
-    show (κ v).toMeasure Set.univ = 1
+    rw [PMF.toMeasureWithMs_def]
     exact measure_univ
   -- they mix back to `s`
   have hℓmix : s.μ = (μ.toMeasureWithMs ⊤).bind ℓ.1 := by
@@ -443,20 +472,37 @@ theorem C_UNASSOC {K : β → FProp} :
     refine lintegral_congr fun v ↦ ?_
     rw [hℓ, Measure.bind_apply hA measurable_from_top.aemeasurable]
   -- the inner kernels hand back the joint fibres
-  let ι : ∀ v, ProbabilityTheory.TrivialMarkovKernel β (ℓ v) := fun _ ↦
-    letI : MeasurableSpace Ω := s.ms
+  -- (`ℓ v` lives on `s.ms` only propositionally, so build the kernel over a generic σ-algebra)
+  have hιex : ∀ v, ∃ ι : ProbabilityTheory.TrivialMarkovKernel β (ℓ v),
+      ∀ b E, ι.1 b E = (w b).1 E := by
+    intro v
     letI : MeasurableSpace β := ⊤
-    ⟨⟨fun b ↦ (w b).1, measurable_from_top⟩, ⟨fun b ↦ (w b).2⟩⟩
+    have key : ∀ n : MeasurableSpace Ω, s.ms = n →
+        ∃ ι : @ProbabilityTheory.Kernel β Ω ⊤ n, ProbabilityTheory.IsMarkovKernel ι ∧
+          ∀ b E, ι b E = (w b).1 E := by
+      intro n hn
+      subst hn
+      letI : MeasurableSpace Ω := s.ms
+      exact ⟨⟨fun b ↦ (w b).1, measurable_from_top⟩, ⟨fun b ↦ (w b).2⟩, fun _ _ ↦ rfl⟩
+    obtain ⟨ι, hιm, hι⟩ :=
+      key (ℓ v).ms (ProbabilityTheory.TrivialMarkovKernel.ms_apply ℓ v).symm
+    exact ⟨⟨ι, hιm⟩, hι⟩
+  choose ι hι using hιex
   have hKb : ∀ v (b : β), b ∈ (μ.bind κ).support → ownP (ι v b) ⊢ K b := by
     intro v b hb
     obtain ⟨X, hXval, hXK⟩ := hX b hb
-    unfold ownP
+    rw [ownP_def]
     refine Iris.BI.exists_elim fun hbf ↦ ?_
+    have hιw : (ι v b : PSpace Ω) = ⟨⟨s.ms, (w b).1⟩, (w b).2⟩ :=
+      PSpace.ext_ms (by rw [ProbabilityTheory.TrivialMarkovKernel.ms_apply,
+          ProbabilityTheory.TrivialMarkovKernel.ms_apply, PSpace.ms_mk])
+        fun E _ ↦ by
+          rw [ProbabilityTheory.TrivialMarkovKernel.μ_apply, PSpace.μ_mk_apply, hι]
     rw [show (⟨((ι v b : PSpace Ω) : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool) = X from
-      Subtype.ext (by rw [hXval]; rfl)]
+      Subtype.ext (by show ((ι v b : PSpace Ω) : PSp Ω) = X.val; rw [hXval, hιw])]
     exact hXK
   have key : ownP s ⊢ 𝒞⟨μ⟩ v; 𝒞⟨κ v⟩ w; K w := by
-    unfold jointConditioning
+    simp only [jointConditioning_def]
     iintro Hown
     iexists s, ℓ
     isplitl [Hown]
@@ -470,12 +516,18 @@ theorem C_UNASSOC {K : β → FProp} :
         · iexact Hv
         · isplitl []
           · ipureintro
-            show ℓ.1 v = ((κ v).toMeasureWithMs ⊤).bind fun b ↦ (w b).1
-            exact hℓ v
+            letI : MeasurableSpace β := ⊤
+            refine @Measure.ext Ω (ℓ v).ms _ _ fun A hA ↦ ?_
+            have hA' : MeasurableSet[s.ms] A := by
+              rw [← ProbabilityTheory.TrivialMarkovKernel.ms_apply ℓ v]; exact hA
+            rw [ProbabilityTheory.TrivialMarkovKernel.μ_apply, hℓ v,
+              Measure.bind_apply hA' measurable_from_top.aemeasurable,
+              Measure.bind_apply hA (ProbabilityTheory.Kernel.measurable (ι v).1).aemeasurable]
+            exact lintegral_congr fun b ↦ (hι v b A).symm
           · iintro %b Hb
             iapply (hKb v b ((PMF.mem_support_bind_iff _ _ _).2 ⟨v, v.2, b.2⟩))
             iexact Hb
-  exact key r hv ⟨_, ⟨hbfs, rfl⟩, hsr⟩
+  exact entails_trans (own_entails_ownP hsr) key
 
 /-- `c-skolem` (Bluebell, Fig. 9). -/
 theorem C_SKOLEM {α X : Type} {μ : PMF α} {Q : (α × X) → FProp} :
@@ -484,9 +536,7 @@ theorem C_SKOLEM {α X : Type} {μ : PMF α} {Q : (α × X) → FProp} :
   obtain ⟨Qr, rfl⟩ : ∃ Qr : α × X → UpperSet (BoundedFootprintSpace Bool),
       Q = fun x ↦ fmk (Qr x) :=
     ⟨fun x ↦ (Q x).out, funext fun x ↦ (Quotient.out_eq _).symm⟩
-  intro r hv hr
-  have hown : own r ⊢ jointConditioning μ (fun v ↦ iprop(∃ x : X, fmk (Qr (v, x)))) :=
-    fun _ _ hry ↦ UpperSet.upper _ hry hr
+  refine entails_of_own fun r hv hown ↦ ?_
   obtain ⟨s, hbfs, hsr, w, hsmix, hX⟩ := cond_elim hv hown
   -- a witness per value in the support, read off the fibre itself
   have hwit : ∀ v ∈ μ.support, ∃ x : X, ∀ p : PSpace Ω,
@@ -498,16 +548,19 @@ theorem C_SKOLEM {α X : Type} {μ : PMF α} {Q : (α × X) → FProp} :
       show Y.val ≠ (⊤ : PSp Ω)
       rw [hYval]
       exact WithTop.coe_ne_top
-    obtain ⟨q, ⟨x, hqx⟩, hYq⟩ := hYK Y hYv (le_refl Y)
+    rw [own_def] at hYK
+    obtain ⟨q, ⟨x, hqx⟩, hYq⟩ :=
+      UpperSetBI.mem_sExists.1 (hYK Y hYv (UpperSetBI.mem_own.2 (le_refl Y)))
     have hmem := (Quotient.exact hqx).2 Y hYv hYq
     refine ⟨x, fun p hp ↦ ?_⟩
-    unfold ownP
+    rw [ownP_def]
     refine Iris.BI.exists_elim fun hbf ↦ ?_
+    rw [own_def]
     intro y _ hy
     have hpY : (⟨(p : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool) = Y :=
       Subtype.ext (hp.trans hYval.symm)
     rw [hpY] at hy
-    exact UpperSet.upper _ hy hmem
+    exact UpperSet.upper _ (UpperSetBI.mem_own.1 hy) hmem
   obtain ⟨v₀, hv₀⟩ := μ.support_nonempty
   have : Nonempty X := ⟨(hwit v₀ hv₀).choose⟩
   choose! f hf using hwit
@@ -516,10 +569,13 @@ theorem C_SKOLEM {α X : Type} {μ : PMF α} {Q : (α × X) → FProp} :
     letI : MeasurableSpace Ω := s.ms
     letI : MeasurableSpace α := ⊤
     ⟨⟨fun v ↦ (w v).1, measurable_from_top⟩, ⟨fun v ↦ (w v).2⟩⟩
+  have hℓw : ∀ v, (ℓ v : PSpace Ω) = ⟨⟨s.ms, (w v).1⟩, (w v).2⟩ := fun v ↦
+    PSpace.ext_ms (by rw [ProbabilityTheory.TrivialMarkovKernel.ms_apply, PSpace.ms_mk])
+      fun E _ ↦ by rw [ProbabilityTheory.TrivialMarkovKernel.μ_apply, PSpace.μ_mk_apply]; rfl
   have key : ownP s ⊢ ∃ f : α → X, 𝒞⟨μ⟩ v; fmk (Qr (v, f v)) := by
     iintro Hown
     iexists f
-    unfold jointConditioning
+    rw [jointConditioning_def]
     iexists s, ℓ
     isplitl [Hown]
     · iexact Hown
@@ -527,9 +583,9 @@ theorem C_SKOLEM {α X : Type} {μ : PMF α} {Q : (α × X) → FProp} :
       · ipureintro
         exact hsmix
       · iintro %v Hv
-        iapply (hf v.1 v.2 (ℓ v.1) rfl)
+        iapply (hf v.1 v.2 (ℓ v.1) (by rw [hℓw]))
         iexact Hv
-  exact key r hv ⟨_, ⟨hbfs, rfl⟩, hsr⟩
+  exact entails_trans (own_entails_ownP hsr) key
 
 variable {f : β → α} in
 set_option linter.style.haveILetI false in
@@ -539,9 +595,7 @@ theorem C_TRANSF
   (h₁ : Set.BijOn f μ₂.support μ₁.support)
   (h₂ : ∀ b ∈ μ₂.support, μ₂ b = μ₁ (f b)) :
   𝒞⟨μ₁⟩ a; K a ⊢ 𝒞⟨μ₂⟩ b; K (f b) := by
-  intro r hv hr
-  have hown : own r ⊢ jointConditioning μ₁ (fun a ↦ K a) :=
-    fun _ _ hry ↦ UpperSet.upper _ hry hr
+  refine entails_of_own fun r hv hown ↦ ?_
   obtain ⟨s, hbfs, hsr, w, hsmix, hX⟩ := cond_elim hv hown
   -- the fibres pulled back along `f`
   let ℓ : ProbabilityTheory.TrivialMarkovKernel β s :=
@@ -561,13 +615,16 @@ theorem C_TRANSF
   have hKb : ∀ b ∈ μ₂.support, ownP (ℓ b) ⊢ K (f b) := by
     intro b hb
     obtain ⟨X, hXval, hXK⟩ := hX (f b) (h₁.mapsTo hb)
-    unfold ownP
+    rw [ownP_def]
     refine Iris.BI.exists_elim fun hbf ↦ ?_
+    have hℓw : (ℓ b : PSpace Ω) = ⟨⟨s.ms, (w (f b)).1⟩, (w (f b)).2⟩ :=
+      PSpace.ext_ms (by rw [ProbabilityTheory.TrivialMarkovKernel.ms_apply, PSpace.ms_mk])
+        fun E _ ↦ by rw [ProbabilityTheory.TrivialMarkovKernel.μ_apply, PSpace.μ_mk_apply]; rfl
     rw [show (⟨((ℓ b : PSpace Ω) : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool) = X from
-      Subtype.ext (by rw [hXval]; rfl)]
+      Subtype.ext (by show ((ℓ b : PSpace Ω) : PSp Ω) = X.val; rw [hXval, hℓw])]
     exact hXK
   have key : ownP s ⊢ 𝒞⟨μ₂⟩ b; K (f b) := by
-    unfold jointConditioning
+    rw [jointConditioning_def]
     iintro Hown
     iexists s, ℓ
     isplitl [Hown]
@@ -578,16 +635,14 @@ theorem C_TRANSF
       · iintro %b Hb
         iapply (hKb b.1 b.2)
         iexact Hb
-  exact key r hv ⟨_, ⟨hbfs, rfl⟩, hsr⟩
+  exact entails_trans (own_entails_ownP hsr) key
 
 variable {E : RV Prop} in
 set_option linter.style.haveILetI false in
 open MeasureTheory in
 /-- `sure-convex` (Bluebell, Fig. 11). -/
 theorem SURE_CONVEX : 𝒞⟨μ⟩ _v; ⌈E⌉ ⊢ ⌈E⌉ := by
-  intro r hv hr
-  have hown : own r ⊢ jointConditioning μ (fun _ ↦ ⌈E⌉) :=
-    fun _ _ hry ↦ UpperSet.upper _ hry hr
+  refine entails_of_own fun r hv hown ↦ ?_
   obtain ⟨s, hbfs, hsr, w, hsmix, hX⟩ := cond_elim hv hown
   -- each fibre makes `a` sure
   have hnull : ∀ v ∈ μ.support, (w v).1 {ρ | ¬ E ρ} = 0 := by
@@ -597,14 +652,18 @@ theorem SURE_CONVEX : 𝒞⟨μ⟩ _v; ⌈E⌉ ⊢ ⌈E⌉ := by
       show X.val ≠ (⊤ : PSp Ω)
       rw [hXval]
       exact WithTop.coe_ne_top
-    obtain ⟨q, ⟨P, hq⟩, hqX⟩ := hXK X hXv (le_refl X)
-    obtain ⟨e₁, _, hle, hownP, hpure⟩ := (Quotient.exact hq).2 X hXv hqX
-    obtain ⟨r₁, ⟨hbfP, hr₁⟩, he₁⟩ := hownP
+    simp only [own_def, LiftPred.lift, ownP_def] at hXK
+    obtain ⟨q, ⟨P, hq⟩, hqX⟩ :=
+      UpperSetBI.mem_sExists.1 (hXK X hXv (UpperSetBI.mem_own.2 (le_refl X)))
+    obtain ⟨e₁, _, hle, hownP, hpure⟩ := UpperSetBI.mem_sep.1 ((Quotient.exact hq).2 X hXv hqX)
+    obtain ⟨r₁, ⟨hbfP, hr₁⟩, he₁⟩ := UpperSetBI.mem_sExists.1 hownP
     have he₁X : e₁ ≤ X := le_trans (le_mul_of_one_le PSp.one_le) hle
-    have hPX : (P : PSp Ω) ≤ X.val :=
-      le_trans ((Quotient.exact hr₁).2 e₁ (valid_mono he₁X hXv) he₁) he₁X
+    have hPe₁ : (⟨(P : PSp Ω), hbfP⟩ : BoundedFootprintSpace Bool) ≤ e₁ :=
+      UpperSetBI.mem_own.1 ((Quotient.exact hr₁).2 e₁ (valid_mono he₁X hXv) he₁)
+    have hPX : (P : PSp Ω) ≤ X.val := le_trans hPe₁ he₁X
     rw [hXval] at hPX
-    exact PSpace.null_of_le (WithTop.coe_le_coe.1 hPX) hpure
+    exact (PSpace.μ_mk_apply _ _ _).symm.trans
+      (PSpace.null_of_le (WithTop.coe_le_coe.1 hPX) (UpperSetBI.mem_pure.1 hpure))
   -- measurable null covers on `s`, and their intersection over the support
   have hcover : ∀ v ∈ μ.support, ∃ N, {ρ | ¬ E ρ} ⊆ N ∧ @MeasurableSet Ω s.ms N ∧
       (w v).1 N = 0 :=
@@ -621,7 +680,12 @@ theorem SURE_CONVEX : 𝒞⟨μ⟩ _v; ⌈E⌉ ⊢ ⌈E⌉ := by
     exact measure_mono_null (Set.iInter_subset _ ⟨v, hv'⟩) (hNnull v hv')
   have hs : s.μ {ρ | ¬ E ρ} = 0 :=
     measure_mono_null (Set.subset_iInter fun v : μ.support ↦ hNsub v.1 v.2) hsN
-  exact ⟨_, ⟨s, rfl⟩, r, 1, by rw [mul_one], ⟨_, ⟨hbfs, rfl⟩, hsr⟩, hs⟩
+  simp only [own_def, LiftPred.lift, ownP_def]
+  intro r' _ hr'
+  exact UpperSetBI.mem_sExists.2 ⟨_, ⟨s, rfl⟩, UpperSetBI.mem_sep.2 ⟨r', 1, by rw [mul_one],
+    UpperSetBI.mem_sExists.2 ⟨_, ⟨hbfs, rfl⟩,
+      UpperSetBI.mem_own.2 (le_trans hsr (UpperSetBI.mem_own.1 hr'))⟩,
+    UpperSetBI.mem_pure.2 hs⟩⟩
 
 /-- `sure-str-convex` (Bluebell, Fig. 9). -/
 theorem SURE_STR_CONVEX {K : α → FProp} {E : RV Prop} :
@@ -640,10 +704,11 @@ theorem C_FOR_ALL :
 /-- `c-pure` (Bluebell, Fig. 9). -/
 theorem C_PURE {X : Set α} :
     ⌜μ.toMeasureWithMs ⊤ X = 1⌝ ∗ 𝒞⟨μ⟩ v; K v ⊣⊢ 𝒞⟨μ⟩ v; (⌜v ∈ X⌝ ∗ K v) := by
-  have hsupp : μ.toMeasureWithMs ⊤ X = 1 ↔ μ.support ⊆ X :=
-    @PMF.toMeasure_apply_eq_one_iff α ⊤ μ X MeasurableSpace.measurableSet_top
+  have hsupp : μ.toMeasureWithMs ⊤ X = 1 ↔ μ.support ⊆ X := by
+    rw [PMF.toMeasureWithMs_def]
+    exact @PMF.toMeasure_apply_eq_one_iff α ⊤ μ X MeasurableSpace.measurableSet_top
   constructor
-  · unfold jointConditioning
+  · simp only [jointConditioning_def]
     iintro ⟨%hX, %m, %κ, Hown, %hmix, Hall⟩
     iexists m, κ
     isplitl [Hown]
@@ -659,17 +724,17 @@ theorem C_PURE {X : Set α} :
           iexact Hv
   · -- every fibre is a valid resource, so its continuation's pure part holds
     have hpure : 𝒞⟨μ⟩ v; (⌜v ∈ X⌝ ∗ K v) ⊢ ⌜μ.toMeasureWithMs ⊤ X = 1⌝ := by
-      intro r hv hr
-      have hown : own r ⊢ jointConditioning μ (fun v ↦ iprop(⌜v ∈ X⌝ ∗ K v)) :=
-        fun _ _ hry ↦ UpperSet.upper _ hry hr
+      refine entails_of_own fun r hv hown ↦ ?_
       obtain ⟨s, -, -, w, -, hX'⟩ := cond_elim hv hown
-      refine hsupp.2 fun v hv' ↦ ?_
+      refine pure_intro (hsupp.2 fun v hv' ↦ ?_)
       obtain ⟨Y, hYval, hYK⟩ := hX' v hv'
       have hYv : ✓Y := by
         show Y.val ≠ (⊤ : PSp Ω)
         rw [hYval]
         exact WithTop.coe_ne_top
-      exact (entails_trans hYK sep_elim_left) Y hYv (le_refl Y)
+      have h := entails_trans hYK sep_elim_left
+      rw [own_def] at h
+      exact UpperSetBI.mem_pure.1 (h Y hYv (UpperSetBI.mem_own.2 (le_refl Y)))
     refine pure_elim _ hpure fun hX ↦ ?_
     iintro H
     isplitl []
@@ -705,7 +770,7 @@ theorem C_SWAP :
   𝒞⟨μ₁⟩ v₁; 𝒞⟨μ₂⟩ v₂; K (v₁, v₂) ⊢ 𝒞⟨μ₂⟩ v₂; 𝒞⟨μ₁⟩ v₁; K (v₁, v₂) := by
   have hw : ∀ (a : α) (b : β), (μ₂ -< fun _ ↦ μ₁) (b, a) = (μ₁ -< fun _ ↦ μ₂) (a, b) :=
     fun a b ↦ by
-      show μ₂ b * μ₁ a = μ₁ a * μ₂ b
+      rw [fuse_apply, fuse_apply]
       exact mul_comm _ _
   have hbij : Set.BijOn Prod.swap (μ₂ -< fun _ ↦ μ₁).support (μ₁ -< fun _ ↦ μ₂).support := by
     refine ⟨fun ⟨b, a⟩ h ↦ ?_, Prod.swap_injective.injOn, fun ⟨a, b⟩ h ↦ ⟨(b, a), ?_, rfl⟩⟩
@@ -777,11 +842,12 @@ theorem C_PROJ_OF_CONVEX {μ : PMF (α × β)} {K : α → FProp}
   rw [hbind] at hsplit
   refine entails_trans hsplit (C_CONS fun a ↦ ?_)
   -- inside fibre `a`, the first component is surely `a`
-  have hX : (cond a).toMeasureWithMs ⊤ {p : α × β | p.1 = a} = 1 :=
-    (@PMF.toMeasure_apply_eq_one_iff _ ⊤ (cond a) _ MeasurableSpace.measurableSet_top).2
+  have hX : (cond a).toMeasureWithMs ⊤ {p : α × β | p.1 = a} = 1 := by
+    rw [PMF.toMeasureWithMs_def]
+    exact (@PMF.toMeasure_apply_eq_one_iff _ ⊤ (cond a) _ MeasurableSpace.measurableSet_top).2
       (hcond a)
   refine entails_trans (entails_trans emp_sep.2 (sep_mono (pure_intro hX) entails_rfl))
-    (entails_trans C_PURE.1 (entails_trans (C_CONS fun p ↦ ?_) (hK a (cond a))))
+    (entails_trans C_PURE.1 (entails_trans (C_CONS fun p ↦ ?_) ((convex_def _).1 (hK a) (cond a))))
   refine pure_elim _ sep_elim_left fun h ↦ ?_
   rw [← show p.1 = a from h]
   exact sep_elim_right
@@ -791,7 +857,7 @@ theorem C_SURE_PROJ {μ : PMF (α × β)} {E : α → Ω → Prop} :
   𝒞⟨μ⟩ (v, _w); ⌈E v⌉ ⊣⊢ 𝒞⟨μ ∘ π₁⁻¹⟩ v; ⌈E v⌉ := by
   constructor
   · have h := C_PROJ_OF_CONVEX (μ := μ) (K := fun v ↦ ⌈E v⌉)
-      fun a ↦ fun ν ↦ SURE_CONVEX (μ := ν) (E := E a)
+      fun a ↦ (convex_def _).2 fun ν ↦ SURE_CONVEX (μ := ν) (E := E a)
     exact h
   · exact entails_trans (C_UNASSOC (μ := μ) (κ := fun p ↦ δ p.1) (K := fun v ↦ ⌈E v⌉))
       (C_CONS fun _ ↦ C_UNIT_L.1)
@@ -814,13 +880,16 @@ theorem C_EXTRACT {E₁ : RV α} {E₂ : RV β} :
   refine entails_trans
     (C_FUSE (μ := μ₁) (κ := fun _ ↦ μ₂) (K := fun p ↦ ⌈(E₁ ×ᵣ E₂) = p⌉)).1 ?_
   refine entails_trans (C_UNIT_R (E := E₁ ×ᵣ E₂) (μ := μ₁ -< fun _ ↦ μ₂)).2 ?_
+  have hprod : (μ₁ -< fun _ ↦ μ₂) = μ₁ ⊗ μ₂ :=
+    PMF.ext fun ⟨a, b⟩ ↦ by rw [fuse_apply, product_apply]
+  rw [hprod]
   exact PROD_SPLIT
 
 /-- `c-dist-proj` (Bluebell, Fig. 11). -/
 theorem C_DIST_PROJ {A B C : Type} {μ₁ : PMF (A × B)} {μ₂ : A → PMF C} {E : A → RV C} :
   𝒞⟨μ₁⟩ (x, _y); E x ~ μ₂ x ⊢ 𝒞⟨μ₁ ∘ π₁⁻¹⟩ x; E x ~ μ₂ x := by
   have h := C_PROJ_OF_CONVEX (μ := μ₁) (K := fun x ↦ E x ~ μ₂ x)
-    fun a ↦ fun ν ↦ DIST_CONVEX (μ := ν) (E := E a) (μ' := μ₂ a)
+    fun a ↦ (convex_def _).2 fun ν ↦ DIST_CONVEX (μ := ν) (E := E a) (μ' := μ₂ a)
   exact h
 
 /-- `c-bind` (Amaryllis, Fig. 1). -/
@@ -880,8 +949,9 @@ set_option linter.style.haveILetI false in
 /-- `sure-sub` (Bluebell, Fig. 11). -/
 theorem SURE_SUB {E₁ : RV α} {E₂ : RV β} {f : α → β} :
   E₁ ~ μ ∗ ⌈E₂ = f ∘ E₁⌉ ⊢ E₂ ~ μ ∘ f⁻¹ := by
+  simp only [hasDistribution_def, LiftPred.lift, ownP_def, own_def]
   intro m hv h
-  obtain ⟨d₁, d₂, hle, h₁, h₂⟩ := h
+  obtain ⟨d₁, d₂, hle, h₁, h₂⟩ := UpperSetBI.mem_sep.1 h
   obtain ⟨y, hy⟩ : ∃ y : PSpace Ω, m.val = (y : PSp Ω) :=
     Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hv)
   have hd₁ : d₁ ≤ m := le_trans (le_mul_of_one_le PSp.one_le) hle
@@ -890,21 +960,23 @@ theorem SURE_SUB {E₁ : RV α} {E₂ : RV β} {f : α → β} :
     rw [mul_comm]
     exact le_mul_of_one_le PSp.one_le
   -- the space carrying `E₁`'s law sits below the ambient `y`
-  obtain ⟨q₁, ⟨P₁, hq₁⟩, hq₁m⟩ := h₁
-  obtain ⟨e₁, _, hlee₁, hown₁, hpure₁⟩ := (Quotient.exact hq₁).2 d₁ (valid_mono hd₁ hv) hq₁m
-  obtain ⟨r₁, ⟨hbf₁, hr₁⟩, he₁⟩ := hown₁
+  obtain ⟨q₁, ⟨P₁, hq₁⟩, hq₁m⟩ := UpperSetBI.mem_sExists.1 h₁
+  obtain ⟨e₁, _, hlee₁, hown₁, hpure₁⟩ :=
+    UpperSetBI.mem_sep.1 ((Quotient.exact hq₁).2 d₁ (valid_mono hd₁ hv) hq₁m)
+  obtain ⟨r₁, ⟨hbf₁, hr₁⟩, he₁⟩ := UpperSetBI.mem_sExists.1 hown₁
   have he₁m : e₁ ≤ m := le_trans (le_trans (le_mul_of_one_le PSp.one_le) hlee₁) hd₁
-  have hP₁ := (Quotient.exact hr₁).2 e₁ (valid_mono he₁m hv) he₁
+  have hP₁ := UpperSetBI.mem_own.1 ((Quotient.exact hr₁).2 e₁ (valid_mono he₁m hv) he₁)
   have hP₁y : P₁ ≤ y := by
     have hP₁m : (P₁ : PSp Ω) ≤ (m : PSp Ω) := le_trans hP₁ he₁m
     rw [hy] at hP₁m
     exact WithTop.coe_le_coe.1 hP₁m
   -- and so does the space on which `E₂ = f ∘ E₁` is sure
-  obtain ⟨q₂, ⟨P₂, hq₂⟩, hq₂m⟩ := h₂
-  obtain ⟨e₂, _, hlee₂, hown₂, hpure₂⟩ := (Quotient.exact hq₂).2 d₂ (valid_mono hd₂ hv) hq₂m
-  obtain ⟨r₂, ⟨hbf₂, hr₂⟩, he₂⟩ := hown₂
+  obtain ⟨q₂, ⟨P₂, hq₂⟩, hq₂m⟩ := UpperSetBI.mem_sExists.1 h₂
+  obtain ⟨e₂, _, hlee₂, hown₂, hpure₂⟩ :=
+    UpperSetBI.mem_sep.1 ((Quotient.exact hq₂).2 d₂ (valid_mono hd₂ hv) hq₂m)
+  obtain ⟨r₂, ⟨hbf₂, hr₂⟩, he₂⟩ := UpperSetBI.mem_sExists.1 hown₂
   have he₂m : e₂ ≤ m := le_trans (le_trans (le_mul_of_one_le PSp.one_le) hlee₂) hd₂
-  have hP₂ := (Quotient.exact hr₂).2 e₂ (valid_mono he₂m hv) he₂
+  have hP₂ := UpperSetBI.mem_own.1 ((Quotient.exact hr₂).2 e₂ (valid_mono he₂m hv) he₂)
   have hP₂y : P₂ ≤ y := by
     have hP₂m : (P₂ : PSp Ω) ≤ (m : PSp Ω) := le_trans hP₂ he₂m
     rw [hy] at hP₂m
@@ -912,23 +984,25 @@ theorem SURE_SUB {E₁ : RV α} {E₂ : RV β} {f : α → β} :
   -- on `y`: `E₁` keeps its law, and `E₂` is almost surely `f ∘ E₁`
   letI : MeasurableSpace α := ⊤
   letI : MeasurableSpace β := ⊤
-  obtain ⟨ham₁, hlaw₁⟩ := hpure₁
-  replace ham₁ : @AEMeasurable Ω α ⊤ P₁.ms E₁ P₁.μ := ham₁
+  obtain ⟨ham₁, hlaw₁⟩ := UpperSetBI.mem_pure.1 hpure₁
+  replace ham₁ : @AEMeasurable Ω α ⊤ P₁.ms E₁ P₁.μ := (almostMeasurable_some _ _).1 ham₁
   have ham₁y : @AEMeasurable Ω α ⊤ y.ms E₁ y.μ :=
     ⟨ham₁.mk E₁, ham₁.measurable_mk.mono hP₁y.1 le_rfl, PSpace.ae_eq_of_le hP₁y ham₁.ae_eq_mk⟩
   have hlaw₁y : @MeasureTheory.Measure.map Ω α y.ms ⊤ E₁ y.μ = μ.toMeasureWithMs ⊤ :=
     (PSpace.map_eq_of_le (le_refl y) hP₁y ham₁y ham₁).trans hlaw₁
-  have hnull : y.μ {ρ | ¬ E₂ ρ = (f ∘ E₁) ρ} = 0 := PSpace.null_of_le hP₂y hpure₂
+  have hnull : y.μ {ρ | ¬ E₂ ρ = (f ∘ E₁) ρ} = 0 := PSpace.null_of_le hP₂y (UpperSetBI.mem_pure.1 hpure₂)
   have hae : E₂ =ᵐ[y.μ] f ∘ E₁ := MeasureTheory.ae_iff.2 hnull
   have hf : Measurable f := measurable_from_top
   have hfE₁ : @AEMeasurable Ω β ⊤ y.ms (f ∘ E₁) y.μ := hf.comp_aemeasurable ham₁y
   have hbfy : HasBoundedFootprint (y : PSp Ω) := hy ▸ m.property
   have hmy : (⟨(y : PSp Ω), hbfy⟩ : BoundedFootprintSpace Bool) = m := Subtype.ext hy.symm
-  refine ⟨_, ⟨y, rfl⟩, m, 1, ?_, ⟨_, ⟨hbfy, rfl⟩, le_of_eq hmy⟩, ?_, ?_⟩
+  refine UpperSetBI.mem_sExists.2 ⟨_, ⟨y, rfl⟩, UpperSetBI.mem_sep.2 ⟨m, 1, ?_,
+    UpperSetBI.mem_sExists.2 ⟨_, ⟨hbfy, rfl⟩, UpperSetBI.mem_own.2 (le_of_eq hmy)⟩,
+    UpperSetBI.mem_pure.2 ⟨?_, ?_⟩⟩⟩
   · rw [mul_one]
-  · exact hfE₁.congr hae.symm
+  · exact (almostMeasurable_some _ _).2 (hfE₁.congr hae.symm)
   · rw [MeasureTheory.Measure.map_congr hae, ← AEMeasurable.map_map_of_aemeasurable hf.aemeasurable ham₁y,
-      hlaw₁y, PMF.toMeasureWithMs, PMF.toMeasureWithMs]
+      hlaw₁y, PMF.toMeasureWithMs_def, PMF.toMeasureWithMs_def]
     exact PMF.toMeasure_map (p := μ) (hf := hf)
 
 variable {f : α → β} in
@@ -949,7 +1023,8 @@ set_option linter.style.haveILetI false in
 /-- `dist-supp` (Bluebell, Fig. 11). -/
 theorem DIST_SUPP : E ~ μ ⊢ E ~ μ ∗ ⌈E ∈ μ.support⌉ := by
   have hsupp : E ~ μ ⊢ ⌈E ∈ μ.support⌉ := by
-    dsimp only [hasDistribution, LiftPred.lift]
+    rw [hasDistribution_def]
+    dsimp only [LiftPred.lift]
     refine exists_elim fun P ↦ entails_trans (sep_mono_right (pure_mono fun hP ↦ ?_))
       (exists_intro (Ψ := fun P : PSpace Ω ↦
         iprop(ownP P ∗ ⌜P.μ {ρ | ¬ LiftMem.lift E μ.support ρ} = 0⌝)) P)
@@ -957,39 +1032,44 @@ theorem DIST_SUPP : E ~ μ ⊢ E ~ μ ∗ ⌈E ∈ μ.support⌉ := by
     have hPp := P.isProbability
     letI : MeasurableSpace α := ⊤
     letI : MeasurableSpace Ω := P.ms
-    replace ham : @AEMeasurable Ω α ⊤ P.ms E P.μ := ham
+    replace ham : @AEMeasurable Ω α ⊤ P.ms E P.μ := (almostMeasurable_some _ _).1 ham
     have h := MeasureTheory.Measure.map_apply_of_aemeasurable ham
       (s := (μ.support)ᶜ) MeasurableSpace.measurableSet_top
     rw [hmap] at h
     show P.μ (E ⁻¹' (μ.support)ᶜ) = 0
-    rw [← h, PMF.toMeasureWithMs]
+    rw [← h, PMF.toMeasureWithMs_def]
     exact (PMF.toMeasure_apply_eq_zero_iff μ MeasurableSpace.measurableSet_top).2
       disjoint_compl_right
   exact entails_trans (and_intro hsupp entails_rfl) (entails_trans SURE_AND_STAR sep_comm.1)
 
 /-- `prod-unsplit` (Bluebell, Fig. 11). -/
 theorem PROD_UNSPLIT : E₁ ~ μ₁ ∗ E₂ ~ μ₂ ⊢ (E₁ ×ᵣ E₂) ~ (μ₁ ⊗ μ₂) := by
+  simp only [hasDistribution_def, ownP_def, own_def]
   intro m hv h
-  obtain ⟨d₁, d₂, hle, h₁, h₂⟩ := h
+  obtain ⟨d₁, d₂, hle, h₁, h₂⟩ := UpperSetBI.mem_sep.1 h
   have hd₁ : d₁ ≤ m := le_trans (le_mul_of_one_le PSp.one_le) hle
   have hd₂ : d₂ ≤ m := by
     refine le_trans ?_ hle
     rw [mul_comm]
     exact le_mul_of_one_le PSp.one_le
   -- the space carrying `E₁`'s law sits in `d₁`
-  obtain ⟨q₁, ⟨P₁, hq₁⟩, hq₁m⟩ := h₁
-  obtain ⟨e₁, _, hlee₁, hown₁, hpure₁⟩ := (Quotient.exact hq₁).2 d₁ (valid_mono hd₁ hv) hq₁m
-  obtain ⟨r₁, ⟨hbf₁, hr₁⟩, he₁⟩ := hown₁
+  obtain ⟨q₁, ⟨P₁, hq₁⟩, hq₁m⟩ := UpperSetBI.mem_sExists.1 h₁
+  obtain ⟨e₁, _, hlee₁, hown₁, hpure₁⟩ :=
+    UpperSetBI.mem_sep.1 ((Quotient.exact hq₁).2 d₁ (valid_mono hd₁ hv) hq₁m)
+  obtain ⟨r₁, ⟨hbf₁, hr₁⟩, he₁⟩ := UpperSetBI.mem_sExists.1 hown₁
   have he₁d : e₁ ≤ d₁ := le_trans (le_mul_of_one_le PSp.one_le) hlee₁
   have hP₁ : (⟨(P₁ : PSp Ω), hbf₁⟩ : BoundedFootprintSpace Bool) ≤ d₁ :=
-    le_trans ((Quotient.exact hr₁).2 e₁ (valid_mono (le_trans he₁d hd₁) hv) he₁) he₁d
+    le_trans (UpperSetBI.mem_own.1
+      ((Quotient.exact hr₁).2 e₁ (valid_mono (le_trans he₁d hd₁) hv) he₁)) he₁d
   -- and `E₂`'s in `d₂`
-  obtain ⟨q₂, ⟨P₂, hq₂⟩, hq₂m⟩ := h₂
-  obtain ⟨e₂, _, hlee₂, hown₂, hpure₂⟩ := (Quotient.exact hq₂).2 d₂ (valid_mono hd₂ hv) hq₂m
-  obtain ⟨r₂, ⟨hbf₂, hr₂⟩, he₂⟩ := hown₂
+  obtain ⟨q₂, ⟨P₂, hq₂⟩, hq₂m⟩ := UpperSetBI.mem_sExists.1 h₂
+  obtain ⟨e₂, _, hlee₂, hown₂, hpure₂⟩ :=
+    UpperSetBI.mem_sep.1 ((Quotient.exact hq₂).2 d₂ (valid_mono hd₂ hv) hq₂m)
+  obtain ⟨r₂, ⟨hbf₂, hr₂⟩, he₂⟩ := UpperSetBI.mem_sExists.1 hown₂
   have he₂d : e₂ ≤ d₂ := le_trans (le_mul_of_one_le PSp.one_le) hlee₂
   have hP₂ : (⟨(P₂ : PSp Ω), hbf₂⟩ : BoundedFootprintSpace Bool) ≤ d₂ :=
-    le_trans ((Quotient.exact hr₂).2 e₂ (valid_mono (le_trans he₂d hd₂) hv) he₂) he₂d
+    le_trans (UpperSetBI.mem_own.1
+      ((Quotient.exact hr₂).2 e₂ (valid_mono (le_trans he₂d hd₂) hv) he₂)) he₂d
   -- so their product is defined and sits in `m`
   set R : BoundedFootprintSpace Bool :=
     (⟨(P₁ : PSp Ω), hbf₁⟩ : BoundedFootprintSpace Bool) * ⟨(P₂ : PSp Ω), hbf₂⟩ with hR
@@ -1000,10 +1080,12 @@ theorem PROD_UNSPLIT : E₁ ~ μ₁ ∗ E₂ ~ μ₂ ⊢ (E₁ ×ᵣ E₂) ~ (μ
   have hsP : s =ᵢ P₁ ⊕ᵢ P₂ := PSp.mul_inversion hs
   have hbfs : HasBoundedFootprint (s : PSp Ω) := hs ▸ R.property
   have hsR : (⟨(s : PSp Ω), hbfs⟩ : BoundedFootprintSpace Bool) = R := Subtype.ext hs.symm
-  obtain ⟨ham₁, hlaw₁⟩ := hpure₁
-  obtain ⟨ham₂, hlaw₂⟩ := hpure₂
-  refine ⟨_, ⟨s, rfl⟩, R, 1, by rw [mul_one]; exact hRm,
-    ⟨_, ⟨hbfs, rfl⟩, le_of_eq hsR⟩, ?_⟩
+  obtain ⟨ham₁, hlaw₁⟩ := UpperSetBI.mem_pure.1 hpure₁
+  obtain ⟨ham₂, hlaw₂⟩ := UpperSetBI.mem_pure.1 hpure₂
+  refine UpperSetBI.mem_sExists.2 ⟨_, ⟨s, rfl⟩, UpperSetBI.mem_sep.2 ⟨R, 1,
+    by rw [mul_one]; exact hRm,
+    UpperSetBI.mem_sExists.2 ⟨_, ⟨hbfs, rfl⟩, UpperSetBI.mem_own.2 (le_of_eq hsR)⟩,
+    UpperSetBI.mem_pure.2 ?_⟩⟩
   exact PSpace.product_law_of_split hsP ham₁ hlaw₁ ham₂ hlaw₂
 
 /-! ### Weakest precondition -/
@@ -1017,11 +1099,13 @@ theorem WP_PURE {α : Type} {m : Type → Type} [Monad m] [Interp.LawfulBernoull
     [Inhabited α] {Q : RV α → FProp} {x : α} : Q (fun _ ↦ x) ⊢ wp (pure x : m α) Q := by
   obtain ⟨U, hU⟩ : ∃ U : UpperSet (BoundedFootprintSpace Bool), Q (fun _ ↦ x) = fmk U :=
     ⟨(Q (fun _ ↦ x)).out, (Quotient.out_eq _).symm⟩
-  rw [hU]
+  rw [hU, wp_def]
   intro a hva ha μ₀ c hvalid hle
   refine ⟨a, ?_, hva, le_sup_left, ?_⟩
   · have hsp : ((run (pure x : m α) μ₀).1.toSpace : BoundedFootprintSpace Bool) = μ₀.toSpace :=
-      Subtype.ext (run_pure_psp x μ₀ hvalid)
+      Subtype.ext (by
+        rw [BoundedFootprintPsp.toSpace_val, BoundedFootprintPsp.toSpace_val]
+        exact run_pure_psp x μ₀ hvalid)
     rw [hsp]
     exact hle
   · rw [result_run_pure (m := m) x μ₀ hvalid, hU]
@@ -1031,6 +1115,7 @@ theorem WP_PURE {α : Type} {m : Type → Type} [Monad m] [Interp.LawfulBernoull
 theorem WP_CONS {α : Type} [Inhabited α] {m : Type → Type} [Monad m]
     [Interp.LawfulBernoulliInterpretable m]
     {Q Q' : RV α → FProp} {t : m α} (h : ∀ v, Q v ⊢ Q' v) : iprop(wp t Q) ⊢ wp t Q' := by
+  rw [wp_def, wp_def]
   intro a hva ha μ₀ c hv hle
   obtain ⟨b, hb₁, hb₂, hb₃, hb₄⟩ := ha μ₀ c hv hle
   exact ⟨b, hb₁, hb₂, hb₃, entails_trans hb₄ (h _)⟩
@@ -1045,8 +1130,9 @@ theorem WP_FRAME {α : Type} [Inhabited α] {m : Type → Type} [Monad m]
   obtain ⟨Qr, rfl⟩ : ∃ Qr : RV α → UpperSet (BoundedFootprintSpace Bool),
       Q = fun X ↦ fmk (Qr X) :=
     ⟨fun X ↦ (Q X).out, funext fun X ↦ (Quotient.out_eq _).symm⟩
+  rw [wp_def, wp_def]
   intro a hva ha μ₀ c hv hle
-  obtain ⟨p, w, hpw, hp, hw⟩ := ha
+  obtain ⟨p, w, hpw, hp, hw⟩ := UpperSetBI.mem_sep.1 ha
   have hvr : ✓((run t μ₀).1.toSpace) := valid_run t μ₀ hv
   have hwle : w * (p * c) ≤ μ₀.toSpace := by
     calc w * (p * c) = (p * w) * c := by rw [← mul_assoc, mul_comm w p]
@@ -1067,44 +1153,52 @@ theorem WP_FRAME {α : Type} [Inhabited α] {m : Type → Type} [Monad m]
           sup_le_sup hpa hb₃
       _ ≤ msOf a ⊔ freshMs μ₀ (Interp.BernoulliInterpretable.interp t) :=
           sup_le le_sup_left (sup_le (le_trans hwa le_sup_left) le_sup_right)
-  · intro mm hvmm hmm
-    exact ⟨p, b, hmm, hp, hb₄ b hb₂ (le_refl b)⟩
+  · rw [own_def] at hb₄ ⊢
+    intro mm hvmm hmm
+    exact UpperSetBI.mem_sep.2
+      ⟨p, b, UpperSetBI.mem_own.1 hmm, hp, hb₄ b hb₂ (UpperSetBI.mem_own.2 (le_refl b))⟩
 
 /-- `c-wp-swap` (Bluebell, Fig. 10), with `AEProper` in place of `ownX`. -/
 theorem C_WP_SWAP {α β : Type} {m : Type → Type} [Monad m] [Interp.BernoulliInterpretable m] [Inhabited α]
   {C : m α} {μ : PMF β} {Q : β → RV α → FProp} (hQ : ∀ v, AEProper (Q v)) :
     iprop(𝒞⟨μ⟩ v; wp C (Q v)) ⊢ wp C ⦃x, 𝒞⟨μ⟩ v; Q v x⦄ := by
-  unfold jointConditioning
+  rw [jointConditioning_def]
   refine exists_elim fun m₀ ↦ exists_elim fun κ ↦ ?_
   refine pure_elim _ (entails_trans sep_elim_right sep_elim_left) fun hmix ↦ ?_
   refine entails_trans (sep_mono_right sep_elim_right) ?_
-  unfold ownP
+  rw [ownP_def]
   refine entails_trans sep_exists_right.1 (exists_elim fun hbf ↦ ?_)
+  rw [wp_def]
   refine own_sep_entails_fmk fun a R hva hle hR ↦ ?_
-  refine CWPSwap_core hQ m₀ κ hmix hbf R (fun v hv hk ↦ ?_) a hva hle
-  refine entails_trans own_mul_sep (entails_trans (sep_mono hR (exists_intro
-    (Ψ := fun h : HasBoundedFootprint ((κ v : PSpace Ω) : PSp Ω) ↦
-      own (⟨((κ v : PSpace Ω) : PSp Ω), h⟩ : BoundedFootprintSpace Bool)) hk)) ?_)
-  exact wand_elim (forall_elim (Ψ := fun v : μ.support ↦
-    iprop(ownP (κ v) -∗ wp C (Q v))) ⟨v, hv⟩)
+  have hfib : ∀ v ∈ μ.support, ∀ hk : HasBoundedFootprint ((κ v : PSpace Ω) : PSp Ω),
+      own (R * ⟨((κ v : PSpace Ω) : PSp Ω), hk⟩) ⊢ wp C (Q v) := fun v hv hk ↦ by
+    refine entails_trans own_mul_sep
+      (entails_trans (sep_mono hR (own_entails_ownP (le_refl _))) ?_)
+    exact wand_elim (forall_elim (Ψ := fun v : μ.support ↦
+      iprop(ownP (κ v) -∗ wp C (Q v))) ⟨v, hv⟩)
+  have hcore := CWPSwap_core hQ m₀ κ hmix hbf R hfib
+  rw [own_def, wp_def] at hcore
+  exact hcore a hva (UpperSetBI.mem_own.2 hle)
 
 /-- `wp-samp` (Bluebell, Fig. 10), for the law of any closed program. -/
 theorem WP_SAMP {α : Type} [Inhabited α] [Countable α] (t : BernoulliM α) (ν : PMF α)
     (hν : ∀ a : α, lawOf t a = ν a) :
     ⊢ wp t ⦃X, X ~ ν⦄ := by
+  rw [wp_def]
   intro a hva ha μ₀ c hvalid hle
   have hcμ : c ≤ μ₀.toSpace := by
     refine le_trans ?_ hle
     conv_lhs => rw [← one_mul c]
-    exact mul_le_mul_right_le ha c
+    exact mul_le_mul_right_le (UpperSetBI.mem_emp.1 ha) c
   obtain ⟨b, hb₁, hb₂, hb₃, hb₄⟩ := WPDist_core t ν hν μ₀ hvalid c hcμ
   exact ⟨b, hb₁, hb₂, le_trans hb₃ le_sup_right, hb₄⟩
 
 /-- The law of a coin. -/
 lemma lawOf_flip (p : I) (b : Bool) : lawOf (Interp.flip p) b = bernoulliWeights p b := by
-  unfold lawOf
-  have h0 : runValue (Interp.flip p) ⁻¹' {b} = prefixEqEvent [b] := preimage_head b
-  rw [h0]
+  rw [lawOf_def]
+  have h0 : runValue (Interp.flip p) ⁻¹' {b} = prefixEqEvent [b] := by
+    rw [runValue_flip]; exact preimage_head b
+  rw [h0, flip_def]
   refine Eq.trans (measure_congr_tree (fixpoint_oneFlip (fun b : Bool ↦ b) p) _) ?_
   show flipMeasure _ p _ = _
   rw [flipMeasure_apply_singleton p b (measurableSet_prefixEqEvent_singleton b),
@@ -1124,9 +1218,10 @@ theorem WP_BIND_COND {α β : Type} {m : Type → Type} [Monad m]
     (hQ : ∀ v, AEProper (Q v)) :
     wp C ⦃X, 𝒞⟨ν⟩ v; (⌈X = v⌉ ∗ wp (F v) (Q v))⦄
       ⊢ wp (C >>= F) ⦃Y, 𝒞⟨ν⟩ v; Q v Y⦄ := by
+  rw [wp_def, wp_def]
   intro a hva ha μ₀ c hvalid hle
   obtain ⟨b, hbc, hvb, hbms, hbQ⟩ := ha μ₀ c hvalid hle
-  exact WPBindC_core hQ μ₀ hvalid a c hva hle b hbc hvb hbms hbQ
+  exact WPBindC_core hQ μ₀ hvalid a c hva hle b hbc hvb hbms (by rw [condValue_def]; exact hbQ)
 
 /-- `wp-bind` (Amaryllis, Fig. 2), for the monadic `wp`, at whatever law the premise
 conditions on. -/
@@ -1136,10 +1231,13 @@ theorem WP_BIND_C {α β : Type} {m : Type → Type} [Monad m]
     (hQ : ∀ v, AEProper (Q v)) :
     wp C ⦃X, valuePost X (fun v ↦ wp (F v) (Q v))⦄
       ⊢ wp (C >>= F) ⦃Y, ∃ ν : PMF α, 𝒞⟨ν⟩ v; Q v Y⦄ := by
+  rw [wp_def, wp_def]
   intro a hva ha μ₀ c hvalid hle
   obtain ⟨b, hbc, hvb, hbms, hbQ⟩ := ha μ₀ c hvalid hle
+  rw [valuePost_def] at hbQ
   obtain ⟨ν, hbQ'⟩ := own_exists_elim hvb hbQ
-  obtain ⟨b', h₁, h₂, h₃, h₄⟩ := WPBindC_core hQ μ₀ hvalid a c hva hle b hbc hvb hbms hbQ'
+  obtain ⟨b', h₁, h₂, h₃, h₄⟩ := WPBindC_core hQ μ₀ hvalid a c hva hle b hbc hvb hbms
+    (by rw [condValue_def]; exact hbQ')
   refine ⟨b', h₁, h₂, h₃, entails_trans h₄ ?_⟩
   exact exists_intro (Ψ := fun ν' : PMF α ↦ 𝒞⟨ν'⟩ v; Q v (result (run (C >>= F) μ₀))) ν
 
@@ -1150,7 +1248,7 @@ theorem WP_BIND {α β : Type} {m : Type → Type} [Monad m]
     (hQ : AEProper Q) (hC : ∀ X : RV β, Convex (Q X)) :
     wp C ⦃X, valuePost X (fun v ↦ wp (F v) Q)⦄ ⊢ wp (C >>= F) Q :=
   entails_trans (WP_BIND_C (Q := fun _ ↦ Q) fun _ ↦ hQ)
-    (WP_CONS fun Y ↦ exists_elim fun ν ↦ hC Y ν)
+    (WP_CONS fun Y ↦ exists_elim fun ν ↦ (convex_def _).1 (hC Y) ν)
 
 /-- `wp-bind` and `wp-samp` combined, for laws. -/
 theorem WP_BIND_DIST {α β : Type} [Inhabited α] [Inhabited β] [Countable β]
@@ -1169,7 +1267,9 @@ theorem WP_BIND_DIST {α β : Type} [Inhabited α] [Inhabited β] [Countable β]
 theorem wpSt_eq_wp {α : Type} [Inhabited α] {m : Type → Type}
     [inst : Interp.BernoulliInterpretableState m] [Inhabited inst.st]
     (s : inst.st) (t : m α) (Q : RV (α × inst.st) → FProp) :
-    wpSt s t Q = wp (BernoulliInterpretableState.interp t s) Q := rfl
+    wpSt s t Q = wp (BernoulliInterpretableState.interp t s) Q := by
+  rw [wpSt_def, wp_def]
+  simp only [run_def, interp_bernoulliM]
 
 lemma interp_pure_apply {α : Type} {m : Type → Type} [Monad m]
     [inst : Interp.LawfulBernoulliInterpretableState m] (x : α) (s : inst.st) :
@@ -1186,21 +1286,24 @@ lemma interp_bind_apply {α β : Type} {m : Type → Type} [Monad m]
 theorem WP_ST_CONS {α : Type} [Inhabited α] {m : Type → Type} [Monad m]
     [inst : Interp.LawfulBernoulliInterpretableState m] [Inhabited inst.st]
     {s : inst.st} {t : m α} {Q Q' : RV (α × inst.st) → FProp} (h : ∀ v, Q v ⊢ Q' v) :
-    iprop(wpSt s t Q) ⊢ wpSt s t Q' :=
-  WP_CONS (m := BernoulliM) h
+    iprop(wpSt s t Q) ⊢ wpSt s t Q' := by
+  rw [wpSt_eq_wp, wpSt_eq_wp]
+  exact WP_CONS (m := BernoulliM) h
 
 theorem WP_ST_FRAME {α : Type} [Inhabited α] {m : Type → Type} [Monad m]
     [inst : Interp.LawfulBernoulliInterpretableState m] [Inhabited inst.st]
     {P : FProp} {s : inst.st} {t : m α} {Q : RV (α × inst.st) → FProp} :
-    iprop(P ∗ wpSt s t Q) ⊢ wpSt s t ⦃v, P ∗ (Q v)⦄ :=
-  WP_FRAME (m := BernoulliM)
+    iprop(P ∗ wpSt s t Q) ⊢ wpSt s t ⦃v, P ∗ (Q v)⦄ := by
+  rw [wpSt_eq_wp, wpSt_eq_wp]
+  exact WP_FRAME (m := BernoulliM)
 
 theorem C_WP_ST_SWAP {α β : Type} [Inhabited α] {m : Type → Type} [Monad m]
     [inst : Interp.LawfulBernoulliInterpretableState m] [Inhabited inst.st]
     {s : inst.st} {C : m α} {μ : PMF β} {Q : β → RV (α × inst.st) → FProp}
     (hQ : ∀ v, AEProper (Q v)) :
-    iprop(𝒞⟨μ⟩ v; wpSt s C (Q v)) ⊢ wpSt s C ⦃x, 𝒞⟨μ⟩ v; Q v x⦄ :=
-  C_WP_SWAP (m := BernoulliM) hQ
+    iprop(𝒞⟨μ⟩ v; wpSt s C (Q v)) ⊢ wpSt s C ⦃x, 𝒞⟨μ⟩ v; Q v x⦄ := by
+  simp only [wpSt_eq_wp]
+  exact C_WP_SWAP (m := BernoulliM) hQ
 
 theorem WP_ST_PURE {α : Type} [Inhabited α] {m : Type → Type} [Monad m]
     [inst : Interp.LawfulBernoulliInterpretableState m] [Inhabited inst.st]
@@ -1249,18 +1352,26 @@ pairs its result with `()`, which lands in the same space and only relabels the 
 theorem WP_ST_OF_WP {α : Type} [Inhabited α] {m : Type → Type} [BernoulliInterpretable m]
     {t : m α} {Q : RV (α × Unit) → FProp} :
     wp t ⦃X, Q fun ω ↦ (X ω, ())⦄ ⊢ wpSt () t Q := by
+  rw [wp_def, wpSt_def]
   intro a hva ha μ₀ c hvalid hle
   obtain ⟨b, hb₁, hb₂, hb₃, hb₄⟩ := ha μ₀ c hvalid hle
+  have hrunt : run t μ₀ = run (BernoulliInterpretable.interp t) μ₀ := by
+    rw [run_def, run_def, interp_bernoulliM]
   have hsp : ((run (BernoulliInterpretable.interp t >>= fun x ↦ pure (x, ())) μ₀).1.toSpace
-      : BoundedFootprintSpace Bool) = (run t μ₀).1.toSpace :=
-    Subtype.ext (run_bind_pure_psp μ₀ hvalid _ _)
+      : BoundedFootprintSpace Bool) = (run (BernoulliInterpretable.interp t) μ₀).1.toSpace :=
+    Subtype.ext (by
+      rw [BoundedFootprintPsp.toSpace_val, BoundedFootprintPsp.toSpace_val]
+      exact run_bind_pure_psp μ₀ hvalid _ _)
+  have hbig : Interp.bigStep (α := α × Unit) μ₀ (fun _ ↦ BernoulliInterpretableState.interp t ())
+      = run (BernoulliInterpretable.interp t >>= fun x ↦ pure (x, ())) μ₀ := by
+    rw [run_def, interp_bernoulliM]
+    rfl
   refine ⟨b, ?_, hb₂, ?_, ?_⟩
-  · show b * c ≤ (run (BernoulliInterpretable.interp t >>= fun x ↦ pure (x, ())) μ₀).1.toSpace
-    rw [hsp]
+  · rw [hbig, hsp, ← hrunt]
     exact hb₁
   · exact le_trans hb₃ (sup_le_sup_left (freshMs_le_freshMs_bind μ₀ _ _) _)
   · show own b ⊢ Q (result (run (BernoulliInterpretable.interp t >>= fun x ↦ pure (x, ())) μ₀))
-    rw [result_run_bind_pure μ₀ hvalid]
+    rw [result_run_bind_pure μ₀ hvalid, ← hrunt]
     exact hb₄
 
 end WeakestPrecondition

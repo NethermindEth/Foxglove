@@ -2,7 +2,7 @@ module
 
 public import Foxglove.Rules.Sure
 
-@[expose] public section
+public section
 namespace Foxglove
 
 open ProbSpace
@@ -36,14 +36,16 @@ theorem cond_elim {γ : Type} {ν : PMF γ} {Kc : γ → FProp} {r : BoundedFoot
   classical
   obtain ⟨Kr, rfl⟩ : ∃ Kr : γ → UpperSet (BoundedFootprintSpace Bool), Kc = fun v ↦ fmk (Kr v) :=
     ⟨fun v ↦ (Kc v).out, funext fun v ↦ (Quotient.out_eq _).symm⟩
-  have hr := h r hv (le_refl r)
-  obtain ⟨q, ⟨m, hq⟩, hqr⟩ := hr
-  obtain ⟨q', ⟨ℓ, hq'⟩, hq'r⟩ := (Quotient.exact hq).2 r hv hqr
-  obtain ⟨b₁, b₂, hle, hown, hrest⟩ := (Quotient.exact hq').2 r hv hq'r
-  obtain ⟨c₁, c₂, hle', hmix, hall⟩ := hrest
-  obtain ⟨r₁, ⟨hbfm, hr₁⟩, hb₁⟩ := hown
-  have hmb₁ := (Quotient.exact hr₁).2 b₁
-    (valid_mono (le_trans (le_mul_of_one_le PSp.one_le) hle) hv) hb₁
+  simp only [jointConditioning_def, ownP_def, own_def] at h ⊢
+  have hr := h r hv (UpperSetBI.mem_own.2 (le_refl r))
+  obtain ⟨q, ⟨m, hq⟩, hqr⟩ := UpperSetBI.mem_sExists.1 hr
+  obtain ⟨q', ⟨ℓ, hq'⟩, hq'r⟩ := UpperSetBI.mem_sExists.1 ((Quotient.exact hq).2 r hv hqr)
+  obtain ⟨b₁, b₂, hle, hown, hrest⟩ := UpperSetBI.mem_sep.1 ((Quotient.exact hq').2 r hv hq'r)
+  obtain ⟨c₁, c₂, hle', hmix, hall⟩ := UpperSetBI.mem_sep.1 hrest
+  replace hmix := UpperSetBI.mem_pure.1 hmix
+  obtain ⟨r₁, ⟨hbfm, hr₁⟩, hb₁⟩ := UpperSetBI.mem_sExists.1 hown
+  have hmb₁ := UpperSetBI.mem_own.1 ((Quotient.exact hr₁).2 b₁
+    (valid_mono (le_trans (le_mul_of_one_le PSp.one_le) hle) hv) hb₁)
   -- `m` and the continuation's frame `c₂` compose, as in `C_FALSE`
   have hc₂b₂ : c₂ ≤ b₂ := by
     refine le_trans ?_ hle'
@@ -74,7 +76,7 @@ theorem cond_elim {γ : Type} {ν : PMF γ} {Kc : γ → FProp} {r : BoundedFoot
   rw [hc₂'] at hs
   have hcomm : s =ᵢ c₂' ⊕ᵢ m := independentProduct_comm (PSp.mul_inversion hs)
   have hcp := c₂'.2
-  have hsp := s.2
+  have hsp : IsProbabilityMeasure s.μ := PSpace.isProbability
   have hms : m ≤ s := PSpace.le_of_isIndependentProduct_right hcomm
   -- the fibres: tilt `s` along the kernel (on the support)
   let wμ : γ → Measure[s.ms] Ω := fun v ↦
@@ -108,30 +110,41 @@ theorem cond_elim {γ : Type} {ν : PMF γ} {Kc : γ → FProp} {r : BoundedFoot
   · -- the fibre at `v` is owned with the frame, which the continuation turns into `Kc v`
     haveI : IsProbabilityMeasure (ℓ.1 v) := ℓ.2.isProbabilityMeasure v
     let S : PSpace Ω := ⟨⟨s.ms, (w v).1⟩, (w v).2⟩
-    have hS : S =ᵢ c₂' ⊕ᵢ (ℓ v : PSpace Ω) :=
-      ⟨hcomm.1, fun E hE F hF ↦ hrect v hv E F hE hF⟩
+    have hS : S =ᵢ c₂' ⊕ᵢ (ℓ v : PSpace Ω) := by
+      refine PSpace.isIndependentProduct_def.2 ⟨?_, fun E hE F hF ↦ ?_⟩
+      · simp only [S, PSpace.ms_mk, ProbabilityTheory.TrivialMarkovKernel.ms_apply]
+        exact (PSpace.isIndependentProduct_def.1 hcomm).1
+      · rw [ProbabilityTheory.TrivialMarkovKernel.ms_apply] at hF
+        simp only [S, PSpace.μ_mk_apply, ProbabilityTheory.TrivialMarkovKernel.μ_apply]
+        exact hrect v hv E F hE hF
     have hvm : ✓((m : PSp Ω)) := PSp.valid_def.mpr (Option.some_ne_none _)
     have hvk : ✓(((ℓ v : PSpace Ω)) : PSp Ω) := PSp.valid_def.mpr (Option.some_ne_none _)
     have hbfk : HasBoundedFootprint (((ℓ v : PSpace Ω)) : PSp Ω) :=
-      hasBoundedFootprint_congr hvm hvk rfl hbfm
+      hasBoundedFootprint_congr hvm hvk (by
+        rw [ValidPSp.toPSpace_eq hvm rfl, ValidPSp.toPSpace_eq hvk rfl,
+          ProbabilityTheory.TrivialMarkovKernel.ms_apply]) hbfm
     have hval : (c₂ * (⟨((ℓ v : PSpace Ω) : PSp Ω), hbfk⟩ : BoundedFootprintSpace Bool)).val
         = (S : PSp Ω) := by
       show PSp.mul c₂.val _ = _
       rw [hc₂']
-      exact mul_respect_independentProduct hS
+      exact PSp.mul_respect_independentProduct hS
     have hvalid : ✓(c₂ * (⟨((ℓ v : PSpace Ω) : PSp Ω), hbfk⟩ : BoundedFootprintSpace Bool)) := by
       show (c₂ * _).val ≠ (⊤ : PSp Ω)
       rw [hval]
       exact WithTop.coe_ne_top
-    have hmem := hall _ ⟨⟨v, hv⟩, rfl⟩ _ hvalid
-      ⟨_, ⟨hbfk, rfl⟩,
-        le_refl (⟨((ℓ v : PSpace Ω) : PSp Ω), hbfk⟩ : BoundedFootprintSpace Bool)⟩
-    exact ⟨_, hval, fun y _ hy ↦ UpperSet.upper _ hy hmem⟩
+    have hmem := UpperSetBI.mem_wand.1 (UpperSetBI.mem_sForall.1 hall _ ⟨⟨v, hv⟩, rfl⟩) _ hvalid
+      (UpperSetBI.mem_sExists.2 ⟨_, ⟨hbfk, rfl⟩, UpperSetBI.mem_own.2
+        (le_refl (⟨((ℓ v : PSpace Ω) : PSp Ω), hbfk⟩ : BoundedFootprintSpace Bool))⟩)
+    exact ⟨_, hval, fun y _ hy ↦ UpperSet.upper _ (UpperSetBI.mem_own.1 hy) hmem⟩
 
 /-- `valuePost` at a given law `ν` of `X`: on the fibre at `x` the result surely is `x` and
 `Q x` holds.  `valuePost X Q` is `∃ ν, condValue ν X Q`. -/
 def condValue {α : Type} (ν : PMF α) (X : RV α) (Q : α → FProp) : FProp :=
   𝒞⟨ν⟩ x; (⌈fun ρ ↦ X ρ = x⌉ ∗ Q x)
+
+lemma condValue_def {α : Type} (ν : PMF α) (X : RV α) (Q : α → FProp) :
+    condValue ν X Q = (𝒞⟨ν⟩ x; (⌈fun ρ ↦ X ρ = x⌉ ∗ Q x)) := by
+  rfl
 
 /-- What owning a resource that satisfies `condValue ν X K` provides: the conditioned space
 as a `ν`-mixture of a kernel, whose fibres each make `X` sure and carry `K` of that value. -/
@@ -147,22 +160,27 @@ lemma condValue_elim {β : Type} {X : RV β} {K : β → FProp} {ν : PMF β}
     choose U hU using fun v ↦ Quotient.exists_rep (K v)
     exact ⟨U, funext fun v ↦ (hU v).symm⟩
   subst hU
-  obtain ⟨q', ⟨mm, hq'⟩, hq'b⟩ := h b hv (le_refl b)
-  obtain ⟨q'', ⟨κ, hq''⟩, hq''b⟩ := (Quotient.exact hq').2 b hv hq'b
-  obtain ⟨b₁, b₂, hle, hown, hrest⟩ := (Quotient.exact hq'').2 b hv hq''b
-  obtain ⟨c₁, c₂, hle', hmix, hall⟩ := hrest
-  obtain ⟨r₁, ⟨hbfm, hr₁⟩, hb₁⟩ := hown
+  simp only [condValue, jointConditioning_def, LiftPred.lift, ownP_def, own_def] at h ⊢
+  obtain ⟨q', ⟨mm, hq'⟩, hq'b⟩ :=
+    UpperSetBI.mem_sExists.1 (h b hv (UpperSetBI.mem_own.2 (le_refl b)))
+  obtain ⟨q'', ⟨κ, hq''⟩, hq''b⟩ := UpperSetBI.mem_sExists.1 ((Quotient.exact hq').2 b hv hq'b)
+  obtain ⟨b₁, b₂, hle, hown, hrest⟩ := UpperSetBI.mem_sep.1 ((Quotient.exact hq'').2 b hv hq''b)
+  obtain ⟨c₁, c₂, hle', hmix, hall⟩ := UpperSetBI.mem_sep.1 hrest
+  replace hmix := UpperSetBI.mem_pure.1 hmix
+  obtain ⟨r₁, ⟨hbfm, hr₁⟩, hb₁⟩ := UpperSetBI.mem_sExists.1 hown
   have hvb₁ : ✓b₁ := valid_mono (le_trans (le_mul_of_one_le PSp.one_le) hle) hv
-  have hmb₁ := (Quotient.exact hr₁).2 b₁ hvb₁ hb₁
+  have hmb₁ := UpperSetBI.mem_own.1 ((Quotient.exact hr₁).2 b₁ hvb₁ hb₁)
   have hc₂b₂ : c₂ ≤ b₂ := le_trans (by rw [mul_comm]; exact le_mul_of_one_le PSp.one_le) hle'
   refine ⟨mm, hbfm, κ, c₂, hmix, ?_, ?_⟩
   · exact le_trans (mul_le_mul_right_le hmb₁ c₂) (le_trans (mul_le_mul_left_le hc₂b₂ b₁) hle)
   · intro v hv' hk y hvy hy
-    have hvc₂K : ✓(c₂ * ⟨((κ v : PSpace Ω) : PSp Ω), hk⟩) := valid_mono hy hvy
-    have hmem := hall _ ⟨⟨v, hv'⟩, rfl⟩ _ hvc₂K ⟨_, ⟨hk, rfl⟩,
-      (show (⟨((κ v : PSpace Ω) : PSp Ω), hk⟩ : BoundedFootprintSpace Bool)
-        ≤ ⟨((κ v : PSpace Ω) : PSp Ω), hk⟩ from le_refl _)⟩
-    exact (UpperSetBI.sep _ _).upper' hy hmem
+    have hvc₂K : ✓(c₂ * ⟨((κ v : PSpace Ω) : PSp Ω), hk⟩) :=
+      valid_mono (UpperSetBI.mem_own.1 hy) hvy
+    have hmem := UpperSetBI.mem_wand.1 (UpperSetBI.mem_sForall.1 hall _ ⟨⟨v, hv'⟩, rfl⟩) _ hvc₂K
+      (UpperSetBI.mem_sExists.2 ⟨_, ⟨hk, rfl⟩, UpperSetBI.mem_own.2
+        (show (⟨((κ v : PSpace Ω) : PSp Ω), hk⟩ : BoundedFootprintSpace Bool)
+          ≤ ⟨((κ v : PSpace Ω) : PSp Ω), hk⟩ from le_refl _)⟩)
+    exact (UpperSetBI.sep _ _).upper' (UpperSetBI.mem_own.1 hy) hmem
 
 /-- What owning a resource that satisfies `valuePost X K` provides: `condValue_elim` at the
 law the resource conditions on. -/
@@ -174,6 +192,7 @@ lemma valuePost_elim {β : Type} {X : RV β} {K : β → FProp} {b : BoundedFoot
       (⟨(mm : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool) * R ≤ b ∧
       ∀ v ∈ ν.support, ∀ hk : HasBoundedFootprint ((κ v : PSpace Ω) : PSp Ω),
         own (R * ⟨((κ v : PSpace Ω) : PSp Ω), hk⟩) ⊢ iprop(⌈fun ρ ↦ X ρ = v⌉ ∗ K v) := by
+  rw [valuePost_def] at h
   obtain ⟨ν, h'⟩ := own_exists_elim hv h
   exact ⟨ν, condValue_elim hv h'⟩
 
@@ -182,6 +201,10 @@ convex* assertions).  `WP_BIND` needs it to collapse the conditioning `WP_BIND_C
 `not_convex_constQ` shows `AEProper` does not imply it. -/
 def Convex (P : FProp) : Prop :=
   ∀ {γ : Type} (ν : PMF γ), (𝒞⟨ν⟩ _v; P) ⊢ P
+
+lemma convex_def (P : FProp) :
+    Iff (Convex P) (∀ {γ : Type} (ν : PMF γ), (𝒞⟨ν⟩ _v; P) ⊢ P) := by
+  rfl
 
 end
 

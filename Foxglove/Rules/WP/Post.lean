@@ -2,7 +2,7 @@ module
 
 public import Foxglove.Rules
 
-@[expose] public section
+public section
 namespace Foxglove
 
 open ProbSpace
@@ -18,17 +18,17 @@ Discharging the side conditions of the `wp` rules: which postconditions are `AEP
 are `Convex`, and what `valuePost` satisfies in the logic. -/
 
 /-- Sure facts are convex: `SURE_CONVEX` in the shape `Convex` wants. -/
-lemma convex_liftPred {E : RV Prop} : Convex ⌈E⌉ := fun _ ↦ SURE_CONVEX
+lemma convex_liftPred {E : RV Prop} : Convex ⌈E⌉ := (convex_def _).2 fun _ ↦ SURE_CONVEX
 
 /-- Laws are convex: `DIST_CONVEX`. -/
 lemma convex_hasDistribution {α : Type} {X : RV α} (ν : PMF α) : Convex (X ~ ν) :=
-  fun _ ↦ DIST_CONVEX
+  (convex_def _).2 fun _ ↦ DIST_CONVEX
 
 /-- A pure fact is convex: the support is nonempty, so some fibre already asserts it. -/
 lemma convex_pure {φ : Prop} : Convex iprop(⌜φ⌝) := by
-  intro γ ν r hv hr
-  have hown : own r ⊢ jointConditioning ν (fun _ ↦ iprop(⌜φ⌝)) :=
-    fun _ _ hry ↦ UpperSet.upper _ hry hr
+  rw [convex_def]
+  intro γ ν
+  refine entails_of_own fun r hv hown ↦ ?_
   obtain ⟨s, hbfs, hsr, w, hsmix, hX⟩ := cond_elim hv hown
   obtain ⟨v₀, hv₀⟩ := ν.support_nonempty
   obtain ⟨Y, hYval, hYK⟩ := hX v₀ hv₀
@@ -36,23 +36,27 @@ lemma convex_pure {φ : Prop} : Convex iprop(⌜φ⌝) := by
     show Y.val ≠ (⊤ : PSp Ω)
     rw [hYval]
     exact WithTop.coe_ne_top
-  exact hYK Y hYv (le_refl Y)
+  rw [own_def] at hYK
+  exact pure_intro (UpperSetBI.mem_pure.1 (hYK Y hYv (UpperSetBI.mem_own.2 (le_refl Y))))
 
-lemma convex_ftrue : Convex ftrue := fun _ ↦ entails_ftrue
+lemma convex_ftrue : Convex ftrue := (convex_def _).2 fun _ ↦ entails_ftrue
 
 /-- Convexity is closed under `∧`: push the conditioning through each conjunct. -/
 lemma convex_and {P R : FProp} (hP : Convex P) (hR : Convex R) : Convex iprop(P ∧ R) :=
-  fun ν ↦ and_intro (entails_trans (C_CONS fun _ ↦ and_elim_l) (hP ν))
-    (entails_trans (C_CONS fun _ ↦ and_elim_r) (hR ν))
+  (convex_def _).2 fun ν ↦
+    and_intro (entails_trans (C_CONS fun _ ↦ and_elim_l) ((convex_def _).1 hP ν))
+      (entails_trans (C_CONS fun _ ↦ and_elim_r) ((convex_def _).1 hR ν))
 
 /-- Convexity is closed under `∀`, pointwise. -/
 lemma convex_forall {γ : Type} {P : γ → FProp} (h : ∀ x, Convex (P x)) :
     Convex iprop(∀ x, P x) :=
-  fun ν ↦ forall_intro fun x ↦ entails_trans (C_CONS fun _ ↦ forall_elim x) (h x ν)
+  (convex_def _).2 fun ν ↦ forall_intro fun x ↦
+    entails_trans (C_CONS fun _ ↦ forall_elim x) ((convex_def _).1 (h x) ν)
 
 /-- Convexity transfers along bi-entailment. -/
 lemma convex_congr {P R : FProp} (h : P ⊣⊢ R) (hR : Convex R) : Convex P :=
-  fun ν ↦ entails_trans (C_CONS fun _ ↦ h.1) (entails_trans (hR ν) h.2)
+  (convex_def _).2 fun ν ↦
+    entails_trans (C_CONS fun _ ↦ h.1) (entails_trans ((convex_def _).1 hR ν) h.2)
 
 /-- `∗` does not preserve convexity in general (a mixture of independent products need not be
 one), but it does on separated sure facts, which `SURE_MERGE` turns into a single sure fact. -/
@@ -64,8 +68,9 @@ through `⌈X = x⌉`, and sure equalities substitute (`liftPred_subst`).  So `W
 condition is discharged once and for all for the postconditions it is meant for. -/
 lemma aeProper_valuePost {β : Type} (Q : β → FProp) :
     AEProper (fun X ↦ valuePost X Q) := by
+  rw [aeProper_def]
   intro X Y
-  unfold valuePost jointConditioning
+  simp only [valuePost_def, jointConditioning_def]
   iintro ⟨Heq, %ν, %m, %κ, Hm, %hmix, Hall⟩
   iexists ν, m, κ
   isplitl [Hm]
@@ -85,19 +90,20 @@ lemma aeProper_valuePost {β : Type} (Q : β → FProp) :
 
 /-- Having a given law is `AEProper`: `DISTR_SUBST`. -/
 lemma aeProper_hasDistribution {α : Type} (ν : PMF α) : AEProper (fun X ↦ X ~ ν) :=
-  fun _ _ ↦ entails_trans Iris.BI.sep_comm.1 DISTR_SUBST
+  (aeProper_def _).2 fun _ _ ↦ entails_trans Iris.BI.sep_comm.1 DISTR_SUBST
 
 /-- `valuePost` is monotone in the postcondition: weaken every fibre under the conditioning.
 This is what lets a `wp` rule be applied *inside* a `valuePost`, through `WP_CONS`. -/
 lemma valuePost_mono {α : Type} {X : RV α} {Q Q' : α → FProp} (h : ∀ x, Q x ⊢ Q' x) :
-    valuePost X Q ⊢ valuePost X Q' :=
-  exists_mono fun _ ↦ C_CONS fun x ↦ sep_mono_right (h x)
+    valuePost X Q ⊢ valuePost X Q' := by
+  rw [valuePost_def, valuePost_def]
+  exact exists_mono fun _ ↦ C_CONS fun x ↦ sep_mono_right (h x)
 
 /-- A law for `X` is already a `valuePost`, provided every fibre's postcondition holds
 outright: condition on the law and hand each fibre its free postcondition. -/
 lemma valuePost_of_law {α : Type} {X : RV α} {ν : PMF α} {Q' : α → FProp}
     (h : ∀ v, ⊢ Q' v) : (X ~ ν) ⊢ valuePost X Q' := by
-  unfold valuePost
+  rw [valuePost_def]
   refine entails_trans C_UNIT_R.1 (entails_trans (C_CONS ?_)
     (exists_intro (Ψ := fun ν' : PMF α ↦
       iprop(𝒞⟨ν'⟩ x; (⌈fun ρ ↦ X ρ = x⌉ ∗ Q' x))) ν))
