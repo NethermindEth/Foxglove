@@ -3,7 +3,9 @@ module
 public import Foxglove.Rules
 public import Foxglove.Rules.WP.Post
 public import Foxglove.Interp.OracleComp.Basic
+public import Foxglove.Interp.OracleComp.Adequacy
 public import Foxglove.Interp.Bernoulli.Helper
+public import Foxglove.Algebra.UniformPMF
 public import Mathlib.Algebra.Field.ZMod
 public import Mathlib.Algebra.Polynomial.Roots
 public import Mathlib.Algebra.MvPolynomial.SchwartzZippel
@@ -231,19 +233,27 @@ theorem wp_split' {N : ℕ} :
 on `Fin (n + 1)`: it interprets to `split n`, rejection sampling from `0` (`wp_split'`). -/
 theorem wp_unifSpec_query (n : ℕ) :
     ⊢ wp (unifSpec.query n : OracleComp unifSpec (Fin (n + 1)))
-        ⦃X, X ~ PMF.uniformOfFintype (Fin (n + 1))⦄ := by
+        ⦃X, X ~ PMF.uniformOfFintype' (Fin (n + 1))⦄ := by
   have hq : BernoulliInterpretable.interp (unifSpec.query n : OracleComp unifSpec (Fin (n + 1)))
       = split n := by
     show (split n >>= fun x ↦ pure x) = split n
     exact bind_pure _
-  have hlaw : PMF.uniformOfFintype (Fin (n + 1))
+  have hlaw : PMF.uniformOfFintype' (Fin (n + 1))
       = PMF.uniformOfFinset (Finset.Ici (0 : Fin (n + 1))) Finset.nonempty_Ici := by
     refine PMF.ext fun i ↦ ?_
-    simp [PMF.uniformOfFintype_apply, PMF.uniformOfFinset_apply]
+    simp [PMF.uniformOfFintype'_apply, PMF.uniformOfFinset_apply]
   show ⊢ wp (BernoulliInterpretable.interp (unifSpec.query n : OracleComp unifSpec (Fin (n + 1))))
-    ⦃X, X ~ PMF.uniformOfFintype (Fin (n + 1))⦄
+    ⦃X, X ~ PMF.uniformOfFintype' (Fin (n + 1))⦄
   rw [hq, hlaw]
   exact wp_split' (n + 1) 0 (by simp)
+
+/-- **Uniform sampling, from VCVio.**  The same specification, read off VCVio's measure of the
+query (`OracleComp.evalDist_liftM_unifSpec_query`) through `wp_of_evalDist`, with no reasoning
+about `split` in the logic. -/
+example (n : ℕ) :
+    ⊢ wp (unifSpec.query n : OracleComp unifSpec (Fin (n + 1)))
+        ⦃X, X ~ PMF.uniformOfFintype' (Fin (n + 1))⦄ :=
+  wp_of_evalDist fun i ↦ by simp [ProbabilityTheory.uniformOn_univ]
 
 /-- **Sequencing two samplers.**  The law of `C >>= F` is the law of `C` bound with the laws
 of the continuations: `WP_BIND_COND` at the law of `C`, `C_BIND` to recollect the fibres. -/
@@ -281,62 +291,62 @@ theorem wp_bind_pure {m : Type → Type} [Monad m] [LawfulBernoulliInterpretable
 /-- A bijection carries the uniform law to the uniform law. -/
 lemma uniformOfFintype_map_of_bijective {α β : Type} [Fintype α] [Nonempty α] [Fintype β]
     [Nonempty β] {e : α → β} (he : Function.Bijective e) :
-    PMF.map e (PMF.uniformOfFintype α) = PMF.uniformOfFintype β := by
+    PMF.map e (PMF.uniformOfFintype' α) = PMF.uniformOfFintype' β := by
   refine PMF.ext fun b ↦ ?_
   obtain ⟨a, rfl⟩ := he.2 b
   rw [PMF.map_apply, tsum_eq_single a (fun a' ha' ↦ ite_eq_right fun h ↦ ha' (he.1 h.symm)),
-    ite_eq_left rfl, PMF.uniformOfFintype_apply, PMF.uniformOfFintype_apply,
+    ite_eq_left rfl, PMF.uniformOfFintype'_apply, PMF.uniformOfFintype'_apply,
     Fintype.card_of_bijective he]
 
 /-- Two independent uniform points make a uniform pair. -/
 lemma uniformOfFintype_bind_map_prod {α β : Type} [Fintype α] [Nonempty α] [Fintype β]
     [Nonempty β] :
-    (PMF.uniformOfFintype α).bind (fun a ↦ PMF.map (Prod.mk a) (PMF.uniformOfFintype β))
-      = PMF.uniformOfFintype (α × β) := by
+    (PMF.uniformOfFintype' α).bind (fun a ↦ PMF.map (Prod.mk a) (PMF.uniformOfFintype' β))
+      = PMF.uniformOfFintype' (α × β) := by
   refine PMF.ext fun ⟨a, b⟩ ↦ ?_
   -- the inner law puts mass `1 / |β|` on `(a, b)` from the fibre `a` and none from the others
-  have hb_eq : PMF.map (Prod.mk a) (PMF.uniformOfFintype β) (a, b)
+  have hb_eq : PMF.map (Prod.mk a) (PMF.uniformOfFintype' β) (a, b)
       = (Fintype.card β : ℝ≥0∞)⁻¹ := by
     rw [PMF.map_apply,
       tsum_eq_single b fun b' hb' ↦ ite_eq_right fun h ↦ hb' (Prod.mk.inj h).2.symm,
-      ite_eq_left rfl, PMF.uniformOfFintype_apply]
-  have hb_ne : ∀ a', a' ≠ a → PMF.map (Prod.mk a') (PMF.uniformOfFintype β) (a, b) = 0 := by
+      ite_eq_left rfl, PMF.uniformOfFintype'_apply]
+  have hb_ne : ∀ a', a' ≠ a → PMF.map (Prod.mk a') (PMF.uniformOfFintype' β) (a, b) = 0 := by
     intro a' ha'
     rw [PMF.map_apply]
     exact ENNReal.tsum_eq_zero.mpr fun b' ↦ ite_eq_right fun h ↦ ha' (Prod.mk.inj h).1.symm
   rw [PMF.bind_apply, tsum_eq_single a fun a' ha' ↦ by rw [hb_ne a' ha', mul_zero], hb_eq,
-    PMF.uniformOfFintype_apply, PMF.uniformOfFintype_apply, Fintype.card_prod, Nat.cast_mul,
+    PMF.uniformOfFintype'_apply, PMF.uniformOfFintype'_apply, Fintype.card_prod, Nat.cast_mul,
     ENNReal.mul_inv (Or.inr (ENNReal.natCast_ne_top _)) (Or.inl (ENNReal.natCast_ne_top _))]
 
 /-- Two independent uniform points, combined by a bijection, make a uniform point. -/
 lemma uniformOfFintype_bind_map_of_bijective {α β γ : Type} [Fintype α] [Nonempty α]
     [Fintype β] [Nonempty β] [Fintype γ] [Nonempty γ] {e : α × β → γ}
     (he : Function.Bijective e) :
-    (PMF.uniformOfFintype α).bind
-        (fun a ↦ PMF.map (fun b ↦ e (a, b)) (PMF.uniformOfFintype β))
-      = PMF.uniformOfFintype γ := by
+    (PMF.uniformOfFintype' α).bind
+        (fun a ↦ PMF.map (fun b ↦ e (a, b)) (PMF.uniformOfFintype' β))
+      = PMF.uniformOfFintype' γ := by
   rw [← uniformOfFintype_map_of_bijective he, ← uniformOfFintype_bind_map_prod, PMF.map_bind]
-  exact congrArg (PMF.bind (PMF.uniformOfFintype α))
+  exact congrArg (PMF.bind (PMF.uniformOfFintype' α))
     (funext fun a ↦ (PMF.map_comp (Prod.mk a) _ e).symm)
 
 /-- On a one-point type, the uniform law is the Dirac law. -/
 lemma uniformOfFintype_eq_dirac {α : Type} [Fintype α] [Nonempty α] [Subsingleton α] (a : α) :
-    PMF.uniformOfFintype α = δ a := by
+    PMF.uniformOfFintype' α = δ a := by
   refine PMF.ext fun b ↦ ?_
-  rw [PMF.uniformOfFintype_apply, PMF.pure_apply, ite_eq_left (Subsingleton.elim b a),
+  rw [PMF.uniformOfFintype'_apply, PMF.pure_apply, ite_eq_left (Subsingleton.elim b a),
     Fintype.card_eq_one_iff.mpr ⟨a, fun b ↦ Subsingleton.elim b a⟩, Nat.cast_one, inv_one]
 
 /-- The chance that a uniform point satisfies a decidable predicate. -/
 lemma uniformOfFintype_map_decide_true {α : Type} [Fintype α] [Nonempty α] {P : α → Prop}
     [DecidablePred P] :
-    PMF.map (fun x ↦ decide (P x)) (PMF.uniformOfFintype α) (true : Bool)
+    PMF.map (fun x ↦ decide (P x)) (PMF.uniformOfFintype' α) (true : Bool)
       = ((Finset.univ.filter P).card : ℝ≥0∞) / Fintype.card α := by
   have hs : (Finset.univ.filter fun x ↦ (true : Bool) = decide (P x))
       = Finset.univ.filter P := by
     ext x
     simp only [Finset.mem_filter, Finset.mem_univ, _root_.true_and]
     exact ⟨fun h ↦ of_decide_eq_true h.symm, fun h ↦ (decide_eq_true h).symm⟩
-  simp only [PMF.map_apply, tsum_fintype, PMF.uniformOfFintype_apply, Finset.sum_ite,
+  simp only [PMF.map_apply, tsum_fintype, PMF.uniformOfFintype'_apply, Finset.sum_ite,
     Finset.sum_const_zero, add_zero, Finset.sum_const, nsmul_eq_mul, div_eq_mul_inv, hs]
 
 /-! ### Polynomial identity testing -/
@@ -362,7 +372,7 @@ lemma fin_val_cast_bijective :
 
 /-- The law of the report: `true` with the probability that a uniform point is a root. -/
 def rootLaw (f : Polynomial (ZMod p)) : PMF Bool :=
-  PMF.map (fun x ↦ decide (f.eval x = 0)) (PMF.uniformOfFintype (ZMod p))
+  PMF.map (fun x ↦ decide (f.eval x = 0)) (PMF.uniformOfFintype' (ZMod p))
 
 /-- A nonzero `f` is reported as having a root with probability `|roots f| / p`. -/
 lemma rootLaw_true (f : Polynomial (ZMod p)) (hf : f ≠ 0) :
@@ -383,7 +393,7 @@ theorem wp_rootTest_card (f : Polynomial (ZMod p)) (hf : f ≠ 0) :
   -- the law of the report
   have hlaw : ⊢ wp (rootTest f) ⦃B, B ~ rootLaw f⦄ := by
     have hmap : PMF.map (fun x : Fin (p - 1 + 1) ↦ (x.val : ZMod p))
-        (PMF.uniformOfFintype (Fin (p - 1 + 1))) = PMF.uniformOfFintype (ZMod p) :=
+        (PMF.uniformOfFintype' (Fin (p - 1 + 1))) = PMF.uniformOfFintype' (ZMod p) :=
       uniformOfFintype_map_of_bijective fin_val_cast_bijective
     rw [rootLaw, ← hmap, PMF.map_comp]
     exact wp_bind_pure (C := (unifSpec.query (p - 1) : OracleComp unifSpec (Fin (p - 1 + 1))))
@@ -396,6 +406,13 @@ theorem wp_rootTest_card (f : Polynomial (ZMod p)) (hf : f ≠ 0) :
   · ipureintro
     exact rootLaw_true f hf
   · iexact H
+
+/-- **The root test, in VCVio's terms.**  `wp_rootTest_card` read back through adequacy
+(`exists_prEvent_of_wp`): the probability VCVio's semantics gives the report `true`. -/
+theorem prEvent_rootTest (f : Polynomial (ZMod p)) (hf : f ≠ 0) :
+    Pr{let b ← rootTest f}[b = true] = (f.roots.toFinset.card : ℝ≥0∞) / p := by
+  obtain ⟨ν, hν, hD⟩ := exists_prEvent_of_wp (wp_rootTest_card f hf)
+  rw [hD, hν]
 
 /-- **Schwartz–Zippel**, one variable: a nonzero `f` has at most `deg f` distinct roots, so
 `rootTest f` reports `true` with probability at most `deg f / p`.  By consequence from
@@ -443,16 +460,16 @@ lemma cons_val_cast_bijective (n : ℕ) :
 /-- `unifVec n` is uniform on `(ZMod p)^n`, by induction on `n`: `wp_bind_law` sequences the
 draw of a coordinate with the rest, `wp_bind_pure` prepends it. -/
 theorem wp_unifVec : ∀ n : ℕ,
-    ⊢ wp (unifVec (p := p) n) ⦃X, X ~ PMF.uniformOfFintype (Fin n → ZMod p)⦄
+    ⊢ wp (unifVec (p := p) n) ⦃X, X ~ PMF.uniformOfFintype' (Fin n → ZMod p)⦄
   | 0 => by
     rw [unifVec, uniformOfFintype_eq_dirac (Fin.elim0 : Fin 0 → ZMod p)]
     iapply (WP_PURE (Q := fun X ↦ X ~ δ (Fin.elim0 : Fin 0 → ZMod p)))
     exact DISTR_DIRAC
   | n + 1 => by
-    have hmix : (PMF.uniformOfFintype (Fin (p - 1 + 1))).bind (fun x ↦
+    have hmix : (PMF.uniformOfFintype' (Fin (p - 1 + 1))).bind (fun x ↦
         PMF.map (fun xs ↦ (Fin.cons (x.val : ZMod p) xs : Fin (n + 1) → ZMod p))
-          (PMF.uniformOfFintype (Fin n → ZMod p)))
-        = PMF.uniformOfFintype (Fin (n + 1) → ZMod p) :=
+          (PMF.uniformOfFintype' (Fin n → ZMod p)))
+        = PMF.uniformOfFintype' (Fin (n + 1) → ZMod p) :=
       uniformOfFintype_bind_map_of_bijective (cons_val_cast_bijective n)
     rw [unifVec, ← hmix]
     exact wp_bind_law (wp_unifSpec_query (p - 1)) fun x ↦
@@ -468,7 +485,7 @@ def mvRootTest {n : ℕ} (f : MvPolynomial (Fin n) (ZMod p)) : OracleComp unifSp
 /-- The law of the report: `true` with the probability that a uniform point is a zero. -/
 def mvRootLaw {n : ℕ} (f : MvPolynomial (Fin n) (ZMod p)) : PMF Bool :=
   PMF.map (fun xs ↦ decide (MvPolynomial.eval xs f = 0))
-    (PMF.uniformOfFintype (Fin n → ZMod p))
+    (PMF.uniformOfFintype' (Fin n → ZMod p))
 
 /-- `f` is reported as vanishing with probability `|zeros f| / p ^ n`. -/
 lemma mvRootLaw_true {n : ℕ} (f : MvPolynomial (Fin n) (ZMod p)) :
@@ -532,6 +549,14 @@ theorem wp_mvRootTest {n : ℕ} {f : MvPolynomial (Fin n) (ZMod p)} (hf : f ≠ 
     rw [hμ]
     exact card_zeros_div_le f hf
   · iexact H
+
+/-- **Schwartz–Zippel, in VCVio's terms.**  `wp_mvRootTest` read back through adequacy
+(`exists_prEvent_of_wp`): VCVio's probability that a nonzero `f` vanishes at a uniform point is
+at most `deg f / p`. -/
+theorem prEvent_mvRootTest_le {n : ℕ} {f : MvPolynomial (Fin n) (ZMod p)} (hf : f ≠ 0) :
+    Pr{let b ← mvRootTest f}[b = true] ≤ f.totalDegree / p := by
+  obtain ⟨ν, hν, hD⟩ := exists_prEvent_of_wp (wp_mvRootTest hf)
+  exact (hD true).trans_le hν
 
 end MvRootTest
 
