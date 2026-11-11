@@ -86,6 +86,14 @@ instance {m : Type → Type} [Monad m] [LawfulBernoulliInterpretable m] :
 instance {m : Type → Type} [BernoulliInterpretable m] :
     Inhabited (BernoulliInterpretableState.st m) := inferInstanceAs (Inhabited Unit)
 
+/-- Run a computation on the first component of a product state. -/
+def liftFst {σ₁ σ₂ α : Type} (t : StateT σ₁ BernoulliM α) : StateT (σ₁ × σ₂) BernoulliM α :=
+  fun s ↦ (fun p ↦ (p.1, (p.2, s.2))) <$> t s.1
+
+/-- Run a computation on the second component of a product state. -/
+def liftSnd {σ₁ σ₂ α : Type} (t : StateT σ₂ BernoulliM α) : StateT (σ₁ × σ₂) BernoulliM α :=
+  fun s ↦ (fun p ↦ (p.1, (s.1, p.2))) <$> t s.2
+
 def flip (r : I) : BernoulliM Bool :=
   PFunctor.FreeM.liftBind (BernoulliOps.Flip r) PFunctor.FreeM.pure
 

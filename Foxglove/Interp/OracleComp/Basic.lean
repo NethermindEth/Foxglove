@@ -2,6 +2,7 @@ module
 
 public import Foxglove.Interp.Bernoulli.Basic
 public import VCVio.OracleComp.OracleComp
+public import VCVio.OracleComp.SimSemantics.Append
 
 @[expose] public section
 namespace Foxglove
@@ -78,6 +79,26 @@ instance {α} {oSpec : OracleSpec α} [OracleBernoulliInterpretable oSpec] :
         = (interp_op op >>= fun x ↦ BernoulliInterpretable.interp (k x))
           >>= fun a ↦ BernoulliInterpretable.interp (f a)
       simp only [ih, bind_assoc]
+
+instance (priority := low) sumInterpState {ι ι'} {spec₁ : OracleSpec ι} {spec₂ : OracleSpec ι'}
+    [i₁ : LawfulBernoulliInterpretableState (OracleComp spec₁)]
+    [i₂ : LawfulBernoulliInterpretableState (OracleComp spec₂)] :
+    LawfulBernoulliInterpretableState (OracleComp (spec₁ + spec₂)) where
+  st := i₁.st × i₂.st
+  interp := simulateQ
+    ((fun a ↦ liftFst (σ₂ := i₂.st) (i₁.interp (query a : OracleComp spec₁ _)) :
+        QueryImpl spec₁ _) +
+     (fun b ↦ liftSnd (σ₁ := i₁.st) (i₂.interp (query b : OracleComp spec₂ _)) :
+        QueryImpl spec₂ _))
+  interp_pure _ := rfl
+  interp_bind := simulateQ_bind _
+
+instance {ι ι'} {spec₁ : OracleSpec ι} {spec₂ : OracleSpec ι'}
+    [i₁ : LawfulBernoulliInterpretableState (OracleComp spec₁)]
+    [i₂ : LawfulBernoulliInterpretableState (OracleComp spec₂)]
+    [Inhabited i₁.st] [Inhabited i₂.st] :
+    Inhabited (sumInterpState (spec₁ := spec₁) (spec₂ := spec₂)).st :=
+  ⟨(default, default)⟩
 
 end Interp
 
