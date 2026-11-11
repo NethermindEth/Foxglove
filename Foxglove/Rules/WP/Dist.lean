@@ -2,7 +2,7 @@ module
 
 public import Foxglove.Rules.WP
 
-@[expose] public section
+public section
 namespace Foxglove
 
 open ProbSpace
@@ -29,13 +29,18 @@ lemma WPDist_core {α : Type} [Inhabited α] [Countable α] (t : BernoulliM α) 
         (own b ⊢ result (run t μ₀) ~ ν) := by
   letI : MeasurableSpace α := ⊤
   haveI : MeasurableSingletonClass α := ⟨fun _ ↦ trivial⟩
-  have hvc : ✓c := valid_mono hcμ (show ✓(μ₀.toSpace) from hvalid)
+  have hvc : ✓c := valid_mono hcμ (show ✓(μ₀.toSpace) by
+    show μ₀.toSpace.val ≠ (⊤ : PSp Ω)
+    rw [μ₀.toSpace_val]
+    exact PSp.valid_def.mp hvalid)
   obtain ⟨C, hC⟩ : ∃ C : PSpace Ω, (c : PSp Ω) = .some C :=
     Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hvc)
   set P : PSpace Ω := ValidPSp.toPSpace ⟨μ₀.psp, hvalid⟩ with hP
-  have hμ₀P : μ₀.psp = .some P := (Option.some_get _).symm
+  have hμ₀P : μ₀.psp = .some P := ValidPSp.eq_some_toPSpace hvalid
   have hCP : C ≤ P := by
-    have h : (.some C : PSp Ω) ≤ .some P := by rw [← hC, ← hμ₀P]; exact hcμ
+    have h : (.some C : PSp Ω) ≤ .some P := by
+      rw [← hC, ← hμ₀P, ← μ₀.toSpace_val]
+      exact hcμ
     exact WithTop.coe_le_coe.1 h
   obtain ⟨S, hpsp, hsub, hmeas, hpres, hind⟩ := run_const μ₀ t hvalid
   set X := result (run t μ₀) with hX
@@ -53,7 +58,7 @@ lemma WPDist_core {α : Type} [Inhabited α] [Countable α] (t : BernoulliM α) 
   set B : PSpace Ω := @PSpace.trim Ω S BX hBX with hBdef
   have hBS : B ≤ S := PSpace.trim_le hBX
   have hBμ : ∀ E, MeasurableSet[BX] E → B.μ E = S.μ E :=
-    fun E hE ↦ MeasureOnSpace.trim_eq hBX hE
+    fun E hE ↦ PSpace.trim_μ_apply hE
   -- the frame sits inside the pre-state
   have hCms : C.ms ≤ P.ms := hCP.1
   -- the reported value is independent of everything the pre-state could measure
@@ -76,16 +81,18 @@ lemma WPDist_core {α : Type} [Inhabited α] [Countable α] (t : BernoulliM α) 
     rw [hBμ _ ⟨T, trivial, rfl⟩]
     have h := hsum T (E := Set.univ) MeasurableSet.univ
     rw [Set.inter_univ] at h
-    rw [h, P.2.measure_univ, mul_one]
+    rw [h, measure_univ, mul_one]
   have hsup : BX ⊔ C.ms ≤ S.ms := sup_le hBX (le_trans hCms hsub)
   set s : PSpace Ω := @PSpace.trim Ω S (BX ⊔ C.ms) hsup with hsdef
   have hsμ : ∀ E, MeasurableSet[BX ⊔ C.ms] E → s.μ E = S.μ E :=
-    fun E hE ↦ MeasureOnSpace.trim_eq hsup hE
+    fun E hE ↦ PSpace.trim_μ_apply hE
   have hCμ : ∀ F, MeasurableSet[C.ms] F → C.μ F = P.μ F :=
-    fun F hF ↦ MeasureOnSpace.le_preserves_measure hCP hF
+    fun F hF ↦ PSpace.le_preserves_measure hCP hF
   have hsBC : s =ᵢ B ⊕ᵢ C := by
-    refine ⟨rfl, ?_⟩
+    refine PSpace.isIndependentProduct_def.2
+      ⟨by rw [hsdef, hBdef, PSpace.trim_ms, PSpace.trim_ms], ?_⟩
     intro E hE F hF
+    rw [hBdef, PSpace.trim_ms] at hE
     obtain ⟨T, -, rfl⟩ := hE
     have hFP : MeasurableSet[P.ms] F := hCms F hF
     have hTsup : MeasurableSet[BX ⊔ C.ms] (X ⁻¹' T ∩ F) :=
@@ -105,21 +112,21 @@ lemma WPDist_core {α : Type} [Inhabited α] [Countable α] (t : BernoulliM α) 
     rw [hC, hxy, hxys, BoundedFootprintPsp.toSpace_val, hpsp]
     exact WithTop.coe_le_coe.2 (PSpace.trim_le hsup)
   · -- the witness measures only the reported value, which is part of the run's own randomness
-    show (B : PSpace Ω).ms ≤ freshMs μ₀ (Interp.BernoulliInterpretable.interp t)
-    rw [hBdef]
-    show BX ≤ _
-    rw [hBXdef, hX, interp_bernoulliM]
+    rw [msOf_of_val (p := B) rfl, hBdef, PSpace.trim_ms, hBXdef, hX, interp_bernoulliM]
     exact comap_result_le_freshMs μ₀ t
-  · intro d hvd hd
-    refine ⟨_, ⟨B, rfl⟩, ⟨((B : PSpace Ω) : PSp Ω), hbf⟩, 1, by rw [mul_one]; exact hd,
-      ⟨_, ⟨hbf, rfl⟩,
-        le_refl (⟨((B : PSpace Ω) : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool)⟩,
-      hXB.aemeasurable, ?_⟩
+  · simp only [own_def, ownP_def, hasDistribution_def]
+    have hXB' : Measurable[B.ms, ⊤] X := by rw [hBdef, PSpace.trim_ms]; exact hXB
+    intro d hvd hd
+    refine UpperSetBI.mem_sExists.2 ⟨_, ⟨B, rfl⟩, UpperSetBI.mem_sep.2
+      ⟨⟨((B : PSpace Ω) : PSp Ω), hbf⟩, 1, by rw [mul_one]; exact UpperSetBI.mem_own.1 hd,
+      UpperSetBI.mem_sExists.2 ⟨_, ⟨hbf, rfl⟩, UpperSetBI.mem_own.2
+        (le_refl (⟨((B : PSpace Ω) : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool))⟩,
+      UpperSetBI.mem_pure.2 ⟨(almostMeasurable_some _ _).2 hXB'.aemeasurable, ?_⟩⟩⟩
     refine MeasureTheory.Measure.ext_of_singleton (fun b ↦ ?_)
     have h1 : (@Measure.map Ω α B.ms ⊤ X B.μ) {b} = B.μ (X ⁻¹' {b}) :=
-      @Measure.map_apply Ω α B.ms ⊤ B.μ X hXB {b} MeasurableSpace.measurableSet_top
+      @Measure.map_apply Ω α B.ms ⊤ B.μ X hXB' {b} MeasurableSpace.measurableSet_top
     have h2 : (ν.toMeasureWithMs ⊤) {b} = ν b := by
-      rw [PMF.toMeasureWithMs]
+      rw [PMF.toMeasureWithMs_def]
       exact @PMF.toMeasure_apply_singleton α ⊤ _ b (by trivial)
     rw [h1, h2, hlaw {b}, tsum_singleton b (fun y : α ↦ lawOf t y)]
     exact hν b

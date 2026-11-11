@@ -2,7 +2,7 @@ module
 
 public import Foxglove.RuleProofs
 
-@[expose] public section
+public section
 namespace Foxglove
 
 open ProbSpace Iris UpperSetBI

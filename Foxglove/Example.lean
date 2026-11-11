@@ -8,7 +8,7 @@ public import Mathlib.Algebra.Field.ZMod
 public import Mathlib.Algebra.Polynomial.Roots
 public import Mathlib.Algebra.MvPolynomial.SchwartzZippel
 
-@[expose] public section
+public section
 namespace Foxglove
 
 open ProbSpace
@@ -146,8 +146,7 @@ theorem wp_split' {N : ℕ} :
       simp only [PMF.uniformOfFinset_apply, Finset.mem_Ici, Fin.card_Ici]
     by_cases h₁ : N + 1 = m.1 + 1
     · -- nothing above `m`: the program returns `m`, and the uniform law is `δ m`
-      have hsplit : split' m = (pure m : BernoulliM (Fin (N + 1))) := by
-        rw [split', dite_eq_left h₁]
+      have hsplit : split' m = (pure m : BernoulliM (Fin (N + 1))) := split'_of_eq h₁
       have hlaw : PMF.uniformOfFinset (Finset.Ici m) Finset.nonempty_Ici = δ m := by
         refine PMF.ext fun i ↦ ?_
         rw [hU, PMF.pure_apply]
@@ -171,8 +170,8 @@ theorem wp_split' {N : ℕ} :
         if b then δ m else PMF.uniformOfFinset (Finset.Ici m') Finset.nonempty_Ici
         with hκ
       have hsplit : split' m = Interp.flip pr >>= fun b ↦
-          if b then (pure m : BernoulliM (Fin (N + 1))) else split' m' := by
-        rw [split', dite_eq_right h₁]
+          if b then (pure m : BernoulliM (Fin (N + 1))) else split' m' :=
+        split'_of_ne h₁ (mkRat_mem_I hK1)
       have hp : (unitInterval.toNNReal pr : ℝ≥0∞) = ((N + 1 - m.1 : ℕ) : ℝ≥0∞)⁻¹ :=
         toNNReal_mkRat (N + 1 - m.1) (by omega) _
       -- the two branches' laws mix to the uniform law
@@ -233,16 +232,17 @@ theorem wp_unifSpec_query (n : ℕ) :
     ⊢ wp (unifSpec.query n : OracleComp unifSpec (Fin (n + 1)))
         ⦃X, X ~ PMF.uniformOfFintype (Fin (n + 1))⦄ := by
   have hq : BernoulliInterpretable.interp (unifSpec.query n : OracleComp unifSpec (Fin (n + 1)))
-      = split n := by
-    show (split n >>= fun x ↦ pure x) = split n
-    exact bind_pure _
+      = split n := interp_unifSpec_query n
   have hlaw : PMF.uniformOfFintype (Fin (n + 1))
       = PMF.uniformOfFinset (Finset.Ici (0 : Fin (n + 1))) Finset.nonempty_Ici := by
     refine PMF.ext fun i ↦ ?_
     simp [PMF.uniformOfFintype_apply, PMF.uniformOfFinset_apply]
-  show ⊢ wp (BernoulliInterpretable.interp (unifSpec.query n : OracleComp unifSpec (Fin (n + 1))))
-    ⦃X, X ~ PMF.uniformOfFintype (Fin (n + 1))⦄
-  rw [hq, hlaw]
+  have hwp : ∀ Q, wp (unifSpec.query n : OracleComp unifSpec (Fin (n + 1))) Q
+      = wp (BernoulliInterpretable.interp
+          (unifSpec.query n : OracleComp unifSpec (Fin (n + 1)))) Q := fun Q ↦ by
+    rw [wp_def, wp_def]
+    simp only [run_def, interp_bernoulliM]
+  rw [hwp, hq, hlaw, split_def]
   exact wp_split' (n + 1) 0 (by simp)
 
 /-- **Sequencing two samplers.**  The law of `C >>= F` is the law of `C` bound with the laws

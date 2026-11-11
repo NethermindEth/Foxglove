@@ -33,7 +33,7 @@ connectives (`and`, `or`, `imp`, `sep`, `wand`, `persistently`, `pure`, `emp`, `
 * `UpperSetBI.OURAProp` : upper sets up to mutual entailment, a `BI`
 -/
 
-@[expose] public section
+section
 
 namespace Iris
 
@@ -44,8 +44,8 @@ namespace Iris
   - validity is downward closed: `a ≤ b → ✓ b → ✓ a`
   - validity of multiplication cancels on the right: `✓ (a * b) → ✓ a`
   - multiplication on the right is monotone: `a ≤ b → a * c ≤ b * c` -/
-class OrderedUnitalResourceAlgebra (M : Type*) extends
-    CommMonoid M, Preorder M, MulRightMono M where
+public class OrderedUnitalResourceAlgebra (M : Type*) extends
+  CommMonoid M, Preorder M, MulRightMono M where
   /-- The validity predicate, written `✓`. -/
   valid : M → Prop
   valid_one : valid (1 : M)
@@ -63,6 +63,8 @@ section
 variable {I M : Type*} [OrderedUnitalResourceAlgebra M]
 
 instance : MulRightMono M := ⟨fun _ _ _ h ↦ mul_left_mono h⟩
+
+public section
 
 /-- A resource algebra on `M` is lifted pointwise to a resource algebra on `I → M`,
 validity being required of every component. -/
@@ -85,12 +87,13 @@ instance instCMRA : CMRA M :=
     (fun x y z ↦ (mul_assoc x y z).symm) mul_comm one_mul (fun _ ↦ rfl)
     (fun _ _ _ ↦ ⟨1, (one_mul 1).symm⟩) (fun _ _ ↦ valid_mul)
 
-@[simp]
-abbrev carrier := M
+end
 
 end
 
-@[reducible]
+public section
+
+@[reducible, expose]
 def subalgebra
   {α : Type*} {p : α → Prop} (i : OrderedUnitalResourceAlgebra α)
   (hu : p i.one) (hc : ∀ x y : α, p x → p y → p (i.mul x y))
@@ -259,11 +262,15 @@ instance instUCMRA
   pcore_unit := by rfl
 }
 
+end
+
 end OrderedUnitalResourceAlgebra
 
 namespace UpperSetBI
 
 variable {M : Type} [OrderedUnitalResourceAlgebra M]
+
+public section
 
 def true : UpperSet M := {
   carrier := Set.univ
@@ -314,9 +321,11 @@ def sep (P Q : UpperSet M) : UpperSet M := {
     grind
 }
 
+@[expose]
 def entail (P Q : UpperSet M) : Prop :=
   ∀ m, ✓m → m ∈ P → m ∈ Q
 
+@[expose]
 def bientail (P Q : UpperSet M) : Prop :=
   entail P Q ∧ entail Q P
 
@@ -358,7 +367,6 @@ def persistently (P : UpperSet M) : UpperSet M := {
   upper' := by intro _ _ _ h; exact h
 }
 
-@[simp]
 def wand (P Q : UpperSet M) : UpperSet M := {
   carrier := {a | ∀ b, ✓ (a * b) → b ∈ P → (a * b) ∈ Q}
   upper' := by
@@ -368,7 +376,6 @@ def wand (P Q : UpperSet M) : UpperSet M := {
     exact Q.upper' hab (ha b hvab hPb)
 }
 
-@[simp]
 def imp (P Q : UpperSet M) : UpperSet M := {
   carrier := {a | ∀ b, a ≤ b → ✓ b → b ∈ P → b ∈ Q}
   upper' := by
@@ -376,7 +383,6 @@ def imp (P Q : UpperSet M) : UpperSet M := {
     exact ha b (le_trans hac hcb) hvb hPb
 }
 
-@[simp]
 def emp : UpperSet M := {
   carrier := {a | 1 ≤ a}
   upper' := by
@@ -385,7 +391,51 @@ def emp : UpperSet M := {
     apply le_trans <;> aesop
 }
 
+end
+
+/-! ### Membership in the connectives
+
+The connectives above are opaque outside this module; these characterise them. -/
+
+public section
+
+lemma mem_true {a : M} : Iff (a ∈ (true : UpperSet M)) True := by rfl
+
+lemma mem_false {a : M} : Iff (a ∈ (false : UpperSet M)) False := by rfl
+
+lemma mem_pure {φ : Prop} {a : M} : Iff (a ∈ (pure φ : UpperSet M)) φ := by rfl
+
+lemma mem_own {b a : M} : Iff (a ∈ own b) (b ≤ a) := by rfl
+
+lemma mem_and {P Q : UpperSet M} {a : M} : Iff (a ∈ and P Q) (a ∈ P ∧ a ∈ Q) := by rfl
+
+lemma mem_or {P Q : UpperSet M} {a : M} : Iff (a ∈ or P Q) (a ∈ P ∨ a ∈ Q) := by rfl
+
+lemma mem_sep {P Q : UpperSet M} {a : M} :
+    Iff (a ∈ sep P Q) (∃ b₁ b₂ : M, b₁ * b₂ ≤ a ∧ b₁ ∈ P ∧ b₂ ∈ Q) := by rfl
+
+lemma mem_sForall {Ψ : UpperSet M → Prop} {a : M} :
+    Iff (a ∈ sForall Ψ) (∀ p, Ψ p → a ∈ p) := by rfl
+
+lemma mem_sExists {Ψ : UpperSet M → Prop} {a : M} :
+    Iff (a ∈ sExists Ψ) (∃ p, Ψ p ∧ a ∈ p) := by rfl
+
+lemma mem_persistently {P : UpperSet M} {a : M} : Iff (a ∈ persistently P) ((1 : M) ∈ P) := by
+  rfl
+
+lemma mem_wand {P Q : UpperSet M} {a : M} :
+    Iff (a ∈ wand P Q) (∀ b, ✓ (a * b) → b ∈ P → a * b ∈ Q) := by rfl
+
+lemma mem_imp {P Q : UpperSet M} {a : M} :
+    Iff (a ∈ imp P Q) (∀ b, a ≤ b → ✓ b → b ∈ P → b ∈ Q) := by rfl
+
+lemma mem_emp {a : M} : Iff (a ∈ (emp : UpperSet M)) ((1 : M) ≤ a) := by rfl
+
+end
+
 /-! ### Basic algebraic helpers -/
+
+public section
 
 lemma valid_mul_l {a b : M} (h : ✓ (a * b)) : ✓ a := valid_mul h
 
@@ -552,14 +602,17 @@ instance BientailSetoid : Setoid (UpperSet M) where
     trans := bientail_trans
   }
 
+@[expose]
 def OURAProp (M : Type) [OrderedUnitalResourceAlgebra M] := Quotient (BientailSetoid (M := M))
 
 namespace OURAProp
 
+@[expose]
 def map (f : UpperSet M → UpperSet M)
          (hf : ∀ {P Q}, bientail P Q → bientail (f P) (f Q)) : OURAProp M → OURAProp M :=
   Quotient.map f fun _ _ h ↦ hf h
 
+@[expose]
 def map₂ (f : UpperSet M → UpperSet M → UpperSet M)
           (hf : ∀ {P P₁ Q Q₁}, bientail P P₁ → bientail Q Q₁ → bientail (f P Q) (f P₁ Q₁)) :
     OURAProp M → OURAProp M → OURAProp M :=
@@ -572,8 +625,8 @@ instance : Iris.COFE (OURAProp M) := Iris.COFE.ofDiscrete _
 /--
 It's annoying to type `Quotient.mk _` but the abstraction buys nothing, so make this transparent.
 -/
-@[simp, grind =]
-abbrev fmk {M} [OrderedUnitalResourceAlgebra M] (a : UpperSet M) : OURAProp M := Quotient.mk _ a
+@[simp, grind =, expose]
+def fmk {M} [OrderedUnitalResourceAlgebra M] (a : UpperSet M) : OURAProp M := Quotient.mk _ a
 
 @[reducible]
 instance : Coe (UpperSet M) (OURAProp M) := ⟨fmk⟩
@@ -787,6 +840,8 @@ instance : Iris.BI (OURAProp M) where
     exact fun _ _ hP ↦ Or.inr fun _ _ _ hb ↦ hb.elim
 
 end OURAProp
+
+end
 
 end UpperSetBI
 

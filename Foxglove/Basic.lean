@@ -2,7 +2,7 @@ module
 
 import Mathlib.Data.Nat.Notation
 
-@[expose] public section
+public section
 namespace Foxglove
 
 abbrev Ω : Type := ℕ → Bool

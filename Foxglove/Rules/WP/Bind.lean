@@ -2,7 +2,7 @@ module
 
 public import Foxglove.Rules.WP
 
-@[expose] public section
+public section
 namespace Foxglove
 
 open ProbSpace
@@ -46,38 +46,51 @@ lemma WPBindC_core {α β : Type} {m : Type → Type} [Monad m]
   have hCF : BernoulliInterpretable.interp (C >>= F) = Cb >>= Fb :=
     LawfulBernoulliInterpretable.interp_bind C F
   have hrun : run (C >>= F) μ₀ = run (Cb >>= Fb) μ₀ := by
-    show bigStep μ₀ (fun _ ↦ BernoulliInterpretable.interp (C >>= F))
-      = bigStep μ₀ (fun _ ↦ Cb >>= Fb)
-    rw [hCF]
+    rw [run_def, run_def, interp_bernoulliM, hCF]
+  have hrunC : run C μ₀ = run Cb μ₀ := by rw [run_def, run_def, interp_bernoulliM]
+  have hrunF : ∀ v b, run (F v) b = run (Fb v) b := fun v b ↦ by
+    rw [run_def, run_def, interp_bernoulliM]
   rw [hrun, hCF]
   -- the ambient before `C`, and the ambient after it
   set P₀ : PSpace Ω := ValidPSp.toPSpace ⟨μ₀.psp, hvalid⟩ with hP₀
-  have hμ₀P : μ₀.psp = .some P₀ := (Option.some_get _).symm
+  have hμ₀P : μ₀.psp = .some P₀ := ValidPSp.eq_some_toPSpace hvalid
+  have hvμ₀ : ✓(μ₀.toSpace) := by
+    show μ₀.toSpace.val ≠ (⊤ : PSp Ω)
+    rw [μ₀.toSpace_val]
+    exact PSp.valid_def.mp hvalid
   have hle_amb : ∀ {x : BoundedFootprintSpace Bool} {p : PSpace Ω},
       x ≤ μ₀.toSpace → (x : PSp Ω) = .some p → p ≤ P₀ := by
     intro x p hx hp
-    have h : (.some p : PSp Ω) ≤ .some P₀ := by rw [← hp, ← hμ₀P]; exact hx
+    have h : (.some p : PSp Ω) ≤ .some P₀ := by
+      rw [← hp, ← hμ₀P, ← μ₀.toSpace_val]
+      exact hx
     exact WithTop.coe_le_coe.1 h
   set μ₁ : BoundedFootprintPsp := (run Cb μ₀).1 with hμ₁
   have h₁ : ✓μ₁.psp := valid_run_psp μ₀ hvalid Cb
   set P₁ : PSpace Ω := ValidPSp.toPSpace ⟨μ₁.psp, h₁⟩ with hP₁
-  have hμ₁P : μ₁.psp = .some P₁ := (Option.some_get _).symm
+  have hμ₁P : μ₁.psp = .some P₁ := ValidPSp.eq_some_toPSpace h₁
   have hle_amb₁ : ∀ {x : BoundedFootprintSpace Bool} {p : PSpace Ω},
       x ≤ μ₁.toSpace → (x : PSp Ω) = .some p → p ≤ P₁ := by
     intro x p hx hp
-    have h : (.some p : PSp Ω) ≤ .some P₁ := by rw [← hp, ← hμ₁P]; exact hx
+    have h : (.some p : PSp Ω) ≤ .some P₁ := by
+      rw [← hp, ← hμ₁P, ← μ₁.toSpace_val]
+      exact hx
     exact WithTop.coe_le_coe.1 h
   set X : RV α := result (run Cb μ₀) with hX
-  have hbc' : b * c ≤ μ₁.toSpace := hbc
-  have hbQ' : own b ⊢ condValue ν X (fun v ↦ wp (F v) (Q v)) := hbQ
+  have hbc' : b * c ≤ μ₁.toSpace := by rw [hμ₁, ← hrunC]; exact hbc
+  have hbQ' : own b ⊢ condValue ν X (fun v ↦ wp (F v) (Q v)) := by
+    rw [hX, ← hrunC]; exact hbQ
   have hbms' : msOf b ≤ msOf a ⊔ freshMs μ₀ Cb := hbms
   -- the conditioning inside the premise's postcondition
   obtain ⟨mm, hbfm, κ, R, hmix, hMR, hfib⟩ := condValue_elim hvb hbQ'
   set M : BoundedFootprintSpace Bool := ⟨(mm : PSp Ω), hbfm⟩ with hM
-  have hmp := mm.2
+  have hmp : IsProbabilityMeasure mm.μ := PSpace.isProbability
   have hMRc : (M * R) * c ≤ μ₁.toSpace := le_trans (mul_le_mul_right_le hMR c) hbc'
   have hMD : M * (R * c) ≤ μ₁.toSpace := by rw [← mul_assoc]; exact hMRc
-  have hvμ₁ : ✓(μ₁.toSpace) := h₁
+  have hvμ₁ : ✓(μ₁.toSpace) := by
+    show μ₁.toSpace.val ≠ (⊤ : PSp Ω)
+    rw [μ₁.toSpace_val]
+    exact PSp.valid_def.mp h₁
   have hvMRc : ✓((M * R) * c) := valid_mono hMRc hvμ₁
   have hvMR : ✓(M * R) := valid_mul_l hvMRc
   have hvR : ✓R := valid_mul_r hvMR
@@ -111,8 +124,8 @@ lemma WPBindC_core {α β : Type} {m : Type → Type} [Monad m]
   have hm_le_P : mm ≤ P₁ := le_trans (PSpace.le_of_isIndependentProduct_left hsmd) hsP
   have hmP : mm.ms ≤ P₁.ms := hm_le_P.1
   have hdP : d.ms ≤ P₁.ms := le_trans (PSpace.le_of_isIndependentProduct_right hsmd).1 hsP.1
-  have hdp := d.2
-  have hy𝓜 : y.ms = mm.ms ⊔ r.ms := hymr.1
+  have hdp : IsProbabilityMeasure d.μ := PSpace.isProbability
+  have hy𝓜 : y.ms = mm.ms ⊔ r.ms := (PSpace.isIndependentProduct_def.1 hymr).1
   -- the fibres, as reweightings of the ambient after `C`
   haveI : Countable ν.support := ν.support_countable.to_subtype
   have hac : ∀ i : ν.support, κ.1 i ≪ mm.μ := fun i ↦ kernel_fibre_ac κ hmix i.2
@@ -143,28 +156,39 @@ lemma WPBindC_core {α β : Type} {m : Type → Type} [Monad m]
   -- each fibre, with the frame, sits in its reweighted ambient
   have hvm : ✓((mm : PSp Ω)) := PSp.valid_def.mpr (Option.some_ne_none _)
   have hk : ∀ i : ν.support, HasBoundedFootprint (((κ i : PSpace Ω)) : PSp Ω) := fun i ↦
-    hasBoundedFootprint_congr hvm (PSp.valid_def.mpr (Option.some_ne_none _)) rfl hbfm
+    hasBoundedFootprint_congr hvm (PSp.valid_def.mpr (Option.some_ne_none _)) (by
+      rw [ValidPSp.toPSpace_eq hvm rfl, ValidPSp.toPSpace_eq _ rfl,
+        TrivialMarkovKernel.ms_apply]) hbfm
   set K : ν.support → BoundedFootprintSpace Bool :=
     fun i ↦ ⟨((κ i : PSpace Ω) : PSp Ω), hk i⟩ with hK
   have hKD : ∀ i, K i * (R * c) ≤ (τ i).toSpace := by
     intro i
-    have hsup : mm.ms ⊔ d.ms ≤ P₁.ms := sup_le hmP hdP
-    have hX' : @PSpace.trim Ω ⟨⟨P₁.ms, ρ i⟩, hρp i⟩ (mm.ms ⊔ d.ms) hsup
-        =ᵢ (κ i : PSpace Ω) ⊕ᵢ d := by
-      refine ⟨rfl, fun F hF E hE ↦ ?_⟩
+    let Pτ : PSpace Ω := ⟨⟨P₁.ms, ρ i⟩, hρp i⟩
+    have hsup : mm.ms ⊔ d.ms ≤ Pτ.ms := by
+      rw [show Pτ.ms = P₁.ms from PSpace.ms_mk _ _]; exact sup_le hmP hdP
+    have hX' : @PSpace.trim Ω Pτ (mm.ms ⊔ d.ms) hsup =ᵢ (κ i : PSpace Ω) ⊕ᵢ d := by
+      refine PSpace.isIndependentProduct_def.2 ⟨?_, fun F hF E hE ↦ ?_⟩
+      · rw [PSpace.trim_ms, TrivialMarkovKernel.ms_apply]
+      rw [TrivialMarkovKernel.ms_apply] at hF
       have h1 : ρ i (F ∩ E) = κ.1 i F * d.μ E := by
         rw [Set.inter_comm, hρrect i E hE F hF, mul_comm]
-      have h2 := MeasureOnSpace.trim_eq (p := ⟨P₁.ms, ρ i⟩) hsup
-        (((le_sup_left : mm.ms ≤ _) _ hF).inter ((le_sup_right : d.ms ≤ _) _ hE))
-      exact h2.trans h1
+      rw [PSpace.trim_μ_apply
+          (((le_sup_left : mm.ms ≤ _) _ hF).inter ((le_sup_right : d.ms ≤ _) _ hE)),
+        show Pτ.μ (F ∩ E) = ρ i (F ∩ E) from PSpace.μ_mk_apply _ _ _,
+        TrivialMarkovKernel.μ_apply]
+      exact h1
     show PSp.mul (.some (κ i : PSpace Ω)) ((R * c : BoundedFootprintSpace Bool) : PSp Ω)
-      ≤ (τ i).psp
-    rw [hd, hτpsp]
-    exact (le_of_eq (mul_respect_independentProduct hX')).trans
-      (WithTop.coe_le_coe.2 (PSpace.trim_le (p := ⟨⟨P₁.ms, ρ i⟩, hρp i⟩) hsup))
+      ≤ (τ i).toSpace.val
+    rw [hd, (τ i).toSpace_val, hτpsp]
+    exact (le_of_eq (PSp.mul_respect_independentProduct hX')).trans
+      (WithTop.coe_le_coe.2 (PSpace.trim_le (p := Pτ) hsup))
   have hRKc : ∀ i, (R * K i) * c ≤ (τ i).toSpace := by
     intro i; rw [mul_comm R, mul_assoc]; exact hKD i
-  have hvRK : ∀ i, ✓(R * K i) := fun i ↦ valid_mul_l (valid_mono (hRKc i) (hτvalid i))
+  have hvτ : ∀ i, ✓(τ i).toSpace := fun i ↦ by
+    show (τ i).toSpace.val ≠ (⊤ : PSp Ω)
+    rw [(τ i).toSpace_val]
+    exact PSp.valid_def.mp (hτvalid i)
+  have hvRK : ∀ i, ✓(R * K i) := fun i ↦ valid_mul_l (valid_mono (hRKc i) (hvτ i))
   -- the fibre's resource: `X = i` sure, and a resource for the continuation's `wp`
   have hfib' : ∀ i : ν.support, ∃ (Pi : PSpace Ω) (hbfPi : HasBoundedFootprint (Pi : PSp Ω))
       (Ri : BoundedFootprintSpace Bool),
@@ -176,13 +200,16 @@ lemma WPBindC_core {α β : Type} {m : Type → Type} [Monad m]
     le_trans (by rw [mul_comm]; exact le_mul_of_one_le PSp.one_le) (hPR i)
   have hRic : ∀ i, Ri i * c ≤ (τ i).toSpace := fun i ↦
     le_trans (mul_le_mul_right_le (hRi_le i) c) (hRKc i)
-  have hvRi : ∀ i, ✓(Ri i) := fun i ↦ valid_mul_l (valid_mono (hRic i) (hτvalid i))
+  have hvRi : ∀ i, ✓(Ri i) := fun i ↦ valid_mul_l (valid_mono (hRic i) (hvτ i))
   -- run every fibre
   have hwp : ∀ i : ν.support, ∃ bv : BoundedFootprintSpace Bool,
       bv * c ≤ (run (F i) (τ i)).1.toSpace ∧ ✓bv ∧
         msOf bv ≤ msOf (Ri i) ⊔ freshMs (τ i) (Fb i) ∧
         (own bv ⊢ Q i (result (run (F i) (τ i)))) :=
-    fun i ↦ hRi i (Ri i) (hvRi i) (le_refl (Ri i)) (τ i) c (hτvalid i) (hRic i)
+    fun i ↦ by
+      have h := hRi i
+      rw [own_def, wp_def] at h
+      exact h (Ri i) (hvRi i) (UpperSetBI.mem_own.2 (le_refl (Ri i))) (τ i) c (hτvalid i) (hRic i)
   choose bv hbvc hbvv hbvms hbvQ using hwp
   -- on a fibre, the value `C` reported is the fibre's value, wherever the fibre has mass
   have hPiτ : ∀ i, Pi i ≤ ⟨⟨P₁.ms, ρ i⟩, hρp i⟩ := by
@@ -190,7 +217,8 @@ lemma WPBindC_core {α β : Type} {m : Type → Type} [Monad m]
     have h1 : (⟨(Pi i : PSp Ω), hbfPi i⟩ : BoundedFootprintSpace Bool) ≤ (τ i).toSpace :=
       le_trans (le_mul_of_one_le PSp.one_le) (le_trans (hPR i)
         (le_trans (le_mul_of_one_le PSp.one_le) (hRKc i)))
-    have h2 : (.some (Pi i) : PSp Ω) ≤ .some ⟨⟨P₁.ms, ρ i⟩, hρp i⟩ := h1
+    have h2 : (.some (Pi i) : PSp Ω) ≤ .some ⟨⟨P₁.ms, ρ i⟩, hρp i⟩ := by
+      rw [← hτpsp, ← (τ i).toSpace_val]; exact h1
     exact WithTop.coe_le_coe.1 h2
   have hρnull : ∀ i, PSpace.μ (⟨⟨P₁.ms, ρ i⟩, hρp i⟩ : PSpace Ω) {ρ' | ¬ X ρ' = i} = 0 :=
     fun i ↦ PSpace.null_of_le (hPiτ i) (hPi0 i)
@@ -198,9 +226,12 @@ lemma WPBindC_core {α β : Type} {m : Type → Type} [Monad m]
     intro i ρ' hρ'
     by_contra hne
     apply hρ'
-    refine measure_mono_null (fun ρ'' hρ'' ↦ ?_) (hρnull i)
+    have h0 : ρ i {ρ' | ¬ X ρ' = i} = 0 := (PSpace.μ_mk_apply _ _ _).symm.trans (hρnull i)
+    refine measure_mono_null (fun ρ'' hρ'' ↦ ?_) h0
+    rw [Set.mem_ofPred_eq, hX, result_apply]
     show ¬ (run Cb μ₀).2 (μ₁.atomOf ρ'') = i
     rw [μ₁.atomOf_eq hρ'']
+    rw [hX, result_apply] at hne
     exact hne
   have hac' : ∀ i : ν.support, ∀ ρ', P₁.μ (μ₁.atomOf ρ').1 = 0 → ρ i (μ₁.atomOf ρ').1 = 0 :=
     fun i ρ' h0 ↦ hρac i h0
@@ -209,12 +240,12 @@ lemma WPBindC_core {α β : Type} {m : Type → Type} [Monad m]
   obtain ⟨hSle, hSμ⟩ := run_bind μ₀ hvalid Cb Fb hS
   set T : ProbTree β := secondStage μ₀ Cb Fb with hT
   have hTms : T.ms = P₁.ms := by
-    rw [hT, secondStage, toTree_ms_eq, μ₁.sigmaAgrees h₁]
+    rw [hT, secondStage_def, toTree_ms_eq, μ₁.sigmaAgrees h₁]
   have hfreshS := run_fresh μ₀ (Cb >>= Fb) hvalid hS
   -- `a` and `c` live independently in the ambient
   obtain ⟨a', ha'⟩ : ∃ a' : PSpace Ω, (a : PSp Ω) = .some a' :=
     Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hva)
-  have hvac : ✓(a * c) := valid_mono hle hvalid
+  have hvac : ✓(a * c) := valid_mono hle hvμ₀
   obtain ⟨w, hw⟩ : ∃ w : PSpace Ω, ((a * c : BoundedFootprintSpace Bool) : PSp Ω) = .some w :=
     Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hvac)
   have hwac : w =ᵢ a' ⊕ᵢ c' := by
@@ -256,11 +287,11 @@ lemma WPBindC_core {α β : Type} {m : Type → Type} [Monad m]
     have h2 : S.μ (A ∩ F) = S.μ F * P₀.μ A := by
       rw [Set.inter_comm]; exact hfreshS.2 hF hAP
     have hAEw : MeasurableSet[w.ms] (A ∩ E) :=
-      hwac.1.symm.le _ (mem_sup_inter a'.ms c'.ms hA hE)
+      (PSpace.isIndependentProduct_def.1 hwac).1.symm.le _ (mem_sup_inter a'.ms c'.ms hA hE)
     have h3 : P₀.μ (A ∩ E) = a'.μ A * c'.μ E := by
-      rw [← MeasureOnSpace.le_preserves_measure hwP hAEw]
-      exact hwac.2 A hA E hE
-    have h4 : P₀.μ A = a'.μ A := (MeasureOnSpace.le_preserves_measure haP hA).symm
+      rw [← PSpace.le_preserves_measure hwP hAEw]
+      exact (PSpace.isIndependentProduct_def.1 hwac).2 A hA E hE
+    have h4 : P₀.μ A = a'.μ A := (PSpace.le_preserves_measure haP hA).symm
     rw [h1, h2, h3, h4, mul_assoc]
   -- the witness: the composite run, trimmed to `𝓜`
   set B : PSpace Ω := @PSpace.trim Ω S 𝓜 h𝓜S with hB
@@ -269,10 +300,10 @@ lemma WPBindC_core {α β : Type} {m : Type → Type} [Monad m]
     hasBoundedFootprint_mono hvS (by rw [hS]; exact WithTop.coe_le_coe.2 (PSpace.trim_le h𝓜S))
       (hasBoundedFootprint_of_tree _)
   refine ⟨⟨(B : PSp Ω), hbfB⟩, ?_, PSp.valid_def.mpr (Option.some_ne_none _), ?_, ?_⟩
-  · show PSp.mul (.some B) (c : PSp Ω) ≤ (run (Cb >>= Fb) μ₀).1.psp
-    rw [hc', hS]
+  · show PSp.mul (.some B) (c : PSp Ω) ≤ (run (Cb >>= Fb) μ₀).1.toSpace.val
+    rw [(run (Cb >>= Fb) μ₀).1.toSpace_val, hc', hS]
     exact PSpace.mul_trim_le h𝓜S hcS hrect
-  · rw [msOf_of_val (p := B) rfl]
+  · rw [msOf_of_val (p := B) rfl, hB, PSpace.trim_ms]
     show (mm.ms ⊔ r.ms) ⊔ freshMs μ₀ (Cb >>= Fb) ≤ msOf a ⊔ freshMs μ₀ (Cb >>= Fb)
     rw [hmsOfa]
     exact sup_le hmr_le le_sup_right
@@ -283,8 +314,11 @@ lemma WPBindC_core {α β : Type} {m : Type → Type} [Monad m]
       (hρp i).measure_univ]⟩
   set Sf : ν.support → PSpace Ω := fun i ↦ ⟨⟨(fixpoint ⟨T, (ρ i).cast T.ms⟩).1.ms,
     (fixpoint ⟨T, (ρ i).cast T.ms⟩).2⟩, hTprob i⟩ with hSf
+  have hSfms' : ∀ i, (Sf i).ms = (fixpoint ⟨T, (ρ i).cast T.ms⟩).1.ms := fun i ↦
+    PSpace.ms_mk _ _
   have hSfms : ∀ i, (Sf i).ms = (fixpoint ⟨T, P₁.μ.cast T.ms⟩).1.ms := fun i ↦
-    congrArg ProbTree.ms (fixpoint_fst_congr' ((ρ i).cast T.ms) (P₁.μ.cast T.ms))
+    (hSfms' i).trans
+      (congrArg ProbTree.ms (fixpoint_fst_congr' ((ρ i).cast T.ms) (P₁.μ.cast T.ms)))
   have h𝓜Sf : ∀ i, 𝓜 ≤ (Sf i).ms := fun i ↦ by rw [hSfms i]; exact h𝓜T
   -- the atoms a fibre gives no mass: dead after `C`, or where the fibre's density vanishes
   set N : ν.support → Set Ω := fun i ↦ {ρ' | ρ i (μ₁.atomOf ρ').1 = 0} with hN
@@ -292,6 +326,7 @@ lemma WPBindC_core {α β : Type} {m : Type → Type} [Monad m]
     intro i
     have hset : N i = deadAtoms μ₁ h₁ ∪ {ρ' | g i ρ' = 0} := by
       ext ρ'
+      rw [Set.mem_union, mem_deadAtoms]
       exact withDensity_atom_eq_zero_iff μ₁ h₁ ((hgm i).mono hmP le_rfl) ρ'
     rw [hset]
     refine MeasurableSet.union ?_ ?_
@@ -308,7 +343,8 @@ lemma WPBindC_core {α β : Type} {m : Type → Type} [Monad m]
     intro i
     refine le_trans (hbvms i) (sup_le ?_ ?_)
     · refine le_trans (msOf_mono (hRi_le i)) ?_
-      rw [msOf_mul (q := (κ i : PSpace Ω)) hr rfl (hvRK i), sup_comm r.ms]
+      rw [msOf_mul (q := (κ i : PSpace Ω)) hr rfl (hvRK i), TrivialMarkovKernel.ms_apply,
+        sup_comm r.ms]
       exact le_sup_left
     · show freshMs (BoundedFootprintPsp.reweight μ₁ h₁ (ρ i) (hρp i)) (Fb i) ≤ 𝓜
       rw [freshMs_of_valid _ reweight_valid,
@@ -330,7 +366,7 @@ lemma WPBindC_core {α β : Type} {m : Type → Type} [Monad m]
       (fixpoint ⟨toTree (τ i) (prunePrograms (τ i) (hτvalid i) (fun _ ↦ Fb i)),
       (ValidPSp.toPSpace ⟨(τ i).psp, hτvalid i⟩).μ.cast
         (toTree (τ i) (prunePrograms (τ i) (hτvalid i) (fun _ ↦ Fb i))).ms⟩).2⟩,
-      inferInstance⟩ := fun i ↦ run_psp_eq (τ i) (hτvalid i) (Fb i)
+      inferInstance⟩ := fun i ↦ by rw [hrunF]; exact run_psp_eq (τ i) (hτvalid i) (Fb i)
   have hbp' : ∀ i : ν.support, ∃ p : PSpace Ω, (bv i : PSp Ω) = .some p := fun i ↦
     Option.ne_none_iff_exists'.mp (PSp.valid_def.mp (hbvv i))
   choose bp hbp using hbp'
@@ -348,17 +384,19 @@ lemma WPBindC_core {α β : Type} {m : Type → Type} [Monad m]
         ((ρ i).cast T.ms) := by
     intro i
     rw [hTi i]
-    refine agreeOffNull_toTree_go μ₁ h₁ _ _ (ρ i) (fun A hA ↦ ?_) []
-      (fun _ h' ↦ List.prefix_nil.mp h') ⟨T, (ρ i).cast T.ms⟩ rfl (fun q hq ↦ ?_)
-    · simp only [prunePrograms]
+    refine agreeOffNull_toTree_go μ₁ h₁ (fun A ↦ Fb ((run Cb μ₀).2 A)) _ (ρ i)
+      (fun A hA ↦ ?_) [] (fun _ h' ↦ List.prefix_nil.mp h') ⟨T, (ρ i).cast T.ms⟩
+      (by rw [hT, secondStage_def]; rfl) (fun q hq ↦ ?_)
+    · refine Eq.trans ?_ (prunePrograms_apply (τ i) (hτvalid i) (fun _ ↦ Fb i) A).symm
       split_ifs with h0
-      · exact absurd h0 hA
+      · rw [hτP i, PSpace.μ_mk_apply] at h0
+        exact absurd h0 hA
       · have hmem : tapeOf (μ₁.prefixes A) ∈ A.1 := by
           rw [atom_eq_prefixEqEvent]; exact mem_prefixEqEvent_tapeOf _
         have hatom : μ₁.atomOf (tapeOf (μ₁.prefixes A)) = A := μ₁.atomOf_eq hmem
         have := hXv i (tapeOf (μ₁.prefixes A)) (by rw [hatom]; exact hA)
         show Fb ((run Cb μ₀).2 A) = Fb i
-        rw [← this]
+        rw [← this, hX, result_apply]
         show Fb ((run Cb μ₀).2 A) = Fb ((run Cb μ₀).2 (μ₁.atomOf (tapeOf (μ₁.prefixes A))))
         rw [hatom]
     · rw [List.nil_append]
@@ -369,37 +407,50 @@ lemma WPBindC_core {α β : Type} {m : Type → Type} [Monad m]
     have hbvle : bv i ≤ (run (F i) (τ i)).1.toSpace :=
       le_trans (le_mul_of_one_le PSp.one_le) (hbvc i)
     have hbvle' : (.some (bp i) : PSp Ω) ≤ (run (F i) (τ i)).1.psp := by
-      rw [← hbp i]; exact hbvle
+      rw [← hbp i, ← (run (F i) (τ i)).1.toSpace_val]; exact hbvle
     rw [hfibre_psp i] at hbvle'
     have hle₂ := WithTop.coe_le_coe.1 hbvle'
     refine PSpace.le_of_ms_le (le_trans (hbp𝓜 i) (h𝓜Sf i)) fun E hE ↦ ?_
-    show (fixpoint ⟨T, (ρ i).cast T.ms⟩).2 E = (bp i).μ E
-    rw [MeasureOnSpace.le_preserves_measure hle₂ hE]
+    rw [show (Sf i).μ E = (fixpoint ⟨T, (ρ i).cast T.ms⟩).2 E from PSpace.μ_mk_apply _ _ _,
+      PSpace.le_preserves_measure hle₂ hE, PSpace.μ_mk_apply]
     refine fixpoint_agreeOffNull ((ρ i).cast T.ms) _ (hag i) (fun E hE ↦ ?_) E
-      (h𝓜Sf i _ (hbp𝓜 i _ hE)) (hle₂.1 _ hE)
-    rw [Measure.le_preserves_measure (h := le_of_eq hTms) (μ := ρ i) (hu := hE), hτP i]
-    show ρ i E = ((ρ i).cast _) E
-    rw [Measure.le_preserves_measure (h := le_of_eq (hTims i)) (μ := ρ i)
-      (hu := by rw [hTims i, ← hTms]; exact hE)]
+      (by rw [← hSfms' i]; exact h𝓜Sf i _ (hbp𝓜 i _ hE))
+      (by have h := hle₂.1 _ hE; rwa [PSpace.ms_mk] at h)
+    have hτms : (ValidPSp.toPSpace ⟨(τ i).psp, hτvalid i⟩).ms = P₁.ms := by
+      rw [hτP i, PSpace.ms_mk]
+    rw [Measure.le_preserves_measure (h := le_of_eq hTms) (μ := ρ i) (hu := hE),
+      Measure.le_preserves_measure (h := le_of_eq ((hTims i).trans hτms.symm))
+        (hu := by rw [hTims i, ← hTms]; exact hE),
+      hτP i, PSpace.μ_mk_apply]
   -- the conditioning: the second stage at each fibre's measure, trimmed to `𝓜`
+  have hBms : B.ms = 𝓜 := by rw [hB, PSpace.trim_ms]
   have hfib_meas : ∀ v, ∃ ν' : Measure[𝓜] Ω, IsProbabilityMeasure ν' ∧
-      ∀ hv : v ∈ ν.support, ν' = (@PSpace.trim Ω (Sf ⟨v, hv⟩) 𝓜 (h𝓜Sf ⟨v, hv⟩)).μ := by
+      ∀ hv : v ∈ ν.support, ν' = (Sf ⟨v, hv⟩).μ.trim (h𝓜Sf ⟨v, hv⟩) := by
     intro v
     by_cases hv : v ∈ ν.support
-    · exact ⟨_, (@PSpace.trim Ω (Sf ⟨v, hv⟩) 𝓜 (h𝓜Sf ⟨v, hv⟩)).2, fun _ ↦ rfl⟩
-    · exact ⟨B.μ, B.2, fun h ↦ absurd h hv⟩
+    · refine ⟨(Sf ⟨v, hv⟩).μ.trim (h𝓜Sf ⟨v, hv⟩), ⟨?_⟩, fun _ ↦ rfl⟩
+      rw [trim_measurableSet_eq _ MeasurableSet.univ, measure_univ]
+    · refine ⟨S.μ.trim h𝓜S, ⟨?_⟩, fun h ↦ absurd h hv⟩
+      rw [trim_measurableSet_eq _ MeasurableSet.univ, measure_univ]
   choose κ'f hκ'p hκ'f' using hfib_meas
-  have hκ'f : ∀ i : ν.support, κ'f i = (@PSpace.trim Ω (Sf i) 𝓜 (h𝓜Sf i)).μ :=
+  have hκ'f : ∀ i : ν.support, κ'f i = (Sf i).μ.trim (h𝓜Sf i) :=
     fun i ↦ hκ'f' i i.2
-  obtain ⟨κ', hκ'⟩ : ∃ κ' : TrivialMarkovKernel α B, ∀ v, κ'.1 v = κ'f v := by
+  -- the kernel lands in `B.ms`, which is `𝓜` only propositionally: build it over `𝓜`
+  obtain ⟨κ', hκ'⟩ : ∃ κ' : TrivialMarkovKernel α B, ∀ v G, κ'.1 v G = κ'f v G := by
     letI : MeasurableSpace α := ⊤
-    exact ⟨⟨⟨κ'f, measurable_from_top⟩, ⟨hκ'p⟩⟩, fun _ ↦ rfl⟩
+    have key : ∀ n : MeasurableSpace Ω, 𝓜 = n →
+        ∃ κ : @Kernel α Ω ⊤ n, IsMarkovKernel κ ∧ ∀ v G, κ v G = κ'f v G := by
+      intro n hn
+      subst hn
+      exact ⟨⟨κ'f, measurable_from_top⟩, ⟨hκ'p⟩, fun _ _ ↦ rfl⟩
+    obtain ⟨κ, hκm, hκ⟩ := key B.ms hBms.symm
+    exact ⟨⟨κ, hκm⟩, hκ⟩
   have hmix' : B.μ = (ν.toMeasureWithMs ⊤).bind κ' := by
-    apply @Measure.ext Ω 𝓜
+    apply @Measure.ext Ω B.ms
     intro G hG
+    have hG' : MeasurableSet[𝓜] G := by rw [← hBms]; exact hG
     refine Eq.trans ?_ (bind_apply_support ν κ'.1 hG).symm
-    show (MeasureOnSpace.trim h𝓜S).μ G = _
-    rw [MeasureOnSpace.trim_eq h𝓜S hG, hSμ G (h𝓜S G hG)]
+    rw [show B.μ G = S.μ G from PSpace.trim_μ_apply hG', hSμ G (h𝓜S G hG')]
     have hf : ∀ E, MeasurableSet[T.ms] E →
         (P₁.μ.cast T.ms) E = ∑' i : ν.support, (HSMul.hSMul (ν i) ((ρ i).cast T.ms)) E := by
       intro E hE
@@ -409,43 +460,38 @@ lemma WPBindC_core {α β : Type} {m : Type → Type} [Monad m]
       rw [Measure.smul_apply, smul_eq_mul,
         Measure.le_preserves_measure (h := le_of_eq hTms) (μ := ρ i) (hu := hE)]
     rw [fixpoint_sum' (P₁.μ.cast T.ms) (fun i : ν.support ↦ HSMul.hSMul (ν i) ((ρ i).cast T.ms))
-      hf (h𝓜T G hG)]
+      hf (h𝓜T G hG')]
     refine tsum_congr fun i ↦ ?_
-    rw [hκ' i, hκ'f i]
-    show _ = _ * (MeasureOnSpace.trim (h𝓜Sf i)).μ G
-    rw [MeasureOnSpace.trim_eq (h𝓜Sf i) hG,
+    rw [hκ', hκ'f i, trim_measurableSet_eq _ hG',
+      show (Sf i).μ G = (fixpoint ⟨T, (ρ i).cast T.ms⟩).2 G from PSpace.μ_mk_apply _ _ _,
       measure_congr_tree (fixpoint_smul (ν i) ((ρ i).cast T.ms)) G]
     show (HSMul.hSMul (ν i) (fixpoint ⟨T, (ρ i).cast T.ms⟩).2) G = _
     rw [Measure.smul_apply, smul_eq_mul]
   show own (⟨(B : PSp Ω), hbfB⟩ : BoundedFootprintSpace Bool)
     ⊢ 𝒞⟨ν⟩ v; Q v (result (run (Cb >>= Fb) μ₀))
-  unfold jointConditioning
+  rw [jointConditioning_def]
   refine entails_trans ?_ (exists_intro B)
   refine entails_trans ?_ (exists_intro κ')
   refine entails_trans sep_emp.2 (sep_mono ?_ ?_)
-  · unfold ownP
+  · rw [ownP_def]
     exact exists_intro (Ψ := fun h : HasBoundedFootprint ((B : PSp Ω)) ↦
       own (⟨(B : PSp Ω), h⟩ : BoundedFootprintSpace Bool)) hbfB
   refine entails_trans emp_sep.2 (sep_mono (pure_intro hmix') ?_)
   refine forall_intro fun i ↦ wand_intro (entails_trans emp_sep.1 ?_)
-  unfold ownP
+  rw [ownP_def]
   refine exists_elim fun hk' ↦ ?_
   -- the fibre's space is `Sf i` trimmed to `𝓜`; the witness sits below it, and the null set
   -- `N i` makes the fibre's result and the composite's agree
   have hbpκ : bp i ≤ (κ' i : PSpace Ω) := by
-    refine PSpace.le_of_ms_le (S := (κ' i : PSpace Ω)) (hbp𝓜 i) fun E hE ↦ ?_
-    show κ'.1 i E = (bp i).μ E
-    rw [hκ' i, hκ'f i]
-    show (MeasureOnSpace.trim (h𝓜Sf i)).μ E = _
-    rw [MeasureOnSpace.trim_eq (h𝓜Sf i) (hbp𝓜 i E hE)]
-    exact (MeasureOnSpace.le_preserves_measure (hbpSf i) hE).symm
-  have hNκ : MeasurableSet[(κ' i : PSpace Ω).ms] (N i) := hN𝓜 i
+    refine PSpace.le_of_ms_le (S := (κ' i : PSpace Ω))
+      (by rw [TrivialMarkovKernel.ms_apply, hBms]; exact hbp𝓜 i) fun E hE ↦ ?_
+    rw [TrivialMarkovKernel.μ_apply, hκ', hκ'f i, trim_measurableSet_eq _ (hbp𝓜 i E hE)]
+    exact (PSpace.le_preserves_measure (hbpSf i) hE).symm
+  have hNκ : MeasurableSet[(κ' i : PSpace Ω).ms] (N i) := by
+    rw [TrivialMarkovKernel.ms_apply, hBms]; exact hN𝓜 i
   have hNκ0 : (κ' i : PSpace Ω).μ (N i) = 0 := by
-    show κ'.1 i (N i) = 0
-    rw [hκ' i, hκ'f i]
-    show (MeasureOnSpace.trim (h𝓜Sf i)).μ (N i) = 0
-    rw [MeasureOnSpace.trim_eq (h𝓜Sf i) (hN𝓜 i)]
-    show (fixpoint ⟨T, (ρ i).cast T.ms⟩).2 (N i) = 0
+    rw [TrivialMarkovKernel.μ_apply, hκ', hκ'f i, trim_measurableSet_eq _ (hN𝓜 i),
+      show (Sf i).μ (N i) = (fixpoint ⟨T, (ρ i).cast T.ms⟩).2 (N i) from PSpace.μ_mk_apply _ _ _]
     rw [fixpoint_preserves' _ (by rw [hTms]; exact hNP₁ i),
       Measure.le_preserves_measure (h := le_of_eq hTms) (μ := ρ i)
         (hu := by rw [hTms]; exact hNP₁ i)]
@@ -461,9 +507,12 @@ lemma WPBindC_core {α β : Type} {m : Type → Type} [Monad m]
     exact PSpace.nullSpace_mul_le hNκ hNκ0 hbpκ
   refine entails_trans (own_mono hmul) (entails_trans own_mul_sep ?_)
   refine entails_trans (sep_mono (nullSpace_liftPred hNκ hNκ0 (fun ρ' hρ' ↦ ?_) hbfPN)
-    (hbvQ i)) (hQ i _ _)
+    (hbvQ i)) ((aeProper_def _).1 (hQ i) _ _)
   by_contra hN'
-  exact hρ' (result_run_fibre μ₀ hvalid Cb Fb (ρ i) (hρp i) i (hXv i) (hac' i) hN')
+  refine hρ' ?_
+  show result (run (F i) (τ i)) ρ' = result (run (Cb >>= Fb) μ₀) ρ'
+  rw [hrunF]
+  exact result_run_fibre μ₀ hvalid Cb Fb (ρ i) (hρp i) i (hXv i) (hac' i) hN'
 
 end
 

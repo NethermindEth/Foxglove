@@ -2,7 +2,7 @@ module
 
 public import Foxglove.Algebra.MeasureOnSpace
 
-@[expose] public section
+public section
 namespace Foxglove
 
 open ProbSpace
@@ -22,6 +22,10 @@ The measure of a `PMF` on the full σ-algebra, products, and integration against
 def _root_.PMF.toMeasureWithMs {A : Type} (μ : PMF A) (ms : MeasurableSpace A) : @MeasureTheory.Measure A ms :=
   @μ.toMeasure A ms
 
+lemma _root_.PMF.toMeasureWithMs_def {A : Type} (μ : PMF A) (ms : MeasurableSpace A) :
+    μ.toMeasureWithMs ms = @μ.toMeasure A ms := by
+  rfl
+
 /-- The Dirac distribution. -/
 abbrev δ {A : Type} (v : A) : PMF A := PMF.pure v
 
@@ -38,7 +42,7 @@ def product (μ₁ : PMF α) (μ₂ : PMF β) : PMF (α × β) :=
 scoped infix:69 " ⊗ " => product
 
 lemma product_apply (μ₁ : PMF α) (μ₂ : PMF β) (a : α) (b : β) :
-    (μ₁ ⊗ μ₂) (a, b) = μ₁ a * μ₂ b := rfl
+    (μ₁ ⊗ μ₂) (a, b) = μ₁ a * μ₂ b := by rfl
 
 set_option linter.style.haveILetI false in
 /-- The product law gives a rectangle the product of the marginal masses. -/
@@ -154,6 +158,10 @@ noncomputable def fuse (μ : PMF α) (κ : α → PMF β) : PMF (α × β) :=
     convert h ▸ ENNReal.summable.hasSum⟩
 
 scoped infix:69 " -< " => fuse
+
+lemma fuse_apply (μ : PMF α) (κ : α → PMF β) (v : α) (w : β) :
+    (μ -< κ) (v, w) = μ v * κ v w := by
+  rfl
 
 /-- Fusing is binding: draw `v` from `μ`, then `w` from `κ v`, and report the pair. -/
 lemma fuse_eq_bind {μ : PMF α} {κ : α → PMF β} :

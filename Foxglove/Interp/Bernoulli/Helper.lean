@@ -3,7 +3,7 @@ module
 public import Foxglove.Interp.Bernoulli.Basic
 
 
-@[expose] public section
+public section
 namespace Foxglove
 
 namespace Interp
@@ -20,7 +20,7 @@ Everything here is bookkeeping in `ℝ≥0∞` with no probabilistic content.  I
 
 lemma halfNN_coe : (unitInterval.toNNReal half : ℝ≥0∞) = 2⁻¹ := by
   have h : unitInterval.toNNReal half = 2⁻¹ := by
-    ext; rw [unitInterval.coe_toNNReal]; show (0.5 : ℝ) = _; norm_num
+    ext; rw [unitInterval.coe_toNNReal, half_coe]; norm_num
   rw [h]; simp
 
 lemma ennreal_one_sub_inv_two : (1 : ℝ≥0∞) - 2⁻¹ = 2⁻¹ := by norm_num

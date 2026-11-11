@@ -2,7 +2,7 @@ module
 
 public import Foxglove.Algebra.Kernel
 
-@[expose] public section
+public section
 namespace Foxglove
 
 open ProbSpace
@@ -44,7 +44,7 @@ lemma PSpace.setLIntegral_of_le {s P : PSpace Ω} (hsP : s ≤ P) {g : Ω → EN
   have htrim : s.μ = P.μ.trim hsP.1 := by
     apply @Measure.ext Ω s.ms
     intro u hu
-    rw [MeasureOnSpace.le_preserves_measure hsP hu,
+    rw [PSpace.le_preserves_measure hsP hu,
       @trim_measurableSet_eq Ω s.ms P.ms P.μ u hsP.1 hu]
   rw [htrim, setLIntegral_trim hsP.1 hg hA]
 
@@ -57,7 +57,7 @@ lemma PSpace.withDensity_le_apply {p q : PSpace Ω} (hpq : p ≤ q) {f : Ω → 
   have htrim : p.μ = q.μ.trim hpq.1 := by
     refine @Measure.ext Ω p.ms _ _ fun u hu ↦ ?_
     rw [trim_measurableSet_eq hpq.1 hu]
-    exact MeasureOnSpace.le_preserves_measure hpq hu
+    exact PSpace.le_preserves_measure hpq hu
   rw [withDensity_apply _ (hpq.1 _ hA), withDensity_apply _ hA, htrim,
     restrict_trim hpq.1 _ hA, lintegral_trim hpq.1 hf]
 
@@ -67,8 +67,8 @@ open MeasureTheory in
 theorem PSpace.isIndependentProduct_of_zero_one_le {p y : PSpace Ω} (hpy : p ≤ y)
     (h01 : ∀ t, @MeasurableSet Ω p.ms t → p.μ t = 0 ∨ p.μ t = 1) : y =ᵢ p ⊕ᵢ y := by
   have hy := y.2
-  refine ⟨(sup_eq_right.mpr hpy.1).symm, fun E hE F _ ↦ ?_⟩
-  have hEy : p.μ E = y.μ E := MeasureOnSpace.le_preserves_measure hpy hE
+  refine PSpace.isIndependentProduct_def.2 ⟨(sup_eq_right.mpr hpy.1).symm, fun E hE F _ ↦ ?_⟩
+  have hEy : p.μ E = y.μ E := PSpace.le_preserves_measure hpy hE
   rcases h01 E hE with h | h
   · rw [h, zero_mul]
     exact measure_mono_null Set.inter_subset_left (hEy.symm.trans h)
@@ -95,15 +95,19 @@ lemma PSpace.indep_sup_of_rect {S c : PSpace Ω} {m₁ m₂ : MeasurableSpace Ω
   have hSp := S.2
   have hcp := c.2
   have hES : MeasurableSet[S.ms] E := hc.1 _ hE
-  have hcE : S.μ E = c.μ E := (MeasureOnSpace.le_preserves_measure hc hE).symm
+  have hcE : S.μ E = c.μ E := (PSpace.le_preserves_measure hc hE).symm
   have hle : m₁ ⊔ m₂ ≤ S.ms := sup_le h₁ h₂
   intro G hG
   refine MeasurableSpace.induction_on_inter (C := fun G _ ↦ S.μ (G ∩ E) = S.μ G * c.μ E)
     (MeasurableSpace.generateFrom_supGenerator_eq_sup m₁ m₂).symm ?_ ?_ ?_ ?_ ?_ G hG
-  · rintro _ ⟨u, v, rfl, hu, hv⟩ _ ⟨u', v', rfl, hu', hv'⟩ _
-    exact ⟨u ∩ u', v ∩ v', by rw [Set.inter_inter_inter_comm], hu.inter hu', hv.inter hv'⟩
+  · rintro _ hs _ ht _
+    obtain ⟨u, v, rfl, hu, hv⟩ := exists_inter_measurableSet_of_mem_supGenerator m₁ m₂ hs
+    obtain ⟨u', v', rfl, hu', hv'⟩ := exists_inter_measurableSet_of_mem_supGenerator m₁ m₂ ht
+    rw [Set.inter_inter_inter_comm]
+    exact inter_mem_supGenerator m₁ m₂ (hu.inter hu') (hv.inter hv')
   · simp
-  · rintro _ ⟨A, F, rfl, hA, hF⟩
+  · intro t ht
+    obtain ⟨A, F, rfl, hA, hF⟩ := exists_inter_measurableSet_of_mem_supGenerator m₁ m₂ ht
     exact hbase A hA F hF E hE
   · intro t ht ih
     have htS : MeasurableSet[S.ms] t := hle _ ht
@@ -125,13 +129,14 @@ lemma PSpace.mul_trim_le {S c : PSpace Ω} {f : MeasurableSpace Ω} (hf : f ≤ 
     PSp.mul (some (@PSpace.trim Ω S f hf)) (some c) ≤ (some S : PSp Ω) := by
   have hsup : f ⊔ c.ms ≤ S.ms := sup_le hf hc.1
   have hT : @PSpace.trim Ω S (f ⊔ c.ms) hsup =ᵢ (@PSpace.trim Ω S f hf) ⊕ᵢ c := by
-    refine ⟨rfl, fun G hG E hE ↦ ?_⟩
+    refine PSpace.isIndependentProduct_def.2
+      ⟨by rw [PSpace.trim_ms, PSpace.trim_ms], fun G hG E hE ↦ ?_⟩
+    rw [PSpace.trim_ms] at hG
     have hGE : MeasurableSet[f ⊔ c.ms] (G ∩ E) :=
       ((le_sup_left : f ≤ f ⊔ c.ms) _ hG).inter ((le_sup_right : c.ms ≤ f ⊔ c.ms) _ hE)
-    show (MeasureOnSpace.trim hsup).μ (G ∩ E) = (MeasureOnSpace.trim hf).μ G * c.μ E
-    rw [MeasureOnSpace.trim_eq hsup hGE, MeasureOnSpace.trim_eq hf hG]
+    rw [PSpace.trim_μ_apply hGE, PSpace.trim_μ_apply hG]
     exact hrect G hG E hE
-  rw [mul_respect_independentProduct hT]
+  rw [PSp.mul_respect_independentProduct hT]
   exact WithTop.coe_le_coe.2 (PSpace.trim_le hsup)
 
 /-! ### Null sets -/
@@ -141,7 +146,7 @@ lemma PSpace.null_of_le {p q : PSpace Ω} (h : p ≤ q) {N : Set Ω} (hN : p.μ 
     q.μ N = 0 := by
   obtain ⟨N', hNN', hN'meas, hN'0⟩ := @exists_measurable_superset_of_null Ω p.ms p.μ N hN
   refine measure_mono_null hNN' ?_
-  rw [← MeasureOnSpace.le_preserves_measure h hN'meas]
+  rw [← PSpace.le_preserves_measure h hN'meas]
   exact hN'0
 
 /-- A null set `N` of `S` that `S` measures generates a space inside `S`. -/
@@ -165,9 +170,9 @@ lemma PSpace.nullSpace_mul_le {S p : PSpace Ω} {N : Set Ω} (hN : MeasurableSet
   · rw [measure_mono_null Set.inter_subset_left hN0, hN0, zero_mul]
   · rw [prob_compl_eq_one_sub hN, hN0, tsub_zero, one_mul, ← Set.sdiff_eq_compl_inter,
       measure_sdiff_null hN0]
-    exact (MeasureOnSpace.le_preserves_measure hp hE).symm
+    exact (PSpace.le_preserves_measure hp hE).symm
   · rw [Set.univ_inter, measure_univ, one_mul]
-    exact (MeasureOnSpace.le_preserves_measure hp hE).symm
+    exact (PSpace.le_preserves_measure hp hE).symm
 
 /-! ### Tilts and mixtures -/
 
@@ -293,7 +298,11 @@ lemma PSpace.withDensity_mixture {ι : Type} [Countable ι] {m P : PSpace Ω} (h
 def almostMeasurable {A : Type} (E : RV A) (P : PSp Ω) : Prop :=
   match P with
   | none => False
-  | some p => @AEMeasurable Ω A ⊤ _ E p.1.μ
+  | some p => @AEMeasurable Ω A ⊤ _ E p.μ
+
+lemma almostMeasurable_some {A : Type} (E : RV A) (p : PSpace Ω) :
+    Iff (almostMeasurable E (p : PSp Ω)) (@AEMeasurable Ω A ⊤ _ E p.μ) := by
+  rfl
 
 set_option linter.style.haveILetI false in
 open MeasureTheory ProbabilityTheory in
@@ -336,14 +345,14 @@ theorem PSpace.split_of_product_law {E₁ : Ω → α} {E₂ : Ω → β} {μ₁
     have h := hrect A Set.univ
     rw [Set.preimage_univ, Set.inter_univ] at h
     rw [h]
-    unfold PMF.toMeasureWithMs
+    simp only [PMF.toMeasureWithMs_def]
     rw [measure_univ, mul_one]
   have hmarg₂ : ∀ B, P.μ (g₂ ⁻¹' B) = μ₂.toMeasureWithMs ⊤ B := by
     intro B
     have h := hrect Set.univ B
     rw [Set.preimage_univ, Set.univ_inter] at h
     rw [h]
-    unfold PMF.toMeasureWithMs
+    simp only [PMF.toMeasureWithMs_def]
     rw [measure_univ, one_mul]
   -- intersecting with `Set.univ` or with the conull `Nᶜ` changes no measure
   have hC : ∀ C ∈ ({Set.univ, Nᶜ} : Set (Set Ω)), ∀ X, P.μ (X ∩ C) = P.μ X := by
@@ -393,13 +402,19 @@ theorem PSpace.split_of_product_law {E₁ : Ω → α} {E₂ : Ω → β} {μ₁
   have hD₁P : D₁ ≤ P := PSpace.trim_le hG₁
   have hD₂P : D₂ ≤ P := PSpace.trim_le hG₂
   have hsP : s ≤ P := PSpace.trim_le (sup_le hG₁ hG₂)
+  have hD₁ms : D₁.ms = G₁ := PSpace.trim_ms
+  have hD₂ms : D₂.ms = G₂ := PSpace.trim_ms
+  have hsms : s.ms = G₁ ⊔ G₂ := PSpace.trim_ms
   have hprod : s =ᵢ D₁ ⊕ᵢ D₂ := by
-    refine ⟨rfl, fun E hE F hF ↦ ?_⟩
+    refine PSpace.isIndependentProduct_def.2 ⟨by rw [hsms, hD₁ms, hD₂ms], fun E hE F hF ↦ ?_⟩
+    rw [hD₁ms] at hE
+    rw [hD₂ms] at hF
     have hEF : @MeasurableSet Ω (G₁ ⊔ G₂) (E ∩ F) :=
       MeasurableSet.inter (le_sup_left (a := G₁) (b := G₂) E hE)
         (le_sup_right (a := G₁) (b := G₂) F hF)
-    rw [MeasureOnSpace.le_preserves_measure hsP hEF, MeasureOnSpace.le_preserves_measure hD₁P hE,
-      MeasureOnSpace.le_preserves_measure hD₂P hF]
+    rw [PSpace.le_preserves_measure hsP (by rw [hsms]; exact hEF),
+      PSpace.le_preserves_measure hD₁P (by rw [hD₁ms]; exact hE),
+      PSpace.le_preserves_measure hD₂P (by rw [hD₂ms]; exact hF)]
     exact (Indep_iff _ _ _).1 hind E F hE hF
   -- each component is a.e. its measurable version on its piece
   have hg₁D : @Measurable Ω α G₁ ⊤ g₁ := fun A _ ↦
@@ -414,26 +429,28 @@ theorem PSpace.split_of_product_law {E₁ : Ω → α} {E₂ : Ω → β} {μ₁
     have h : @MeasurableSet Ω G₂ Nᶜ :=
       MeasurableSpace.measurableSet_generateFrom ⟨Set.univ, Nᶜ, by simp, by simp⟩
     simpa using h.compl
+  have hg₁D' : @Measurable Ω α D₁.ms ⊤ g₁ := by rw [hD₁ms]; exact hg₁D
+  have hg₂D' : @Measurable Ω β D₂.ms ⊤ g₂ := by rw [hD₂ms]; exact hg₂D
   have hae₁ : E₁ =ᵐ[D₁.μ] g₁ := by
     refine ae_iff.2 (measure_mono_null (fun s hs ↦ hNsub fun h ↦ hs (congrArg Prod.fst h)) ?_)
-    rw [MeasureOnSpace.le_preserves_measure hD₁P hN₁]
+    rw [PSpace.le_preserves_measure hD₁P (by rw [hD₁ms]; exact hN₁)]
     exact hNnull
   have hae₂ : E₂ =ᵐ[D₂.μ] g₂ := by
     refine ae_iff.2 (measure_mono_null (fun s hs ↦ hNsub fun h ↦ hs (congrArg Prod.snd h)) ?_)
-    rw [MeasureOnSpace.le_preserves_measure hD₂P hN₂]
+    rw [PSpace.le_preserves_measure hD₂P (by rw [hD₂ms]; exact hN₂)]
     exact hNnull
   refine ⟨D₁, D₂, hD₁P, hD₂P,
-    (le_of_eq (mul_respect_independentProduct hprod)).trans (WithTop.coe_le_coe.2 hsP),
-    ⟨⟨g₁, hg₁D, hae₁⟩, ?_⟩, ⟨⟨g₂, hg₂D, hae₂⟩, ?_⟩⟩
+    (le_of_eq (PSp.mul_respect_independentProduct hprod)).trans (WithTop.coe_le_coe.2 hsP),
+    ⟨⟨g₁, hg₁D', hae₁⟩, ?_⟩, ⟨⟨g₂, hg₂D', hae₂⟩, ?_⟩⟩
   · refine (Measure.map_congr hae₁).trans ?_
     ext A _
-    exact (Measure.map_apply hg₁D MeasurableSpace.measurableSet_top).trans
-      ((MeasureOnSpace.le_preserves_measure hD₁P (hg₁D MeasurableSpace.measurableSet_top)).trans
+    exact (Measure.map_apply hg₁D' MeasurableSpace.measurableSet_top).trans
+      ((PSpace.le_preserves_measure hD₁P (hg₁D' MeasurableSpace.measurableSet_top)).trans
         (hmarg₁ A))
   · refine (Measure.map_congr hae₂).trans ?_
     ext B _
-    exact (Measure.map_apply hg₂D MeasurableSpace.measurableSet_top).trans
-      ((MeasureOnSpace.le_preserves_measure hD₂P (hg₂D MeasurableSpace.measurableSet_top)).trans
+    exact (Measure.map_apply hg₂D' MeasurableSpace.measurableSet_top).trans
+      ((PSpace.le_preserves_measure hD₂P (hg₂D' MeasurableSpace.measurableSet_top)).trans
         (hmarg₂ B))
 
 open MeasureTheory in
@@ -499,7 +516,7 @@ theorem PSpace.product_law_of_split {E₁ : Ω → α} {E₂ : Ω → β} {μ₁
       (Measure.map_congr ham₁.ae_eq_mk).symm.trans hlaw₁
     have hnull : P₁.μ (ham₁.mk E₁ ⁻¹' (μ₁.support)ᶜ) = 0 := by
       rw [← Measure.map_apply ham₁.measurable_mk MeasurableSpace.measurableSet_top, hmk,
-        PMF.toMeasureWithMs]
+        PMF.toMeasureWithMs_def]
       exact (PMF.toMeasure_apply_eq_zero_iff μ₁ MeasurableSpace.measurableSet_top).2
         disjoint_compl_right
     refine ham₁.ae_eq_mk.trans (ae_iff.2 (measure_mono_null (fun ω hω ↦ ?_) hnull))
@@ -512,7 +529,7 @@ theorem PSpace.product_law_of_split {E₁ : Ω → α} {E₂ : Ω → β} {μ₁
       (Measure.map_congr ham₂.ae_eq_mk).symm.trans hlaw₂
     have hnull : P₂.μ (ham₂.mk E₂ ⁻¹' (μ₂.support)ᶜ) = 0 := by
       rw [← Measure.map_apply ham₂.measurable_mk MeasurableSpace.measurableSet_top, hmk,
-        PMF.toMeasureWithMs]
+        PMF.toMeasureWithMs_def]
       exact (PMF.toMeasure_apply_eq_zero_iff μ₂ MeasurableSpace.measurableSet_top).2
         disjoint_compl_right
     refine ham₂.ae_eq_mk.trans (ae_iff.2 (measure_mono_null (fun ω hω ↦ ?_) hnull))
@@ -523,11 +540,11 @@ theorem PSpace.product_law_of_split {E₁ : Ω → α} {E₂ : Ω → β} {μ₁
   -- the laws of the versions, at a point
   have hsing₁ : ∀ a, P₁.μ (f₁ ⁻¹' {a}) = μ₁ a := fun a ↦ by
     rw [← Measure.map_apply hf₁ MeasurableSpace.measurableSet_top,
-      ← Measure.map_congr hae₁, hlaw₁, PMF.toMeasureWithMs,
+      ← Measure.map_congr hae₁, hlaw₁, PMF.toMeasureWithMs_def,
       PMF.toMeasure_apply_singleton _ _ MeasurableSpace.measurableSet_top]
   have hsing₂ : ∀ b, P₂.μ (f₂ ⁻¹' {b}) = μ₂ b := fun b ↦ by
     rw [← Measure.map_apply hf₂ MeasurableSpace.measurableSet_top,
-      ← Measure.map_congr hae₂, hlaw₂, PMF.toMeasureWithMs,
+      ← Measure.map_congr hae₂, hlaw₂, PMF.toMeasureWithMs_def,
       PMF.toMeasure_apply_singleton _ _ MeasurableSpace.measurableSet_top]
   -- the pair of versions takes countably many values, so it is measurable
   set g : Ω → α × β := fun ω ↦ (f₁ ω, f₂ ω) with hgdef
@@ -556,7 +573,7 @@ theorem PSpace.product_law_of_split {E₁ : Ω → α} {E₂ : Ω → β} {μ₁
     rw [show g ⁻¹' Sᶜ = ∅ from Set.eq_empty_of_forall_notMem fun ω h ↦ h (hgr ω)]
     exact measure_empty
   have hν₂ : ((μ₁ ⊗ μ₂).toMeasureWithMs ⊤) Sᶜ = 0 := by
-    rw [PMF.toMeasureWithMs]
+    rw [PMF.toMeasureWithMs_def]
     refine (PMF.toMeasure_apply_eq_zero_iff _ MeasurableSpace.measurableSet_top).2 ?_
     refine Set.disjoint_left.2 fun p hp hpS ↦ hpS ?_
     obtain ⟨a, b⟩ := p
@@ -568,8 +585,9 @@ theorem PSpace.product_law_of_split {E₁ : Ω → α} {E₂ : Ω → β} {μ₁
   refine tsum_congr fun ⟨⟨a, b⟩, _⟩ ↦ ?_
   rw [Measure.map_apply hg MeasurableSpace.measurableSet_top,
     show g ⁻¹' {(a, b)} = f₁ ⁻¹' {a} ∩ f₂ ⁻¹' {b} by ext ω; simp [hgdef, Prod.ext_iff],
-    hs.2 _ (hf₁ MeasurableSpace.measurableSet_top) _ (hf₂ MeasurableSpace.measurableSet_top),
-    hsing₁, hsing₂, PMF.toMeasureWithMs,
+    (PSpace.isIndependentProduct_def.1 hs).2 _ (hf₁ MeasurableSpace.measurableSet_top) _
+      (hf₂ MeasurableSpace.measurableSet_top),
+    hsing₁, hsing₂, PMF.toMeasureWithMs_def,
     PMF.toMeasure_apply_singleton _ _ MeasurableSpace.measurableSet_top, product_apply]
 
 set_option linter.style.haveILetI false in
@@ -677,7 +695,8 @@ theorem condKernel_of_law {E : RV α} {μ : PMF α} (P : PSpace Ω)
   letI : MeasurableSpace α := ⊤
   letI : MeasurableSpace Ω := P.ms
   obtain ⟨g, hg, hae⟩ : AEMeasurable E P.μ := ham
-  have hlaw' : Measure.map g P.μ = μ.toMeasure := (Measure.map_congr hae).symm.trans hlaw
+  have hlaw' : Measure.map g P.μ = μ.toMeasure :=
+    (Measure.map_congr hae).symm.trans (hlaw.trans (PMF.toMeasureWithMs_def _ _))
   have hG : ∀ v, MeasurableSet (g ⁻¹' {v}) := fun _ ↦ hg MeasurableSpace.measurableSet_top
   have hGμ : ∀ v, P.μ (g ⁻¹' {v}) = μ v := fun v ↦ by
     rw [← Measure.map_apply hg MeasurableSpace.measurableSet_top, hlaw',
@@ -697,7 +716,7 @@ theorem condKernel_of_law {E : RV α} {μ : PMF α} (P : PSpace Ω)
   refine ⟨κ, ?_, fun v hv ↦ ?_⟩
   · -- `P` is the mixture of its fibres: sum over the countable support
     ext F hF
-    rw [Measure.bind_apply hF (Kernel.measurable κ.1).aemeasurable]
+    rw [Measure.bind_apply hF (Kernel.measurable κ.1).aemeasurable, PMF.toMeasureWithMs_def]
     show P.μ F = ∫⁻ v, f v F ∂μ.toMeasure
     have hcon : P.μ (g ⁻¹' μ.support)ᶜ = 0 := by
       rw [← Set.preimage_compl, ← Measure.map_apply hg MeasurableSpace.measurableSet_top, hlaw',
@@ -716,6 +735,7 @@ theorem condKernel_of_law {E : RV α} {μ : PMF α} (P : PSpace Ω)
       Measure.restrict_apply (hg MeasurableSpace.measurableSet_top), Set.inter_comm,
       measure_inter_conull hcon]
   · -- on the fibre at `v`, `E` is `v` up to the null set where `E` and `g` differ
+    rw [TrivialMarkovKernel.μ_apply]
     show f v {ρ | ¬ E ρ = v} = 0
     simp only [f, hv, ↓reduceIte]
     obtain ⟨N, hNsub, -, hNnull⟩ := exists_measurable_superset_of_null (ae_iff.1 hae)
@@ -745,13 +765,13 @@ theorem law_dirac_iff {A : Type} {E : RV A} {v : A} (P : PSpace Ω) :
     rw [hmap] at h
     show P.μ (E ⁻¹' {v}ᶜ) = 0
     rw [← h]
-    simp [PMF.toMeasureWithMs, PMF.toMeasure_pure]
+    simp [PMF.toMeasureWithMs_def, PMF.toMeasure_pure]
   · intro h
     -- `E` is a.e. the constant `v`, which is measurable, so it is a.e.-measurable
     have hae : E =ᵐ[P.μ] (fun _ ↦ v) := h
     refine ⟨⟨fun _ ↦ v, measurable_const, hae⟩, ?_⟩
     rw [Measure.map_congr hae, Measure.map_const]
-    simp [PMF.toMeasureWithMs, PMF.toMeasure_pure]
+    simp [PMF.toMeasureWithMs_def, PMF.toMeasure_pure]
 
 end
 

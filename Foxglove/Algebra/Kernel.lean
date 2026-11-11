@@ -3,7 +3,7 @@ module
 public import Foxglove.Algebra.PMF
 public import Foxglove.Basic
 
-@[expose] public section
+public section
 namespace Foxglove
 
 open ProbSpace
@@ -39,10 +39,25 @@ instance {A : Type} {p : PSpace Ω} : FunLike (TrivialMarkovKernel A p) A (PSpac
        aesop
   ⟩
 
+/-- The fibre of a kernel at a value measures as the kernel does there. -/
+lemma _root_.ProbabilityTheory.TrivialMarkovKernel.μ_apply {A : Type} {p : PSpace Ω}
+    (κ : TrivialMarkovKernel A p) (a : A) (s : Set Ω) : (κ a).μ s = κ.1 a s :=
+  PSpace.μ_mk_apply _ _ _
+
+/-- The fibre of a kernel at a value lives on the kernel's σ-algebra. -/
+lemma _root_.ProbabilityTheory.TrivialMarkovKernel.ms_apply {A : Type} {p : PSpace Ω}
+    (κ : TrivialMarkovKernel A p) (a : A) : (κ a).ms = p.ms :=
+  PSpace.ms_mk _ _
+
 /-- The kernel that ignores its input and hands back the trivial space. -/
 def unitKernel (A : Type) : TrivialMarkovKernel A (1 : PSpace Ω) :=
   ⟨@Kernel.const A Ω ⊤ (1 : PSpace Ω).ms (1 : PSpace Ω).μ,
-    have := (1 : PSpace Ω).2; inferInstance⟩
+    inferInstance⟩
+
+lemma unitKernel_def (A : Type) :
+    (unitKernel A : @Kernel A Ω ⊤ (1 : PSpace Ω).ms)
+      = @Kernel.const A Ω ⊤ (1 : PSpace Ω).ms (1 : PSpace Ω).μ := by
+  rfl
 
 set_option linter.style.haveILetI false in
 open ProbabilityTheory MeasureTheory in
@@ -63,7 +78,7 @@ theorem kernel_fibre_ac {A : Type} {μ : PMF A} {m : PSpace Ω}
       subst hx
       exact hne
     have hz : (μ.toMeasureWithMs ⊤) {v} = 0 := measure_mono_null hsub h0
-    rw [PMF.toMeasureWithMs, @PMF.toMeasure_apply_singleton A ⊤ μ v (by trivial)] at hz
+    rw [PMF.toMeasureWithMs_def, @PMF.toMeasure_apply_singleton A ⊤ μ v (by trivial)] at hz
     exact (PMF.mem_support_iff μ v).mp hv hz
   intro F h0
   obtain ⟨F', hFF', hF'meas, hF'0⟩ := @exists_measurable_superset_of_null Ω m.ms m.μ F h0
@@ -76,7 +91,7 @@ lemma bind_apply_support {β : Type} {ms : MeasurableSpace Ω} (μ : PMF β)
     ((μ.toMeasureWithMs ⊤).bind κ) G = ∑' i : μ.support, μ i * κ i G := by
   letI : MeasurableSpace β := ⊤
   haveI : MeasurableSingletonClass β := ⟨fun _ ↦ trivial⟩
-  rw [Measure.bind_apply hG (Kernel.measurable κ).aemeasurable, PMF.toMeasureWithMs,
+  rw [Measure.bind_apply hG (Kernel.measurable κ).aemeasurable, PMF.toMeasureWithMs_def,
     ← PMF.restrict_toMeasure_support, lintegral_countable _ μ.support_countable]
   refine tsum_congr fun i ↦ ?_
   rw [PMF.toMeasure_apply_singleton μ i (measurableSet_singleton _), mul_comm]

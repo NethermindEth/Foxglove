@@ -4,7 +4,7 @@ public import Foxglove.Interp.Bernoulli.Basic
 public import VCVio.OracleComp.OracleComp
 public import VCVio.OracleComp.SimSemantics.Append
 
-@[expose] public section
+public section
 namespace Foxglove
 
 namespace Interp
@@ -39,9 +39,24 @@ def split' {n : ℕ} (m : Fin n) : BernoulliM (Fin n) := do
 termination_by n - m.1
 decreasing_by have := m.isLt; omega
 
+/-- No value is left above `m`: `split'` reports `m`. -/
+lemma split'_of_eq {n : ℕ} {m : Fin n} (h : n = m.1 + 1) : split' m = pure m := by
+  rw [split', dite_eq_left h]
+
+/-- Some value is left above `m`: `split'` flips a `1 / (n - m)` coin, reporting `m` on heads
+and recursing on tails. -/
+lemma split'_of_ne {n : ℕ} {m : Fin n} (h : ¬ n = m.1 + 1)
+    (hP : ((mkRat 1 (n - m.1) : ℚ) : ℝ) ∈ unitInterval) :
+    split' m = flip ⟨((mkRat 1 (n - m.1) : ℚ) : ℝ), hP⟩ >>= fun b ↦
+      if b then pure m else split' ⟨m.1 + 1, by have := m.isLt; omega⟩ := by
+  rw [split', dite_eq_right h]
+
 /-- A uniform sample from `Fin (n + 1)`: the Bernoulli implementation of `unifSpec`'s oracle. -/
 def split (n : ℕ) : BernoulliM (Fin (n + 1)) :=
   split' (0 : Fin (n + 1))
+
+lemma split_def (n : ℕ) : split n = split' (0 : Fin (n + 1)) := by
+  rfl
 
 instance : OracleBernoulliInterpretable unifSpec where
   interp_op := split
@@ -65,12 +80,19 @@ instance {α} {oSpec : OracleSpec α} [OracleBernoulliInterpretable oSpec] :
   BernoulliInterpretable (OracleComp oSpec) where
     interp := interp
 
+/-- A `unifSpec` query interprets to the rejection sampler. -/
+lemma interp_unifSpec_query (n : ℕ) :
+    BernoulliInterpretable.interp (unifSpec.query n : OracleComp unifSpec (Fin (n + 1)))
+      = split n := by
+  show (split n >>= fun x ↦ pure x) = split n
+  exact bind_pure _
+
 open OracleBernoulliInterpretable in
 /-- `interp` is a monad morphism, by induction on the free monad: the `wp` rules for `pure`
 and `>>=` apply to `OracleComp` programs directly. -/
 instance {α} {oSpec : OracleSpec α} [OracleBernoulliInterpretable oSpec] :
     LawfulBernoulliInterpretable (OracleComp oSpec) where
-  interp_pure _ := rfl
+  interp_pure _ := by rfl
   interp_bind t f := by
     induction t with
     | pure a => rfl
