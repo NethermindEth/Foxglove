@@ -5,18 +5,18 @@ defaultTargets = ["Foxglove"]
 [[require]]
 name = "mathlib"
 scope = "leanprover-community"
-rev = "v4.34.0"
+rev = "v4.35.0"
 
 [[require]]
 name = "iris-lean"
 git.url = "https://github.com/leanprover-community/iris-lean.git"
 git.subDir = "Iris"
-rev = "v4.34.0"
+rev = "v4.35.0"
 
 [[require]]
 name = "VCVio"
-git = "https://github.com/Verified-zkEVM/VCV-io"
-rev = "v4.34.0"
+git = "https://github.com/Verified-zkEVM/VCVio"
+rev = "7c3dc0bb2962e78e6d9b80a512fab8157a8c8aba"
 
 [[lean_lib]]
 name = "Foxglove"
