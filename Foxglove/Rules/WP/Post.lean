@@ -36,8 +36,7 @@ lemma convex_pure {φ : Prop} : Convex iprop(⌜φ⌝) := by
     show Y.val ≠ (⊤ : PSp Ω)
     rw [hYval]
     exact WithTop.coe_ne_top
-  rw [own_def] at hYK
-  exact pure_intro (UpperSetBI.mem_pure.1 (hYK Y hYv (UpperSetBI.mem_own.2 (le_refl Y))))
+  exact pure_intro (sat_pure.1 (sat_of_own_entails hYv hYK)).2
 
 lemma convex_ftrue : Convex ftrue := (convex_def _).2 fun _ ↦ entails_ftrue
 

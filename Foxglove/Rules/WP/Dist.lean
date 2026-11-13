@@ -114,14 +114,14 @@ lemma WPDist_core {α : Type} [Inhabited α] [Countable α] (t : BernoulliM α) 
   · -- the witness measures only the reported value, which is part of the run's own randomness
     rw [msOf_of_val (p := B) rfl, hBdef, PSpace.trim_ms, hBXdef, hX, interp_bernoulliM]
     exact comap_result_le_freshMs μ₀ t
-  · simp only [own_def, ownP_def, hasDistribution_def]
+  · simp only [hasDistribution_def]
     have hXB' : Measurable[B.ms, ⊤] X := by rw [hBdef, PSpace.trim_ms]; exact hXB
-    intro d hvd hd
-    refine UpperSetBI.mem_sExists.2 ⟨_, ⟨B, rfl⟩, UpperSetBI.mem_sep.2
-      ⟨⟨((B : PSpace Ω) : PSp Ω), hbf⟩, 1, by rw [mul_one]; exact UpperSetBI.mem_own.1 hd,
-      UpperSetBI.mem_sExists.2 ⟨_, ⟨hbf, rfl⟩, UpperSetBI.mem_own.2
-        (le_refl (⟨((B : PSpace Ω) : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool))⟩,
-      UpperSetBI.mem_pure.2 ⟨(almostMeasurable_some _ _).2 hXB'.aemeasurable, ?_⟩⟩⟩
+    have hvB : ✓(⟨((B : PSpace Ω) : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool) :=
+      PSp.valid_def.mpr (Option.some_ne_none _)
+    refine own_entails_of_sat (sat_exists.2 ⟨B, sat_sep.2 ⟨hvB,
+      ⟨((B : PSpace Ω) : PSp Ω), hbf⟩, 1, le_of_eq (mul_one _),
+      sat_ownP.2 ⟨hvB, hbf, le_refl _⟩,
+      sat_pure.2 ⟨valid_one, (almostMeasurable_some _ _).2 hXB'.aemeasurable, ?_⟩⟩⟩)
     refine MeasureTheory.Measure.ext_of_singleton (fun b ↦ ?_)
     have h1 : (@Measure.map Ω α B.ms ⊤ X B.μ) {b} = B.μ (X ⁻¹' {b}) :=
       @Measure.map_apply Ω α B.ms ⊤ B.μ X hXB' {b} MeasurableSpace.measurableSet_top

@@ -18,6 +18,33 @@ What `𝒞⟨μ⟩ v; K v` satisfies at the level of resources: monotonicity, fr
 conditioning is unpacked into a mixture of fibres (`cond_elim`).  `valuePost` is a
 conditioning on a law, so it is read off a resource the same way (`valuePost_elim`). -/
 
+lemma sat_jointConditioning {A : Type} {μ : PMF A} {K : A → FProp}
+    {r : BoundedFootprintSpace Bool} :
+    (jointConditioning μ K).Sat r ↔ ✓r ∧ ∃ (m : PSpace Ω)
+      (κ : ProbabilityTheory.TrivialMarkovKernel A m) (hbf : HasBoundedFootprint (m : PSp Ω))
+      (c : BoundedFootprintSpace Bool),
+      (⟨(m : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool) * c ≤ r ∧
+      m.μ = (μ.toMeasureWithMs ⊤).bind κ ∧
+      ∀ v : μ.support, (iprop(ownP (κ v) -∗ K v) : FProp).Sat c := by
+  rw [jointConditioning_def]
+  constructor
+  · intro h
+    obtain ⟨m, h⟩ := sat_exists.1 h
+    obtain ⟨κ, h⟩ := sat_exists.1 h
+    obtain ⟨hv, b₁, b₂, hle, hown, hrest⟩ := sat_sep.1 h
+    obtain ⟨_, hbf, hmb₁⟩ := sat_ownP.1 hown
+    obtain ⟨_, c₁, c₂, hle', hmix, hall⟩ := sat_sep.1 hrest
+    have hc₂b₂ : c₂ ≤ b₂ := le_trans (by rw [mul_comm]; exact le_mul_of_one_le PSp.one_le) hle'
+    exact ⟨hv, m, κ, hbf, c₂,
+      le_trans (mul_le_mul_right_le hmb₁ c₂) (le_trans (mul_le_mul_left_le hc₂b₂ b₁) hle),
+      (sat_pure.1 hmix).2, (sat_forall.1 hall).2⟩
+  · rintro ⟨hv, m, κ, hbf, c, hle, hmix, hall⟩
+    have hvmc := valid_mono hle hv
+    exact sat_exists.2 ⟨m, sat_exists.2 ⟨κ, sat_sep.2 ⟨hv, _, _, hle,
+      sat_ownP.2 ⟨valid_mul_l hvmc, hbf, le_refl _⟩,
+      sat_sep.2 ⟨valid_mul_r hvmc, 1, c, le_of_eq (one_mul c), sat_pure.2 ⟨valid_one, hmix⟩,
+        sat_forall.2 ⟨valid_mul_r hvmc, hall⟩⟩⟩⟩⟩
+
 set_option linter.style.haveILetI false in
 open MeasureTheory in
 /-- **Unpacking a conditioning.**  A valid resource owning `𝒞⟨ν⟩ v; Kc v` contains a space
@@ -34,32 +61,12 @@ theorem cond_elim {γ : Type} {ν : PMF γ} {Kc : γ → FProp} {r : BoundedFoot
           X.val = ((show PSpace Ω from ⟨⟨s.ms, (w v).1⟩, (w v).2⟩) : PSp Ω) ∧
             (own X ⊢ Kc v) := by
   classical
-  obtain ⟨Kr, rfl⟩ : ∃ Kr : γ → UpperSet (BoundedFootprintSpace Bool), Kc = fun v ↦ fmk (Kr v) :=
-    ⟨fun v ↦ (Kc v).out, funext fun v ↦ (Quotient.out_eq _).symm⟩
-  simp only [jointConditioning_def, ownP_def, own_def] at h ⊢
-  have hr := h r hv (UpperSetBI.mem_own.2 (le_refl r))
-  obtain ⟨q, ⟨m, hq⟩, hqr⟩ := UpperSetBI.mem_sExists.1 hr
-  obtain ⟨q', ⟨ℓ, hq'⟩, hq'r⟩ := UpperSetBI.mem_sExists.1 ((Quotient.exact hq).2 r hv hqr)
-  obtain ⟨b₁, b₂, hle, hown, hrest⟩ := UpperSetBI.mem_sep.1 ((Quotient.exact hq').2 r hv hq'r)
-  obtain ⟨c₁, c₂, hle', hmix, hall⟩ := UpperSetBI.mem_sep.1 hrest
-  replace hmix := UpperSetBI.mem_pure.1 hmix
-  obtain ⟨r₁, ⟨hbfm, hr₁⟩, hb₁⟩ := UpperSetBI.mem_sExists.1 hown
-  have hmb₁ := UpperSetBI.mem_own.1 ((Quotient.exact hr₁).2 b₁
-    (valid_mono (le_trans (le_mul_of_one_le PSp.one_le) hle) hv) hb₁)
   -- `m` and the continuation's frame `c₂` compose, as in `C_FALSE`
-  have hc₂b₂ : c₂ ≤ b₂ := by
-    refine le_trans ?_ hle'
-    rw [mul_comm]
-    exact le_mul_of_one_le PSp.one_le
-  have hmc₂r : (⟨(m : PSp Ω), hbfm⟩ : BoundedFootprintSpace Bool) * c₂ ≤ r :=
-    le_trans (mul_le_mul_right_le hmb₁ c₂) (le_trans (mul_le_mul_left_le hc₂b₂ b₁) hle)
+  obtain ⟨-, m, ℓ, hbfm, c₂, hmc₂r, hmix, hall⟩ :=
+    sat_jointConditioning.1 (sat_of_own_entails hv h)
   have hvmc₂ : ✓((⟨(m : PSp Ω), hbfm⟩ : BoundedFootprintSpace Bool) * c₂) :=
     valid_mono hmc₂r hv
-  have hb₂r : b₂ ≤ r := by
-    refine le_trans ?_ hle
-    rw [mul_comm]
-    exact le_mul_of_one_le PSp.one_le
-  have hvc₂ : ✓c₂ := valid_mono (le_trans hc₂b₂ hb₂r) hv
+  have hvc₂ : ✓c₂ := valid_mul_r hvmc₂
   obtain ⟨c₂', hc₂'⟩ : ∃ c : PSpace Ω, c₂.val = (c : PSp Ω) :=
     Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hvc₂)
   obtain ⟨s, hs⟩ : ∃ s : PSpace Ω, PSp.mul ((m : PSp Ω)) (c₂.val) = (s : PSp Ω) :=
@@ -132,10 +139,9 @@ theorem cond_elim {γ : Type} {ν : PMF γ} {Kc : γ → FProp} {r : BoundedFoot
       show (c₂ * _).val ≠ (⊤ : PSp Ω)
       rw [hval]
       exact WithTop.coe_ne_top
-    have hmem := UpperSetBI.mem_wand.1 (UpperSetBI.mem_sForall.1 hall _ ⟨⟨v, hv⟩, rfl⟩) _ hvalid
-      (UpperSetBI.mem_sExists.2 ⟨_, ⟨hbfk, rfl⟩, UpperSetBI.mem_own.2
-        (le_refl (⟨((ℓ v : PSpace Ω) : PSp Ω), hbfk⟩ : BoundedFootprintSpace Bool))⟩)
-    exact ⟨_, hval, fun y _ hy ↦ UpperSet.upper _ (UpperSetBI.mem_own.1 hy) hmem⟩
+    have hmem := (sat_wand.1 (hall ⟨v, hv⟩)).2 _ hvalid (sat_ownP.2 ⟨valid_mul_r hvalid, hbfk,
+      le_refl (⟨((ℓ v : PSpace Ω) : PSp Ω), hbfk⟩ : BoundedFootprintSpace Bool)⟩)
+    exact ⟨_, hval, own_entails_of_sat hmem⟩
 
 /-- `valuePost` at a given law `ν` of `X`: on the fibre at `x` the result surely is `x` and
 `Q x` holds.  `valuePost X Q` is `∃ ν, condValue ν X Q`. -/
@@ -156,31 +162,15 @@ lemma condValue_elim {β : Type} {X : RV β} {K : β → FProp} {ν : PMF β}
       (⟨(mm : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool) * R ≤ b ∧
       ∀ v ∈ ν.support, ∀ hk : HasBoundedFootprint ((κ v : PSpace Ω) : PSp Ω),
         own (R * ⟨((κ v : PSpace Ω) : PSp Ω), hk⟩) ⊢ iprop(⌈fun ρ ↦ X ρ = v⌉ ∗ K v) := by
-  obtain ⟨U, hU⟩ : ∃ U : β → UpperSet (BoundedFootprintSpace Bool), K = fun v ↦ fmk (U v) := by
-    choose U hU using fun v ↦ Quotient.exists_rep (K v)
-    exact ⟨U, funext fun v ↦ (hU v).symm⟩
-  subst hU
-  simp only [condValue, jointConditioning_def, LiftPred.lift, ownP_def, own_def] at h ⊢
-  obtain ⟨q', ⟨mm, hq'⟩, hq'b⟩ :=
-    UpperSetBI.mem_sExists.1 (h b hv (UpperSetBI.mem_own.2 (le_refl b)))
-  obtain ⟨q'', ⟨κ, hq''⟩, hq''b⟩ := UpperSetBI.mem_sExists.1 ((Quotient.exact hq').2 b hv hq'b)
-  obtain ⟨b₁, b₂, hle, hown, hrest⟩ := UpperSetBI.mem_sep.1 ((Quotient.exact hq'').2 b hv hq''b)
-  obtain ⟨c₁, c₂, hle', hmix, hall⟩ := UpperSetBI.mem_sep.1 hrest
-  replace hmix := UpperSetBI.mem_pure.1 hmix
-  obtain ⟨r₁, ⟨hbfm, hr₁⟩, hb₁⟩ := UpperSetBI.mem_sExists.1 hown
-  have hvb₁ : ✓b₁ := valid_mono (le_trans (le_mul_of_one_le PSp.one_le) hle) hv
-  have hmb₁ := UpperSetBI.mem_own.1 ((Quotient.exact hr₁).2 b₁ hvb₁ hb₁)
-  have hc₂b₂ : c₂ ≤ b₂ := le_trans (by rw [mul_comm]; exact le_mul_of_one_le PSp.one_le) hle'
-  refine ⟨mm, hbfm, κ, c₂, hmix, ?_, ?_⟩
-  · exact le_trans (mul_le_mul_right_le hmb₁ c₂) (le_trans (mul_le_mul_left_le hc₂b₂ b₁) hle)
-  · intro v hv' hk y hvy hy
-    have hvc₂K : ✓(c₂ * ⟨((κ v : PSpace Ω) : PSp Ω), hk⟩) :=
-      valid_mono (UpperSetBI.mem_own.1 hy) hvy
-    have hmem := UpperSetBI.mem_wand.1 (UpperSetBI.mem_sForall.1 hall _ ⟨⟨v, hv'⟩, rfl⟩) _ hvc₂K
-      (UpperSetBI.mem_sExists.2 ⟨_, ⟨hk, rfl⟩, UpperSetBI.mem_own.2
-        (show (⟨((κ v : PSpace Ω) : PSp Ω), hk⟩ : BoundedFootprintSpace Bool)
-          ≤ ⟨((κ v : PSpace Ω) : PSp Ω), hk⟩ from le_refl _)⟩)
-    exact (UpperSetBI.sep _ _).upper' (UpperSetBI.mem_own.1 hy) hmem
+  rw [condValue_def] at h
+  obtain ⟨-, mm, κ, hbfm, c₂, hle, hmix, hall⟩ :=
+    sat_jointConditioning.1 (sat_of_own_entails hv h)
+  refine ⟨mm, hbfm, κ, c₂, hmix, hle, fun v hv' hk ↦ entails_iff.2 fun y hy ↦ ?_⟩
+  obtain ⟨hvy, hc₂Ky⟩ := sat_own.1 hy
+  have hvc₂K : ✓(c₂ * ⟨((κ v : PSpace Ω) : PSp Ω), hk⟩) := valid_mono hc₂Ky hvy
+  have hmem := (sat_wand.1 (hall ⟨v, hv'⟩)).2 _ hvc₂K (sat_ownP.2 ⟨valid_mul_r hvc₂K, hk,
+    le_refl (⟨((κ v : PSpace Ω) : PSp Ω), hk⟩ : BoundedFootprintSpace Bool)⟩)
+  exact sat_mono hmem hc₂Ky hvy
 
 /-- What owning a resource that satisfies `valuePost X K` provides: `condValue_elim` at the
 law the resource conditions on. -/

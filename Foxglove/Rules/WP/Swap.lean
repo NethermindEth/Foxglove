@@ -42,9 +42,9 @@ lemma CWPSwap_core {α β : Type} {m' : Type → Type} [Interp.BernoulliInterpre
   have hrunC : ∀ b, run C b = run Cb b := fun b ↦ by rw [run_def, run_def, interp_bernoulliM]
   set M : BoundedFootprintSpace Bool := ⟨(m : PSp Ω), hbf⟩ with hM
   have hmp : IsProbabilityMeasure m.μ := PSpace.isProbability
-  rw [own_def, wp_def]
-  intro a hva ha μ₀ c hvalid hle
-  have ha' : M * R ≤ a := UpperSetBI.mem_own.1 ha
+  refine entails_iff.2 fun a ha ↦ ?_
+  obtain ⟨hva, ha'⟩ : ✓a ∧ M * R ≤ a := sat_own.1 ha
+  refine sat_wp.2 ⟨hva, fun μ₀ c hvalid hle ↦ ?_⟩
   -- the ambient, and the spaces sitting in it
   set P₀ : PSpace Ω := ValidPSp.toPSpace ⟨μ₀.psp, hvalid⟩ with hP₀
   have hμ₀P : μ₀.psp = .some P₀ := ValidPSp.eq_some_toPSpace hvalid
@@ -176,10 +176,8 @@ lemma CWPSwap_core {α β : Type} {m' : Type → Type} [Interp.BernoulliInterpre
         msOf b ≤ msOf (R * K i) ⊔ freshMs (τ i) Cb ∧
         (own b ⊢ Q i (result (run C (τ i)))) :=
     fun i ↦ by
-      have h := hfib i i.2 (hk i)
-      rw [own_def, wp_def] at h
-      exact h (R * K i) (hvRK i) (UpperSetBI.mem_own.2 (le_refl (R * K i))) (τ i) c (hτvalid i)
-        (hRKc i)
+      have h := sat_of_own_entails (hvRK i) (hfib i i.2 (hk i))
+      exact (sat_wp.1 h).2 (τ i) c (hτvalid i) (hRKc i)
   choose bv hbvc hbvv hbvms hbvQ using hfib'
   -- the run, and its tree
   obtain ⟨S, hS, hP₀S, hSmeas, hSpres, -⟩ := run_const μ₀ Cb hvalid

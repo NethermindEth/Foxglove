@@ -207,9 +207,8 @@ lemma WPBindC_core {α β : Type} {m : Type → Type} [Monad m]
         msOf bv ≤ msOf (Ri i) ⊔ freshMs (τ i) (Fb i) ∧
         (own bv ⊢ Q i (result (run (F i) (τ i)))) :=
     fun i ↦ by
-      have h := hRi i
-      rw [own_def, wp_def] at h
-      exact h (Ri i) (hvRi i) (UpperSetBI.mem_own.2 (le_refl (Ri i))) (τ i) c (hτvalid i) (hRic i)
+      have h := sat_of_own_entails (hvRi i) (hRi i)
+      exact (sat_wp.1 h).2 (τ i) c (hτvalid i) (hRic i)
   choose bv hbvc hbvv hbvms hbvQ using hwp
   -- on a fibre, the value `C` reported is the fibre's value, wherever the fibre has mass
   have hPiτ : ∀ i, Pi i ≤ ⟨⟨P₁.ms, ρ i⟩, hρp i⟩ := by

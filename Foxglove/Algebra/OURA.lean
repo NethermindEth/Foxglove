@@ -602,36 +602,31 @@ instance BientailSetoid : Setoid (UpperSet M) where
     trans := bientail_trans
   }
 
-@[expose]
 def OURAProp (M : Type) [OrderedUnitalResourceAlgebra M] := Quotient (BientailSetoid (M := M))
 
 namespace OURAProp
 
-@[expose]
 def map (f : UpperSet M → UpperSet M)
          (hf : ∀ {P Q}, bientail P Q → bientail (f P) (f Q)) : OURAProp M → OURAProp M :=
   Quotient.map f fun _ _ h ↦ hf h
 
-@[expose]
 def map₂ (f : UpperSet M → UpperSet M → UpperSet M)
           (hf : ∀ {P P₁ Q Q₁}, bientail P P₁ → bientail Q Q₁ → bientail (f P Q) (f P₁ Q₁)) :
     OURAProp M → OURAProp M → OURAProp M :=
   Quotient.map₂ f fun _ _ h₁ _ _ h₂ ↦ hf h₁ h₂
 
-/-- `n`-equivalence on the quotient is plain equality, so it is a discrete (C)OFE.
-The `OFE` instance comes from `COFE.toOFE`. -/
 instance : Iris.COFE (OURAProp M) := Iris.COFE.ofDiscrete _
 
 /--
-It's annoying to type `Quotient.mk _` but the abstraction buys nothing, so make this transparent.
+It's annoying to type `Quotient.mk _`.
 -/
-@[simp, grind =, expose]
 def fmk {M} [OrderedUnitalResourceAlgebra M] (a : UpperSet M) : OURAProp M := Quotient.mk _ a
 
 @[reducible]
 instance : Coe (UpperSet M) (OURAProp M) := ⟨fmk⟩
 
-instance : Iris.BI.BIBase (OURAProp M) where
+set_option warn.classDefReducibility false in
+def biBase : Iris.BI.BIBase (OURAProp M) where
   Entails := Quotient.lift₂ entail fun _ _ _ _ h₁ h₂ ↦ entail_eq_of_bientail h₁ h₂
   emp := fmk emp
   pure P := fmk (pure P)
@@ -644,6 +639,8 @@ instance : Iris.BI.BIBase (OURAProp M) where
   wand := map₂ wand fun h₁ h₂ ↦ bientail_wand h₁ h₂
   persistently := map persistently fun h ↦ bientail_persistently h
   later := id
+
+instance : Iris.BI.BIBase (OURAProp M) := biBase
 
 /-- On the quotient, `n`-equivalence is plain equality. -/
 theorem dist_iff_eq {n : ℕ} {x y : OURAProp M} : Iris.OFE.Dist n x y ↔ x = y := Iff.rfl
@@ -806,7 +803,7 @@ instance : Iris.BI (OURAProp M) where
     intro P
     induction P using Quotient.ind
     exact entail_persistently_idem_2
-  persistently_emp_2 := entail_persistently_emp_2
+  persistently_emp_2 := by exact entail_persistently_emp_2
   persistently_and_2 := by
     intro P Q
     induction P using Quotient.ind
@@ -822,8 +819,8 @@ instance : Iris.BI (OURAProp M) where
     induction P using Quotient.ind
     induction Q using Quotient.ind
     exact entail_persistently_absorb_l
-  later_mono := id
-  later_intro := entails_rfl
+  later_mono := by exact id
+  later_intro := by exact entails_rfl
   later_sForall_2 := by
     intro Φ m hm h r hΦ
     exact h (imp (pure (Φ r)) r)
@@ -832,12 +829,166 @@ instance : Iris.BI (OURAProp M) where
     rintro Φ m _ ⟨r, hΦ, hr⟩
     exact Or.inr ⟨and (pure (Φ r)) r,
       ⟨r, rfl⟩, hΦ, hr⟩
-  later_sep := fun {_ _} ↦ ⟨entails_rfl, entails_rfl⟩
-  later_persistently := fun {_} ↦ ⟨entails_rfl, entails_rfl⟩
+  later_sep := by exact fun {_ _} ↦ ⟨entails_rfl, entails_rfl⟩
+  later_persistently := by exact fun {_} ↦ ⟨entails_rfl, entails_rfl⟩
   later_false_em := by
     intro P
     induction P using Quotient.ind
     exact fun _ _ hP ↦ Or.inr fun _ _ _ hb ↦ hb.elim
+
+def Sat (P : OURAProp M) (m : M) : Prop :=
+  Quotient.liftOn P (fun U ↦ ✓m ∧ m ∈ U) fun _ _ h ↦
+    propext ⟨fun ⟨hv, hm⟩ ↦ ⟨hv, h.1 m hv hm⟩, fun ⟨hv, hm⟩ ↦ ⟨hv, h.2 m hv hm⟩⟩
+
+theorem sat_fmk {U : UpperSet M} {m : M} : Iff ((fmk U).Sat m) (✓m ∧ m ∈ U) := by rfl
+
+theorem sat_valid {P : OURAProp M} {m : M} (h : P.Sat m) : ✓m := by
+  induction P using Quotient.ind
+  exact h.1
+
+theorem sat_mono {P : OURAProp M} {a b : M} (h : P.Sat a) (hab : a ≤ b) (hb : ✓b) :
+    P.Sat b := by
+  induction P using Quotient.ind with
+  | _ U =>
+  exact ⟨hb, U.upper' hab h.2⟩
+
+theorem entails_iff {P Q : OURAProp M} :
+    Iff (BI.BIBase.Entails P Q) (∀ m, P.Sat m → Q.Sat m) := by
+  induction P using Quotient.ind
+  induction Q using Quotient.ind
+  exact ⟨fun h m hm ↦ ⟨hm.1, h m hm.1 hm.2⟩, fun h m hv hm ↦ (h m ⟨hv, hm⟩).2⟩
+
+theorem ext {P Q : OURAProp M} (h : ∀ m, Iff (P.Sat m) (Q.Sat m)) : P = Q := by
+  induction P using Quotient.ind
+  induction Q using Quotient.ind
+  exact Quotient.sound ⟨fun m hv hm ↦ ((h m).1 ⟨hv, hm⟩).2, fun m hv hm ↦ ((h m).2 ⟨hv, hm⟩).2⟩
+
+theorem exists_fmk (P : OURAProp M) : ∃ U, P = fmk U := by
+  obtain ⟨U, hU⟩ := Quotient.exists_rep P
+  exact ⟨U, hU.symm⟩
+
+theorem sat_pure {φ : Prop} {m : M} :
+    Iff ((BI.BIBase.pure φ : OURAProp M).Sat m) (✓m ∧ φ) := by rfl
+
+theorem sat_emp {m : M} : Iff ((BI.BIBase.emp : OURAProp M).Sat m) (✓m ∧ 1 ≤ m) := by rfl
+
+theorem sat_and {P Q : OURAProp M} {m : M} :
+    Iff ((BI.BIBase.and P Q).Sat m) (P.Sat m ∧ Q.Sat m) := by
+  induction P using Quotient.ind with
+  | _ U =>
+  induction Q using Quotient.ind with
+  | _ V =>
+  show Iff (✓m ∧ m ∈ UpperSetBI.and U V) ((✓m ∧ m ∈ U) ∧ (✓m ∧ m ∈ V))
+  rw [mem_and]
+  tauto
+
+theorem sat_or {P Q : OURAProp M} {m : M} :
+    Iff ((BI.BIBase.or P Q).Sat m) (P.Sat m ∨ Q.Sat m) := by
+  induction P using Quotient.ind with
+  | _ U =>
+  induction Q using Quotient.ind with
+  | _ V =>
+  show Iff (✓m ∧ m ∈ UpperSetBI.or U V) ((✓m ∧ m ∈ U) ∨ (✓m ∧ m ∈ V))
+  rw [mem_or]
+  tauto
+
+theorem sat_sep {P Q : OURAProp M} {m : M} :
+    Iff ((BI.BIBase.sep P Q).Sat m) (✓m ∧ ∃ b₁ b₂, b₁ * b₂ ≤ m ∧ P.Sat b₁ ∧ Q.Sat b₂) := by
+  induction P using Quotient.ind with
+  | _ U =>
+  induction Q using Quotient.ind with
+  | _ V =>
+  show Iff (✓m ∧ m ∈ UpperSetBI.sep U V)
+    (✓m ∧ ∃ b₁ b₂, b₁ * b₂ ≤ m ∧ (✓b₁ ∧ b₁ ∈ U) ∧ (✓b₂ ∧ b₂ ∈ V))
+  rw [mem_sep]
+  constructor
+  · rintro ⟨hv, b₁, b₂, hle, h₁, h₂⟩
+    have hv₁₂ := valid_mono hle hv
+    exact ⟨hv, b₁, b₂, hle, ⟨valid_mul_l hv₁₂, h₁⟩, ⟨valid_mul_r hv₁₂, h₂⟩⟩
+  · rintro ⟨hv, b₁, b₂, hle, ⟨_, h₁⟩, ⟨_, h₂⟩⟩
+    exact ⟨hv, b₁, b₂, hle, h₁, h₂⟩
+
+theorem sat_wand {P Q : OURAProp M} {m : M} :
+    Iff ((BI.BIBase.wand P Q).Sat m) (✓m ∧ ∀ b, ✓(m * b) → P.Sat b → Q.Sat (m * b)) := by
+  induction P using Quotient.ind with
+  | _ U =>
+  induction Q using Quotient.ind with
+  | _ V =>
+  show Iff (✓m ∧ m ∈ UpperSetBI.wand U V)
+    (✓m ∧ ∀ b, ✓(m * b) → (✓b ∧ b ∈ U) → (✓(m * b) ∧ m * b ∈ V))
+  rw [mem_wand]
+  constructor
+  · rintro ⟨hv, h⟩
+    exact ⟨hv, fun b hmb hb ↦ ⟨hmb, h b hmb hb.2⟩⟩
+  · rintro ⟨hv, h⟩
+    exact ⟨hv, fun b hmb hb ↦ (h b hmb ⟨valid_mul_r hmb, hb⟩).2⟩
+
+theorem sat_imp {P Q : OURAProp M} {m : M} :
+    Iff ((BI.BIBase.imp P Q).Sat m) (✓m ∧ ∀ b, m ≤ b → P.Sat b → Q.Sat b) := by
+  induction P using Quotient.ind with
+  | _ U =>
+  induction Q using Quotient.ind with
+  | _ V =>
+  show Iff (✓m ∧ m ∈ UpperSetBI.imp U V)
+    (✓m ∧ ∀ b, m ≤ b → (✓b ∧ b ∈ U) → (✓b ∧ b ∈ V))
+  rw [mem_imp]
+  constructor
+  · rintro ⟨hv, h⟩
+    exact ⟨hv, fun b hmb hb ↦ ⟨hb.1, h b hmb hb.1 hb.2⟩⟩
+  · rintro ⟨hv, h⟩
+    exact ⟨hv, fun b hmb hvb hb ↦ (h b hmb ⟨hvb, hb⟩).2⟩
+
+theorem sat_persistently {P : OURAProp M} {m : M} :
+    Iff ((BI.BIBase.persistently P).Sat m) (✓m ∧ P.Sat 1) := by
+  induction P using Quotient.ind with
+  | _ U =>
+  show Iff (✓m ∧ m ∈ UpperSetBI.persistently U) (✓m ∧ (✓(1 : M) ∧ (1 : M) ∈ U))
+  rw [mem_persistently]
+  exact ⟨fun ⟨hv, h⟩ ↦ ⟨hv, valid_one, h⟩, fun ⟨hv, _, h⟩ ↦ ⟨hv, h⟩⟩
+
+theorem sat_sForall {Ψ : OURAProp M → Prop} {m : M} :
+    Iff ((BI.BIBase.sForall Ψ : OURAProp M).Sat m) (✓m ∧ ∀ P, Ψ P → P.Sat m) := by
+  show Iff (✓m ∧ m ∈ UpperSetBI.sForall fun p ↦ Ψ (fmk p)) _
+  rw [mem_sForall]
+  constructor
+  · rintro ⟨hv, h⟩
+    refine ⟨hv, fun P hP ↦ ?_⟩
+    obtain ⟨U, rfl⟩ := exists_fmk P
+    exact sat_fmk.2 ⟨hv, h U hP⟩
+  · rintro ⟨hv, h⟩
+    exact ⟨hv, fun p hp ↦ (sat_fmk.1 (h _ hp)).2⟩
+
+theorem sat_sExists {Ψ : OURAProp M → Prop} {m : M} :
+    Iff ((BI.BIBase.sExists Ψ : OURAProp M).Sat m) (∃ P, Ψ P ∧ P.Sat m) := by
+  show Iff (✓m ∧ m ∈ UpperSetBI.sExists fun p ↦ Ψ (fmk p)) _
+  rw [mem_sExists]
+  constructor
+  · rintro ⟨hv, p, hp, hm⟩
+    exact ⟨fmk p, hp, sat_fmk.2 ⟨hv, hm⟩⟩
+  · rintro ⟨P, hP, hm⟩
+    obtain ⟨U, rfl⟩ := exists_fmk P
+    obtain ⟨hv, hm⟩ := sat_fmk.1 hm
+    exact ⟨hv, U, hP, hm⟩
+
+theorem sat_forall {α : Sort _} {P : α → OURAProp M} {m : M} :
+    Iff ((BI.BIBase.forall P).Sat m) (✓m ∧ ∀ x, (P x).Sat m) := by
+  show Iff ((BI.BIBase.sForall fun p ↦ ∃ a, P a = p : OURAProp M).Sat m) _
+  rw [sat_sForall]
+  constructor
+  · rintro ⟨hv, h⟩
+    exact ⟨hv, fun x ↦ h _ ⟨x, rfl⟩⟩
+  · rintro ⟨hv, h⟩
+    exact ⟨hv, fun _ ⟨x, hx⟩ ↦ hx ▸ h x⟩
+
+theorem sat_exists {α : Sort _} {P : α → OURAProp M} {m : M} :
+    Iff ((BI.BIBase.exists P).Sat m) (∃ x, (P x).Sat m) := by
+  show Iff ((BI.BIBase.sExists fun p ↦ ∃ a, P a = p : OURAProp M).Sat m) _
+  rw [sat_sExists]
+  constructor
+  · rintro ⟨_, ⟨x, rfl⟩, h⟩
+    exact ⟨x, h⟩
+  · rintro ⟨x, h⟩
+    exact ⟨_, ⟨x, rfl⟩, h⟩
 
 end OURAProp
 
