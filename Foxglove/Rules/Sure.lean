@@ -17,11 +17,28 @@ noncomputable section
 What `⌈E⌉` satisfies: merging, splitting, weakening, substitution, and how a sure fact is
 read off a resource. -/
 
+lemma sat_exists_ownP_sep_pure {φ : PSpace Ω → Prop} {m : BoundedFootprintSpace Bool} :
+    (iprop(∃ P : PSpace Ω, ownP P ∗ ⌜φ P⌝) : FProp).Sat m ↔
+      ✓m ∧ ∃ (P : PSpace Ω) (hbf : HasBoundedFootprint (P : PSp Ω)),
+        (⟨(P : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool) ≤ m ∧ φ P := by
+  simp only [sat_exists, sat_sep, sat_ownP, sat_pure]
+  constructor
+  · rintro ⟨P, hv, b₁, b₂, hle, ⟨_, hbf, hPb⟩, _, hnull⟩
+    exact ⟨hv, P, hbf, le_trans hPb (le_trans (le_mul_of_one_le PSp.one_le) hle), hnull⟩
+  · rintro ⟨hv, P, hbf, hPm, hnull⟩
+    exact ⟨P, hv, m, 1, le_of_eq (mul_one m), ⟨hv, hbf, hPm⟩, valid_one, hnull⟩
+
+lemma sat_liftPred {a : Ω → Prop} {m : BoundedFootprintSpace Bool} :
+    (LiftPred.lift a : FProp).Sat m ↔ ✓m ∧ ∃ (P : PSpace Ω) (hbf : HasBoundedFootprint (P : PSp Ω)),
+      (⟨(P : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool) ≤ m ∧ P.μ {ρ | ¬ a ρ} = 0 :=
+  sat_exists_ownP_sep_pure (φ := fun P ↦ P.μ {ρ | ¬ a ρ} = 0)
+
 /-- Two sure facts held separately are both sure on the ambient space, so they merge. -/
 theorem liftPred_sep {a b : Ω → Prop} : ⌈a⌉ ∗ ⌈b⌉ ⊢ ⌈fun ω ↦ a ω ∧ b ω⌉ := by
-  simp only [LiftPred.lift, ownP_def, own_def]
-  intro m hv h
-  obtain ⟨d₁, d₂, hle, h₁, h₂⟩ := UpperSetBI.mem_sep.1 h
+  refine entails_iff.2 fun m hm ↦ ?_
+  obtain ⟨hv, d₁, d₂, hle, h₁, h₂⟩ := sat_sep.1 hm
+  obtain ⟨_, P₁, _, hP₁d, hpure₁⟩ := sat_liftPred.1 h₁
+  obtain ⟨_, P₂, _, hP₂d, hpure₂⟩ := sat_liftPred.1 h₂
   obtain ⟨y, hy⟩ : ∃ y : PSpace Ω, m.val = (y : PSp Ω) :=
     Option.ne_none_iff_exists'.mp (PSp.valid_def.mp hv)
   have hd₁ : d₁ ≤ m := le_trans (le_mul_of_one_le PSp.one_le) hle
@@ -29,44 +46,28 @@ theorem liftPred_sep {a b : Ω → Prop} : ⌈a⌉ ∗ ⌈b⌉ ⊢ ⌈fun ω ↦
     refine le_trans ?_ hle
     rw [mul_comm]
     exact le_mul_of_one_le PSp.one_le
-  -- the space behind the first conjunct sits below the ambient `y`
-  obtain ⟨q₁, ⟨P₁, hq₁⟩, hq₁m⟩ := UpperSetBI.mem_sExists.1 h₁
-  obtain ⟨e₁, _, hlee₁, hown₁, hpure₁⟩ :=
-    UpperSetBI.mem_sep.1 ((Quotient.exact hq₁).2 d₁ (valid_mono hd₁ hv) hq₁m)
-  obtain ⟨r₁, ⟨hbf₁, hr₁⟩, he₁⟩ := UpperSetBI.mem_sExists.1 hown₁
-  have he₁m : e₁ ≤ m := le_trans (le_trans (le_mul_of_one_le PSp.one_le) hlee₁) hd₁
-  have hP₁ := UpperSetBI.mem_own.1 ((Quotient.exact hr₁).2 e₁ (valid_mono he₁m hv) he₁)
+  -- the spaces behind both conjuncts sit below the ambient `y`
   have hP₁y : P₁ ≤ y := by
-    have hP₁m : (P₁ : PSp Ω) ≤ (m : PSp Ω) := le_trans hP₁ he₁m
+    have hP₁m : (P₁ : PSp Ω) ≤ (m : PSp Ω) := le_trans hP₁d hd₁
     rw [hy] at hP₁m
     exact WithTop.coe_le_coe.1 hP₁m
-  -- and the same for the second
-  obtain ⟨q₂, ⟨P₂, hq₂⟩, hq₂m⟩ := UpperSetBI.mem_sExists.1 h₂
-  obtain ⟨e₂, _, hlee₂, hown₂, hpure₂⟩ :=
-    UpperSetBI.mem_sep.1 ((Quotient.exact hq₂).2 d₂ (valid_mono hd₂ hv) hq₂m)
-  obtain ⟨r₂, ⟨hbf₂, hr₂⟩, he₂⟩ := UpperSetBI.mem_sExists.1 hown₂
-  have he₂m : e₂ ≤ m := le_trans (le_trans (le_mul_of_one_le PSp.one_le) hlee₂) hd₂
-  have hP₂ := UpperSetBI.mem_own.1 ((Quotient.exact hr₂).2 e₂ (valid_mono he₂m hv) he₂)
   have hP₂y : P₂ ≤ y := by
-    have hP₂m : (P₂ : PSp Ω) ≤ (m : PSp Ω) := le_trans hP₂ he₂m
+    have hP₂m : (P₂ : PSp Ω) ≤ (m : PSp Ω) := le_trans hP₂d hd₂
     rw [hy] at hP₂m
     exact WithTop.coe_le_coe.1 hP₂m
   -- both exceptional sets are null on `y`, hence so is their union
-  have hnull₁ : y.μ {ρ | ¬ a ρ} = 0 := PSpace.null_of_le hP₁y (UpperSetBI.mem_pure.1 hpure₁)
-  have hnull₂ : y.μ {ρ | ¬ b ρ} = 0 := PSpace.null_of_le hP₂y (UpperSetBI.mem_pure.1 hpure₂)
+  have hnull₁ : y.μ {ρ | ¬ a ρ} = 0 := PSpace.null_of_le hP₁y hpure₁
+  have hnull₂ : y.μ {ρ | ¬ b ρ} = 0 := PSpace.null_of_le hP₂y hpure₂
   have hbfy : HasBoundedFootprint (y : PSp Ω) := hy ▸ m.property
   have hmy : (⟨(y : PSp Ω), hbfy⟩ : BoundedFootprintSpace Bool) = m := Subtype.ext hy.symm
-  refine UpperSetBI.mem_sExists.2 ⟨_, ⟨y, rfl⟩, UpperSetBI.mem_sep.2 ⟨m, 1, ?_,
-    UpperSetBI.mem_sExists.2 ⟨_, ⟨hbfy, rfl⟩, UpperSetBI.mem_own.2 (le_of_eq hmy)⟩,
-    UpperSetBI.mem_pure.2 ?_⟩⟩
-  · rw [mul_one]
-  · have hsub : {ρ | ¬ (a ρ ∧ b ρ)} ⊆ {ρ | ¬ a ρ} ∪ {ρ | ¬ b ρ} := by
-      intro ρ hρ
-      by_cases ha : a ρ
-      · exact Or.inr fun hb ↦ hρ ⟨ha, hb⟩
-      · exact Or.inl ha
-    exact MeasureTheory.measure_mono_null hsub
-      (MeasureTheory.measure_union_null hnull₁ hnull₂)
+  refine sat_liftPred.2 ⟨hv, y, hbfy, le_of_eq hmy, ?_⟩
+  have hsub : {ρ | ¬ (a ρ ∧ b ρ)} ⊆ {ρ | ¬ a ρ} ∪ {ρ | ¬ b ρ} := by
+    intro ρ hρ
+    by_cases ha : a ρ
+    · exact Or.inr fun hb ↦ hρ ⟨ha, hb⟩
+    · exact Or.inl ha
+  exact MeasureTheory.measure_mono_null hsub
+    (MeasureTheory.measure_union_null hnull₁ hnull₂)
 
 /-- A sure fact splits.  `∗` demands two resources whose independent product is defined, so
 splitting needs an idempotent witness, and one exists: trim the owned space to the σ-algebra
@@ -74,17 +75,11 @@ generated by a null cover of the exceptional set.  That trim carries only the me
 and `1`, hence is independent of itself, and it is a resource because `HasBoundedFootprint`
 is closed under coarsening. -/
 theorem liftPred_split {a b : Ω → Prop} : ⌈fun ω ↦ a ω ∧ b ω⌉ ⊢ ⌈a⌉ ∗ ⌈b⌉ := by
-  simp only [LiftPred.lift, ownP_def, own_def]
-  intro m hv h
-  obtain ⟨q, ⟨P, hq⟩, hqm⟩ := UpperSetBI.mem_sExists.1 h
-  obtain ⟨d₁, d₂, hle, hown, hpure⟩ := UpperSetBI.mem_sep.1 ((Quotient.exact hq).2 m hv hqm)
-  obtain ⟨r₁, ⟨hbfP, hr₁⟩, hd₁⟩ := UpperSetBI.mem_sExists.1 hown
-  have hd₁m : d₁ ≤ m := le_trans (le_mul_of_one_le PSp.one_le) hle
-  have hPm : (⟨(P : PSp Ω), hbfP⟩ : BoundedFootprintSpace Bool) ≤ m :=
-    le_trans (UpperSetBI.mem_own.1 ((Quotient.exact hr₁).2 d₁ (valid_mono hd₁m hv) hd₁)) hd₁m
+  refine entails_iff.2 fun m hm ↦ ?_
+  obtain ⟨hv, P, hbfP, hPm, hpure⟩ := sat_liftPred.1 hm
   -- a measurable null cover of the exceptional set
   obtain ⟨N, hNsub, hNmeas, hNnull⟩ :=
-    @MeasureTheory.exists_measurable_superset_of_null Ω P.ms P.μ _ (UpperSetBI.mem_pure.1 hpure)
+    @MeasureTheory.exists_measurable_superset_of_null Ω P.ms P.μ _ hpure
   have hgen : MeasurableSpace.generateFrom {N} ≤ P.ms :=
     MeasurableSpace.generateFrom_le (by rintro t rfl; exact hNmeas)
   -- the 0-1 trim
@@ -109,16 +104,12 @@ theorem liftPred_split {a b : Ω → Prop} : ⌈fun ω ↦ a ω ∧ b ω⌉ ⊢ 
     show PSp.mul (some P₀) (some P₀) ≤ (some P : PSp Ω)
     rw [PSp.mul_self_eq hidem]
     exact WithTop.coe_le_coe.2 hP₀P
-  refine UpperSetBI.mem_sep.2 ⟨_, _, hb₀b₀, UpperSetBI.mem_sExists.2 ⟨_, ⟨P₀, rfl⟩, ?_⟩,
-    UpperSetBI.mem_sExists.2 ⟨_, ⟨P₀, rfl⟩, ?_⟩⟩
-  · refine UpperSetBI.mem_sep.2 ⟨_, 1, le_of_eq (mul_one _),
-      UpperSetBI.mem_sExists.2 ⟨_, ⟨hbf₀, rfl⟩, UpperSetBI.mem_own.2
-        (le_refl (⟨(P₀ : PSp Ω), hbf₀⟩ : BoundedFootprintSpace Bool))⟩, UpperSetBI.mem_pure.2 ?_⟩
-    exact MeasureTheory.measure_mono_null (fun ρ hρ ↦ hNsub fun hab ↦ hρ hab.1) hN₀
-  · refine UpperSetBI.mem_sep.2 ⟨_, 1, le_of_eq (mul_one _),
-      UpperSetBI.mem_sExists.2 ⟨_, ⟨hbf₀, rfl⟩, UpperSetBI.mem_own.2
-        (le_refl (⟨(P₀ : PSp Ω), hbf₀⟩ : BoundedFootprintSpace Bool))⟩, UpperSetBI.mem_pure.2 ?_⟩
-    exact MeasureTheory.measure_mono_null (fun ρ hρ ↦ hNsub fun hab ↦ hρ hab.2) hN₀
+  have hv₀ : ✓(⟨(P₀ : PSp Ω), hbf₀⟩ : BoundedFootprintSpace Bool) :=
+    valid_mul_l (valid_mono hb₀b₀ hv)
+  refine sat_sep.2 ⟨hv, _, _, hb₀b₀, sat_liftPred.2 ⟨hv₀, P₀, hbf₀, le_refl _, ?_⟩,
+    sat_liftPred.2 ⟨hv₀, P₀, hbf₀, le_refl _, ?_⟩⟩
+  · exact MeasureTheory.measure_mono_null (fun ρ hρ ↦ hNsub fun hab ↦ hρ hab.1) hN₀
+  · exact MeasureTheory.measure_mono_null (fun ρ hρ ↦ hNsub fun hab ↦ hρ hab.2) hN₀
 
 /-- A sure fact is duplicable. -/
 theorem liftPred_dup {p : Ω → Prop} : ⌈p⌉ ⊢ ⌈p⌉ ∗ ⌈p⌉ := by
@@ -132,13 +123,10 @@ theorem liftPred_dup {p : Ω → Prop} : ⌈p⌉ ⊢ ⌈p⌉ ∗ ⌈p⌉ := by
 
 /-- A sure fact weakens: the exceptional set only shrinks. -/
 theorem liftPred_mono {a b : Ω → Prop} (h : ∀ ρ, a ρ → b ρ) : ⌈a⌉ ⊢ ⌈b⌉ := by
-  simp only [LiftPred.lift, ownP_def, own_def]
-  intro m hv hm
-  obtain ⟨q, ⟨P, hq⟩, hqm⟩ := UpperSetBI.mem_sExists.1 hm
-  obtain ⟨d₁, d₂, hle, hown, hpure⟩ := UpperSetBI.mem_sep.1 ((Quotient.exact hq).2 m hv hqm)
-  exact UpperSetBI.mem_sExists.2 ⟨_, ⟨P, rfl⟩, UpperSetBI.mem_sep.2 ⟨d₁, d₂, hle, hown,
-    UpperSetBI.mem_pure.2 (MeasureTheory.measure_mono_null (fun ρ hρ hab ↦ hρ (h ρ hab))
-      (UpperSetBI.mem_pure.1 hpure))⟩⟩
+  refine entails_iff.2 fun m hm ↦ ?_
+  obtain ⟨hv, P, hbf, hPm, hpure⟩ := sat_liftPred.1 hm
+  exact sat_liftPred.2 ⟨hv, P, hbf, hPm,
+    MeasureTheory.measure_mono_null (fun ρ hρ hab ↦ hρ (h ρ hab)) hpure⟩
 
 /-- Sure equalities substitute: this is the measure-theoretic content of `AEProper`, and
 what lets a fibre's report of the result stand in for the global one. -/
@@ -161,13 +149,11 @@ lemma liftPred_of_forall {a : Ω → Prop} (h : ∀ ρ, a ρ) : ⊢ (LiftPred.li
 /-- A sure fact about nothing is a fact: otherwise its failure set is the whole space, which
 has measure one. -/
 theorem liftPred_pure {φ : Prop} : (⌈fun _ : Ω ↦ φ⌉ : FProp) ⊢ ⌜φ⌝ := by
-  simp only [LiftPred.lift, ownP_def, own_def]
-  intro m hv hm
-  obtain ⟨q, ⟨P, hq⟩, hqm⟩ := UpperSetBI.mem_sExists.1 hm
-  obtain ⟨_, _, _, _, hpure⟩ := UpperSetBI.mem_sep.1 ((Quotient.exact hq).2 m hv hqm)
-  refine UpperSetBI.mem_pure.2 ?_
+  refine entails_iff.2 fun m hm ↦ ?_
+  obtain ⟨hv, P, _, _, hpure⟩ := sat_liftPred.1 hm
+  refine sat_pure.2 ⟨hv, ?_⟩
   by_contra hφ
-  have h0 : P.μ {ρ : Ω | ¬ φ} = 0 := UpperSetBI.mem_pure.1 hpure
+  have h0 : P.μ {ρ : Ω | ¬ φ} = 0 := hpure
   have huniv : {ρ : Ω | ¬ φ} = Set.univ := Set.eq_univ_of_forall fun _ ↦ hφ
   rw [huniv] at h0
   exact one_ne_zero (P.isProbability.measure_univ.symm.trans h0)
@@ -178,22 +164,9 @@ lemma liftPred_sep_elim {a : Ω → Prop} {W : FProp} {x : BoundedFootprintSpace
     ∃ (P : PSpace Ω) (hbf : HasBoundedFootprint (P : PSp Ω)) (R : BoundedFootprintSpace Bool),
       (⟨(P : PSp Ω), hbf⟩ : BoundedFootprintSpace Bool) * R ≤ x ∧
         P.μ {ρ | ¬ a ρ} = 0 ∧ (own R ⊢ W) := by
-  obtain ⟨U, hU⟩ := Quotient.exists_rep W
-  rw [← hU] at h ⊢
-  simp only [LiftPred.lift, ownP_def, own_def] at h ⊢
-  obtain ⟨d₁, d₂, hle, h₁, h₂⟩ := UpperSetBI.mem_sep.1 (h x hv (UpperSetBI.mem_own.2 (le_refl x)))
-  have hd₁ : d₁ ≤ x := le_trans (le_mul_of_one_le PSp.one_le) hle
-  obtain ⟨q₁, ⟨P, hq₁⟩, hq₁d⟩ := UpperSetBI.mem_sExists.1 h₁
-  obtain ⟨e₁, _, hlee₁, hown₁, hpure₁⟩ :=
-    UpperSetBI.mem_sep.1 ((Quotient.exact hq₁).2 d₁ (valid_mono hd₁ hv) hq₁d)
-  obtain ⟨r₁, ⟨hbf₁, hr₁⟩, he₁⟩ := UpperSetBI.mem_sExists.1 hown₁
-  have he₁d : e₁ ≤ d₁ := le_trans (le_mul_of_one_le PSp.one_le) hlee₁
-  have hP₁ := UpperSetBI.mem_own.1
-    ((Quotient.exact hr₁).2 e₁ (valid_mono (le_trans he₁d hd₁) hv) he₁)
-  refine ⟨P, hbf₁, d₂, le_trans (mul_le_mul_right_le (le_trans hP₁ he₁d) d₂) hle,
-    UpperSetBI.mem_pure.1 hpure₁, ?_⟩
-  intro y _ hy
-  exact U.upper' (UpperSetBI.mem_own.1 hy) h₂
+  obtain ⟨_, d₁, d₂, hle, h₁, h₂⟩ := sat_sep.1 (sat_of_own_entails hv h)
+  obtain ⟨_, P, hbf, hPd, hpure⟩ := sat_liftPred.1 h₁
+  exact ⟨P, hbf, d₂, le_trans (mul_le_mul_right_le hPd d₂) hle, hpure, own_entails_of_sat h₂⟩
 
 open MeasureTheory in
 /-- The null space makes sure any event whose failure set lies in the null set. -/

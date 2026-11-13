@@ -37,9 +37,13 @@ lemma own_def {M} [OrderedUnitalResourceAlgebra M] (b : M) :
     own b = OURAProp.fmk (UpperSetBI.own b) := by
   rfl
 
+lemma sat_own {M} [OrderedUnitalResourceAlgebra M] {b m : M} :
+    (own b).Sat m ↔ ✓m ∧ b ≤ m := by
+  rw [own_def, OURAProp.sat_fmk, UpperSetBI.mem_own]
+
 /-- Owning the unit costs nothing: `emp` and `own 1` are the same upper set. -/
 lemma own_one {M} [OrderedUnitalResourceAlgebra M] : ⊢ (own (1 : M) : OURAProp M) :=
-  fun _ _ h ↦ UpperSetBI.mem_own.2 (UpperSetBI.mem_emp.1 h)
+  OURAProp.entails_iff.2 fun _ h ↦ sat_own.2 (OURAProp.sat_emp.1 h)
 
 def ownP (p : PSpace Ω) : FProp :=
   iprop(∃ h : HasBoundedFootprint (p : PSp Ω), own ⟨(p : PSp Ω), h⟩)
@@ -47,6 +51,17 @@ def ownP (p : PSpace Ω) : FProp :=
 lemma ownP_def (p : PSpace Ω) :
     ownP p = iprop(∃ h : HasBoundedFootprint (p : PSp Ω), own ⟨(p : PSp Ω), h⟩) := by
   rfl
+
+lemma sat_ownP {p : PSpace Ω} {m : BoundedFootprintSpace Bool} :
+    (ownP p).Sat m ↔ ✓m ∧ ∃ h : HasBoundedFootprint (p : PSp Ω),
+      (⟨(p : PSp Ω), h⟩ : BoundedFootprintSpace Bool) ≤ m := by
+  rw [ownP_def, OURAProp.sat_exists]
+  simp only [sat_own]
+  constructor
+  · rintro ⟨h, hv, hle⟩
+    exact ⟨hv, h, hle⟩
+  · rintro ⟨hv, h, hle⟩
+    exact ⟨h, hv, hle⟩
 
 open Iris.BI in
 lemma ownP_one : ⊢ ownP 1 := by
@@ -353,6 +368,34 @@ lemma wpSt_def {α : Type} [Inhabited α] {m : Type → Type}
     } := by
   rfl
 
+open Interp Interp.ProbTree Iris.BI OURAProp in
+lemma sat_wp {α : Type} [Inhabited α] {m : Type → Type} [Interp.BernoulliInterpretable m]
+    {t : m α} {Q : RV α → FProp} {a : BoundedFootprintSpace Bool} :
+    (wp t Q).Sat a ↔ ✓a ∧
+      ∀ (μ₀ : BoundedFootprintPsp) (c : BoundedFootprintSpace Bool),
+        ✓μ₀.psp → a * c ≤ μ₀.toSpace →
+        ∃ b : BoundedFootprintSpace Bool,
+          b * c ≤ (run t μ₀).1.toSpace ∧ ✓b ∧
+            msOf b ≤ msOf a ⊔ freshMs μ₀ (Interp.BernoulliInterpretable.interp t) ∧
+            (own b ⊢ Q (result (run t μ₀))) := by
+  rw [wp_def, sat_fmk]
+  rfl
+
+open Interp Interp.ProbTree Iris.BI OURAProp in
+lemma sat_wpSt {α : Type} [Inhabited α] {m : Type → Type}
+    [inst : Interp.BernoulliInterpretableState m] [Inhabited inst.st]
+    {s : inst.st} {t : m α} {Q : RV (α × inst.st) → FProp} {a : BoundedFootprintSpace Bool} :
+    (wpSt s t Q).Sat a ↔ ✓a ∧
+      ∀ (μ₀ : BoundedFootprintPsp) (c : BoundedFootprintSpace Bool),
+        ✓μ₀.psp → a * c ≤ μ₀.toSpace →
+        ∃ b : BoundedFootprintSpace Bool,
+          b * c ≤ (Interp.bigStep μ₀
+              (fun _ ↦ Interp.BernoulliInterpretableState.interp t s)).1.toSpace ∧ ✓b ∧
+            msOf b ≤ msOf a ⊔ freshMs μ₀ (Interp.BernoulliInterpretableState.interp t s) ∧
+            (own b ⊢ Q (result (run (Interp.BernoulliInterpretableState.interp t s) μ₀))) := by
+  rw [wpSt_def, sat_fmk]
+  rfl
+
 macro "⦃" x:Lean.Parser.Term.funBinder ", " Q:term "⦄" : term => `(fun $x ↦ iprop($Q))
 
 open Lean PrettyPrinter Delaborator SubExpr Elab Term in
@@ -382,9 +425,8 @@ variable {P Q R : FProp}
 logic is affine: resources may always be thrown away.  Through iris-lean's generic instance
 this also makes every `FProp` `Absorbing`. -/
 instance : BIAffine FProp where
-  affine P := ⟨by
-    induction P using Quotient.ind
-    exact fun _ _ _ ↦ UpperSetBI.mem_emp.2 PSp.one_le⟩
+  affine _ := ⟨OURAProp.entails_iff.2 fun _ h ↦
+    OURAProp.sat_emp.2 ⟨OURAProp.sat_valid h, PSp.one_le⟩⟩
 
 /-- `<pers> P` holds either of everything or of nothing, according to whether `P` already
 holds of the unit resource, so `Persistent P` says exactly that owning nothing suffices for
@@ -392,9 +434,15 @@ holds of the unit resource, so `Persistent P` says exactly that owning nothing s
 valid `b`, `own b` is persistent exactly when `b ≤ 1`.  The persistent fragment is the one iris-lean already covers with `pure_persistent`
 and `emp_persistent`. -/
 lemma persistent_iff {U : UpperSet (BoundedFootprintSpace Bool)} :
-    Persistent (fmk U) ↔ ∀ m, ✓m → m ∈ U → (1 : BoundedFootprintSpace Bool) ∈ U :=
-  ⟨fun h m hv hm ↦ UpperSetBI.mem_persistently.1 (h.persistent m hv hm),
-    fun h ↦ ⟨fun m hv hm ↦ UpperSetBI.mem_persistently.2 (h m hv hm)⟩⟩
+    Persistent (fmk U) ↔ ∀ m, ✓m → m ∈ U → (1 : BoundedFootprintSpace Bool) ∈ U := by
+  constructor
+  · intro h m hv hm
+    have hp := OURAProp.entails_iff.1 h.persistent m (OURAProp.sat_fmk.2 ⟨hv, hm⟩)
+    exact (OURAProp.sat_fmk.1 (OURAProp.sat_persistently.1 hp).2).2
+  · intro h
+    refine ⟨OURAProp.entails_iff.2 fun m hm ↦ ?_⟩
+    obtain ⟨hv, hm⟩ := OURAProp.sat_fmk.1 hm
+    exact OURAProp.sat_persistently.2 ⟨hv, OURAProp.sat_fmk.2 ⟨valid_one, h m hv hm⟩⟩
 
 attribute [grind .] and_intro entails_rfl pure_intro or_intro_l or_intro_r or_elim
                     Iris.BI.BIBase.pure and_elim_l and_elim_r Iris.BI.BIBase.BiEntails.mk

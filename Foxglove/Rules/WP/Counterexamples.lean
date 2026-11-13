@@ -81,9 +81,7 @@ lemma delta_ne_bernoulli (v : Bool) {r : I} (h0 : r ≠ 0) (h1 : r ≠ 1) :
 of which the result is surely a constant, while on the coin itself it is surely neither. -/
 theorem not_convex_constQ : ¬ ∀ X : RV Bool, Convex (constQ X) := by
   intro hconv
-  have hemp : (1 : BoundedFootprintSpace Bool) ∈ (UpperSetBI.emp :
-      UpperSet (BoundedFootprintSpace Bool)) := by
-    exact UpperSetBI.mem_emp.2 (le_refl 1)
+  have hemp : (iprop(emp) : FProp).Sat 1 := sat_emp.2 ⟨valid_one, le_refl 1⟩
   have hv1 : ✓(1 : BoundedFootprintPsp).psp := BoundedFootprintPsp.valid_one
   have hle1 : (1 : BoundedFootprintSpace Bool) * 1 ≤ (1 : BoundedFootprintPsp).toSpace := by
     rw [mul_one]
@@ -91,8 +89,7 @@ theorem not_convex_constQ : ¬ ∀ X : RV Bool, Convex (constQ X) := by
     rw [BoundedFootprintPsp.toSpace_val]
     exact le_refl _
   have hflip := WP_FLIP (p := Interp.half)
-  rw [wp_def] at hflip
-  obtain ⟨b, hb₁, hb₂, -, hb₃⟩ := hflip 1 valid_one hemp 1 1 hv1 hle1
+  obtain ⟨b, hb₁, hb₂, -, hb₃⟩ := (sat_wp.1 (entails_iff.1 hflip 1 hemp)).2 1 1 hv1 hle1
   have hvS := valid_run (Interp.flip Interp.half) (1 : BoundedFootprintPsp) hv1
   have hbS : b ≤ (run (Interp.flip Interp.half) (1 : BoundedFootprintPsp)).1.toSpace := by
     have h := hb₁; rwa [mul_one] at h
@@ -109,13 +106,11 @@ theorem not_convex_constQ : ¬ ∀ X : RV Bool, Convex (constQ X) := by
     (entails_trans (C_CONS hstep) ((convex_def _).1 (hconv _) _)))
   rcases own_or_elim hvS hconst with h1 | h1
   · have h := entails_trans (and_intro (entails_trans h1 SURE_DIRAC.2) hlaw) DIST_INJ
-    rw [own_def] at h
-    exact delta_ne_bernoulli true half_ne_zero half_ne_one (UpperSetBI.mem_pure.1 (h _ hvS (UpperSetBI.mem_own.2
-      (le_refl (run (Interp.flip Interp.half) (1 : BoundedFootprintPsp)).1.toSpace))))
+    exact delta_ne_bernoulli true half_ne_zero half_ne_one
+      (sat_pure.1 (sat_of_own_entails hvS h)).2
   · have h := entails_trans (and_intro (entails_trans h1 SURE_DIRAC.2) hlaw) DIST_INJ
-    rw [own_def] at h
-    exact delta_ne_bernoulli false half_ne_zero half_ne_one (UpperSetBI.mem_pure.1 (h _ hvS (UpperSetBI.mem_own.2
-      (le_refl (run (Interp.flip Interp.half) (1 : BoundedFootprintPsp)).1.toSpace))))
+    exact delta_ne_bernoulli false half_ne_zero half_ne_one
+      (sat_pure.1 (sat_of_own_entails hvS h)).2
 
 /-- **Sequencing is unsound at `AEProper`.**  Take `C := flip half`, `F := pure` (so that
 `C >>= F = C`) and `Q := constQ`.  The premise holds outright (`wp_flip_valuePost`), so the
@@ -131,9 +126,7 @@ theorem WPBind_counterexample :
   have hbad : ⊢ wp (Interp.flip Interp.half >>= (pure : Bool → Interp.BernoulliM Bool)) constQ :=
     entails_trans wp_flip_valuePost (hbind aeProper_constQ)
   rw [bind_pure] at hbad
-  have hemp : (1 : BoundedFootprintSpace Bool) ∈ (UpperSetBI.emp :
-      UpperSet (BoundedFootprintSpace Bool)) := by
-    exact UpperSetBI.mem_emp.2 (le_refl 1)
+  have hemp : (iprop(emp) : FProp).Sat 1 := sat_emp.2 ⟨valid_one, le_refl 1⟩
   have hv1 : ✓(1 : BoundedFootprintPsp).psp := BoundedFootprintPsp.valid_one
   have hle1 : (1 : BoundedFootprintSpace Bool) * 1 ≤ (1 : BoundedFootprintPsp).toSpace := by
     rw [mul_one]
@@ -141,9 +134,8 @@ theorem WPBind_counterexample :
     rw [BoundedFootprintPsp.toSpace_val]
     exact le_refl _
   have hflip := WP_FLIP (p := Interp.half)
-  rw [wp_def] at hbad hflip
-  obtain ⟨b, hb₁, hb₂, -, hb₃⟩ := hbad 1 valid_one hemp 1 1 hv1 hle1
-  obtain ⟨b', hb'₁, hb'₂, -, hb'₃⟩ := hflip 1 valid_one hemp 1 1 hv1 hle1
+  obtain ⟨b, hb₁, hb₂, -, hb₃⟩ := (sat_wp.1 (entails_iff.1 hbad 1 hemp)).2 1 1 hv1 hle1
+  obtain ⟨b', hb'₁, hb'₂, -, hb'₃⟩ := (sat_wp.1 (entails_iff.1 hflip 1 hemp)).2 1 1 hv1 hle1
   have hvS := valid_run (Interp.flip Interp.half) (1 : BoundedFootprintPsp) hv1
   have hbS : b ≤ (run (Interp.flip Interp.half) (1 : BoundedFootprintPsp)).1.toSpace := by
     have h := hb₁; rwa [mul_one] at h
@@ -152,13 +144,11 @@ theorem WPBind_counterexample :
   have h2 := entails_trans (own_mono hb'S) hb'₃
   rcases own_or_elim hvS (entails_trans (own_mono hbS) hb₃) with h1 | h1
   · have h := entails_trans (and_intro (entails_trans h1 SURE_DIRAC.2) h2) DIST_INJ
-    rw [own_def] at h
-    exact delta_ne_bernoulli true half_ne_zero half_ne_one (UpperSetBI.mem_pure.1 (h _ hvS (UpperSetBI.mem_own.2
-      (le_refl (run (Interp.flip Interp.half) (1 : BoundedFootprintPsp)).1.toSpace))))
+    exact delta_ne_bernoulli true half_ne_zero half_ne_one
+      (sat_pure.1 (sat_of_own_entails hvS h)).2
   · have h := entails_trans (and_intro (entails_trans h1 SURE_DIRAC.2) h2) DIST_INJ
-    rw [own_def] at h
-    exact delta_ne_bernoulli false half_ne_zero half_ne_one (UpperSetBI.mem_pure.1 (h _ hvS (UpperSetBI.mem_own.2
-      (le_refl (run (Interp.flip Interp.half) (1 : BoundedFootprintPsp)).1.toSpace))))
+    exact delta_ne_bernoulli false half_ne_zero half_ne_one
+      (sat_pure.1 (sat_of_own_entails hvS h)).2
 
 /-- **The two sequencing directions cannot be packaged as one bi-entailment**: a `⊣⊢` would
 give the direction `WPBind_counterexample` refutes. -/
@@ -187,17 +177,14 @@ theorem WPBindInv_counterexample :
   have hbad : ⊢ wp (Interp.flip Interp.half) ⦃X, valuePost X
       (fun v ↦ wp (pure v : Interp.BernoulliM Bool) ⦃X, X ~ Ber⦄)⦄ :=
     entails_trans hpre (hinv (aeProper_hasDistribution Ber))
-  have hemp : (1 : BoundedFootprintSpace Bool) ∈ (UpperSetBI.emp :
-      UpperSet (BoundedFootprintSpace Bool)) := by
-    exact UpperSetBI.mem_emp.2 (le_refl 1)
+  have hemp : (iprop(emp) : FProp).Sat 1 := sat_emp.2 ⟨valid_one, le_refl 1⟩
   have hv1 : ✓(1 : BoundedFootprintPsp).psp := BoundedFootprintPsp.valid_one
   have hle1 : (1 : BoundedFootprintSpace Bool) * 1 ≤ (1 : BoundedFootprintPsp).toSpace := by
     rw [mul_one]
     show (1 : BoundedFootprintSpace Bool).val ≤ (1 : BoundedFootprintPsp).toSpace.val
     rw [BoundedFootprintPsp.toSpace_val]
     exact le_refl _
-  rw [wp_def] at hbad
-  obtain ⟨b, hb₁, hvb, -, hb₃⟩ := hbad 1 valid_one hemp 1 1 hv1 hle1
+  obtain ⟨b, hb₁, hvb, -, hb₃⟩ := (sat_wp.1 (entails_iff.1 hbad 1 hemp)).2 1 1 hv1 hle1
   -- the run of the coin, and the conditioning the premise produced
   set μ₁ : BoundedFootprintPsp := (run (Interp.flip Interp.half) (1 : BoundedFootprintPsp)).1
     with hμ₁
@@ -285,20 +272,17 @@ theorem WPBindInv_counterexample :
     le_trans (by rw [mul_comm]; exact le_mul_of_one_le PSp.one_le) hPR
   have hRiτ : Ri * 1 ≤ τ.toSpace := by rw [mul_one]; exact le_trans hRi_le hRK
   have hvRi : ✓Ri := valid_mono (le_trans hRi_le hRK) hvτ
-  rw [own_def, wp_def] at hRi
-  obtain ⟨b', -, hvb', -, hb'Q⟩ := hRi Ri hvRi (UpperSetBI.mem_own.2 (le_refl Ri)) τ 1 hτvalid hRiτ
+  obtain ⟨b', -, hvb', -, hb'Q⟩ := (sat_wp.1 (sat_of_own_entails hvRi hRi)).2 τ 1 hτvalid hRiτ
   rw [result_run_pure (m := Interp.BernoulliM) v τ hτvalid] at hb'Q
   -- on it, the constant `v` has both the law `δ v` and the law of a fair coin
-  have hemp' : own b' ⊢ iprop(emp) := by
-    rw [own_def]
-    exact fun y _ hy ↦ UpperSetBI.mem_emp.2 (le_trans PSp.one_le (UpperSetBI.mem_own.1 hy))
+  have hemp' : own b' ⊢ iprop(emp) :=
+    entails_iff.2 fun _ hy ↦ sat_emp.2 ⟨(sat_own.1 hy).1, PSp.one_le⟩
   have hδ : own b' ⊢ (fun _ : Ω ↦ v) ~ δ v :=
     entails_trans hemp' (entails_trans
       (liftPred_of_forall (a := fun ω ↦ LiftBinary.lift (fun _ : Ω ↦ v) v ω) (fun _ ↦ rfl))
       (SURE_DIRAC (E := fun _ : Ω ↦ v) (v := v)).2)
   have h := entails_trans (and_intro hδ hb'Q) DIST_INJ
-  rw [own_def] at h
-  exact delta_ne_bernoulli v half_ne_zero half_ne_one (UpperSetBI.mem_pure.1 (h b' hvb' (UpperSetBI.mem_own.2 (le_refl b'))))
+  exact delta_ne_bernoulli v half_ne_zero half_ne_one (sat_pure.1 (sat_of_own_entails hvb' h)).2
 
 end
 
